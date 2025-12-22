@@ -128,12 +128,96 @@ def findJpackage() {
     return 'jpackage' // Assume it's on PATH
 }
 
+// Check if WiX Toolset is available on PATH (required for Windows EXE/MSI installers)
+def isWixAvailable() {
+    if (!org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        return false
+    }
+
+    try {
+        // Check for candle.exe using 'where' command
+        def candleResult = new ByteArrayOutputStream()
+        def candleExec = exec {
+            commandLine 'cmd', '/c', 'where', 'candle'
+            standardOutput = candleResult
+            errorOutput = new ByteArrayOutputStream()
+            ignoreExitValue = true
+        }
+
+        if (candleExec.exitValue != 0) {
+            return false
+        }
+
+        // Check for light.exe using 'where' command
+        def lightResult = new ByteArrayOutputStream()
+        def lightExec = exec {
+            commandLine 'cmd', '/c', 'where', 'light'
+            standardOutput = lightResult
+            errorOutput = new ByteArrayOutputStream()
+            ignoreExitValue = true
+        }
+
+        return lightExec.exitValue == 0
+    } catch (Exception e) {
+        // If 'where' command fails, try checking PATH environment variable
+        def path = System.getenv("PATH")
+        if (path == null) {
+            return false
+        }
+
+        def pathDirs = path.split(File.pathSeparator)
+        def foundCandle = false
+        def foundLight = false
+
+        for (dir in pathDirs) {
+            def candleFile = new File(dir, "candle.exe")
+            def lightFile = new File(dir, "light.exe")
+
+            if (candleFile.exists()) foundCandle = true
+            if (lightFile.exists()) foundLight = true
+
+            // Also check common WiX installation patterns
+            if (dir.toLowerCase().contains("wix")) {
+                def binDir = new File(dir)
+                if (binDir.exists()) {
+                    def candleInBin = new File(binDir, "candle.exe")
+                    def lightInBin = new File(binDir, "light.exe")
+                    if (candleInBin.exists()) foundCandle = true
+                    if (lightInBin.exists()) foundLight = true
+                }
+            }
+
+            if (foundCandle && foundLight) {
+                return true
+            }
+        }
+
+        return foundCandle && foundLight
+    }
+}
+
+// Print WiX not found message
+def printWixNotFoundMessage(String taskName) {
+    println ""
+    println "============================================"
+    println "WiX Toolset not found; skipping ${taskName}."
+    println "Install WiX 3.x from https://wixtoolset.org and add its bin folder to PATH."
+    println "============================================"
+    println ""
+}
+
 // Windows MSI installer
 task jpackageWinMsi(dependsOn: prepareJpackageInput) {
     group = 'distribution'
     description = 'Creates a Windows MSI installer using jpackage (requires WiX Toolset)'
 
     doLast {
+        // Check if WiX Toolset is available
+        if (!isWixAvailable()) {
+            printWixNotFoundMessage("Windows MSI installer build")
+            return
+        }
+
         def jpackage = findJpackage()
         def iconFile = file("${iconDir}/app-icon.ico")
 
@@ -170,9 +254,15 @@ task jpackageWinMsi(dependsOn: prepareJpackageInput) {
 // Windows EXE installer
 task jpackageWinExe(dependsOn: prepareJpackageInput) {
     group = 'distribution'
-    description = 'Creates a Windows EXE installer using jpackage'
+    description = 'Creates a Windows EXE installer using jpackage (requires WiX Toolset)'
 
     doLast {
+        // Check if WiX Toolset is available
+        if (!isWixAvailable()) {
+            printWixNotFoundMessage("Windows EXE installer build")
+            return
+        }
+
         def jpackage = findJpackage()
         def iconFile = file("${iconDir}/app-icon.ico")
 
@@ -428,27 +518,43 @@ task portableZip {
 // Frictionless Distribution Tasks
 // ============================================
 
-// Windows frictionless distribution: Portable ZIP + EXE installer
+// Windows frictionless distribution: Portable ZIP + EXE installer (if WiX available)
 task distWindowsFrictionless {
     group = 'distribution'
-    description = 'Creates Windows EXE installer + portable ZIP with bundled runtime'
+    description = 'Creates portable ZIP with bundled runtime, plus Windows EXE installer if WiX is available'
 
-    dependsOn jpackageAppImage, portableZip, jpackageWinExe
+    // Always depend on portable distribution (app-image + ZIP)
+    dependsOn jpackageAppImage, portableZip
+
+    // Conditionally depend on installer task - it will gracefully skip if WiX not available
+    dependsOn jpackageWinExe
 
     doLast {
+        def wixAvailable = isWixAvailable()
+
         println ""
         println "============================================"
         println "Windows Frictionless Distribution Complete!"
         println "============================================"
         println ""
         println "Created artifacts:"
-        println "  1. Portable ZIP: ${buildDir}/distributions/Control-Room-${version}-portable.zip"
+        println "  1. App Image: ${appImageDir}/${appName}"
+        println "     (Bundled application with Java runtime)"
+        println ""
+        println "  2. Portable ZIP: ${buildDir}/distributions/Control-Room-${version}-portable.zip"
         println "     (Extract and run Start-Control-Room.bat - no Java required)"
         println ""
-        println "  2. EXE Installer: ${jpackageOutputDir}/Control-Room-${version}.exe"
-        println "     (Double-click to install - creates shortcuts)"
-        println ""
-        println "Both include a bundled Java runtime - users need nothing else!"
+
+        if (wixAvailable) {
+            println "  3. EXE Installer: ${jpackageOutputDir}/Control Room-${version}.exe"
+            println "     (Double-click to install - creates shortcuts)"
+            println ""
+            println "All artifacts include a bundled Java runtime - users need nothing else!"
+        } else {
+            println "  Note: EXE/MSI installers were skipped (WiX Toolset not found)."
+            println "  To build installers, install WiX 3.x from https://wixtoolset.org"
+            println "  and add its bin folder to PATH."
+        }
         println "============================================"
     }
 }
@@ -529,9 +635,17 @@ task checkJpackage {
 
         def os = org.gradle.internal.os.OperatingSystem.current()
         if (os.isWindows()) {
-            println "Windows EXE: No additional tools required"
-            println "Windows MSI: WiX Toolset 3.0+ required"
-            println "             Download from: https://wixtoolset.org/"
+            println "Windows EXE/MSI: WiX Toolset 3.x required"
+            println "                 Download from: https://wixtoolset.org/"
+            println ""
+            def wixAvailable = isWixAvailable()
+            if (wixAvailable) {
+                println "WiX Toolset: FOUND (candle.exe and light.exe detected)"
+            } else {
+                println "WiX Toolset: NOT FOUND"
+                println "             EXE/MSI installer builds will be skipped."
+                println "             Portable ZIP and app-image will still be created."
+            }
         } else if (os.isMacOsX()) {
             println "macOS: Xcode command line tools required"
         } else if (os.isLinux()) {
