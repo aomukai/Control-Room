@@ -25,7 +25,8 @@
         searchResults: document.getElementById('search-results'),
         diffPreview: document.getElementById('diff-preview'),
         diffContent: document.getElementById('diff-content'),
-        closeDiff: document.getElementById('close-diff')
+        closeDiff: document.getElementById('close-diff'),
+        btnRevealFile: document.getElementById('btn-reveal-file')
     };
 
     // Initialize Split.js
@@ -302,6 +303,9 @@
         document.querySelectorAll('.tree-item').forEach(item => {
             item.classList.toggle('selected', item.dataset.path === path);
         });
+
+        // Update Reveal File button state
+        elements.btnRevealFile.disabled = !path;
     }
 
     function createTab(path) {
@@ -367,6 +371,7 @@
                 state.activeFile = null;
                 elements.editorPlaceholder.classList.remove('hidden');
                 elements.monacoEditor.classList.remove('active');
+                elements.btnRevealFile.disabled = true;
             }
         }
 
@@ -763,6 +768,25 @@
                 }
             } catch (err) {
                 log(`Failed to open workspace folder: ${err.message}`, 'error');
+            }
+        });
+
+        elements.btnRevealFile.addEventListener('click', async () => {
+            if (!state.activeFile) return;
+            log(`Revealing file: ${state.activeFile}`, 'info');
+            try {
+                const result = await api('/api/file/reveal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: state.activeFile })
+                });
+                if (result.ok) {
+                    log('File revealed in explorer', 'success');
+                } else {
+                    log(`Failed to reveal file: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                log(`Failed to reveal file: ${err.message}`, 'error');
             }
         });
 

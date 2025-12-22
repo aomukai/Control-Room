@@ -102,6 +102,7 @@ public class Main {
         app.get("/api/search", Main::search);
         app.post("/api/ai/chat", Main::aiChat);
         app.post("/api/workspace/open", Main::openWorkspace);
+        app.post("/api/file/reveal", Main::revealFile);
     }
 
     private static void registerExceptionHandlers(Javalin app) {
@@ -311,6 +312,51 @@ public class Main {
             ctx.json(Map.of("ok", true));
         } catch (Exception e) {
             logger.error("Failed to open workspace folder: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
+    private static void revealFile(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String path = json.has("path") ? json.get("path").asText() : null;
+
+            if (path == null || path.isEmpty()) {
+                ctx.json(Map.of("ok", false, "error", "Path is required"));
+                return;
+            }
+
+            // Use FileService.resolvePath for safety checks (no path traversal)
+            java.nio.file.Path absPath = fileService.resolvePath(path);
+
+            if (!java.nio.file.Files.exists(absPath)) {
+                ctx.json(Map.of("ok", false, "error", "File not found: " + path));
+                return;
+            }
+
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+
+            if (os.contains("win")) {
+                // Windows: explorer /select,"<path>"
+                pb = new ProcessBuilder("explorer.exe", "/select," + absPath.toString());
+            } else if (os.contains("mac")) {
+                // macOS: open -R "<path>"
+                pb = new ProcessBuilder("open", "-R", absPath.toString());
+            } else {
+                // Linux: xdg-open parent directory (reveal not standardized)
+                java.nio.file.Path parentDir = absPath.getParent();
+                pb = new ProcessBuilder("xdg-open", parentDir.toString());
+            }
+
+            pb.start();
+            logger.info("Revealed file in explorer: " + path);
+            ctx.json(Map.of("ok", true));
+        } catch (SecurityException e) {
+            logger.warn("Security violation in reveal: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to reveal file: " + e.getMessage());
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
         }
     }

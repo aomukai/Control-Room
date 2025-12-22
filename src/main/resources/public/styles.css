@@ -202,6 +202,8 @@ html, body {
 
 /* Tab Strip */
 #tab-strip {
+    display: flex;
+    align-items: center;
     background: var(--bg-medium);
     border-bottom: 2px solid var(--border-color);
     min-height: 40px;
@@ -227,6 +229,45 @@ html, body {
 #tabs-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 2px;
+}
+
+.tab-strip-actions {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    margin-left: auto;
+}
+
+.tab-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.tab-action-btn:hover:not(:disabled) {
+    background: var(--accent-color);
+    border-color: var(--accent-hover);
+}
+
+.tab-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tab-action-btn .btn-icon {
+    font-size: 14px;
+}
+
+.tab-action-btn .btn-text {
+    font-size: 11px;
 }
 
 .tab {
