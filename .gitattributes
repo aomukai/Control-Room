@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+*.java text eol=lf
+*.js   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.sh   text eol=lf
