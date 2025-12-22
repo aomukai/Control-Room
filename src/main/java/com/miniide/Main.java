@@ -101,6 +101,7 @@ public class Main {
         app.post("/api/rename", Main::renameFile);
         app.get("/api/search", Main::search);
         app.post("/api/ai/chat", Main::aiChat);
+        app.post("/api/workspace/open", Main::openWorkspace);
     }
 
     private static void registerExceptionHandlers(Javalin app) {
@@ -289,5 +290,28 @@ public class Main {
         return "That's an interesting thought! As your writing assistant, I'm here to help develop your story. " +
                "I can see you're working on a noir-style narrative set in Neo-Seattle. " +
                "Would you like me to help with character development, plot structure, or scene descriptions?";
+    }
+
+    private static void openWorkspace(Context ctx) {
+        try {
+            String workspacePath = fileService.getWorkspaceRoot().toString();
+            String os = System.getProperty("os.name").toLowerCase();
+
+            ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("explorer.exe", workspacePath);
+            } else if (os.contains("mac")) {
+                pb = new ProcessBuilder("open", workspacePath);
+            } else {
+                pb = new ProcessBuilder("xdg-open", workspacePath);
+            }
+
+            pb.start();
+            logger.info("Opened workspace folder: " + workspacePath);
+            ctx.json(Map.of("ok", true));
+        } catch (Exception e) {
+            logger.error("Failed to open workspace folder: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
     }
 }

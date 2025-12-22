@@ -19,6 +19,10 @@ public class FileService {
         initializeWorkspace();
     }
 
+    public Path getWorkspaceRoot() {
+        return workspaceRoot;
+    }
+
     private void initializeWorkspace() {
         try {
             if (!Files.exists(workspaceRoot)) {
@@ -149,10 +153,6 @@ public class FileService {
             "- `/notes` - Planning and worldbuilding notes\n\n" +
             "## Getting Started\n" +
             "Open any file to start editing. Use Ctrl+S to save.\n");
-    }
-
-    public Path getWorkspaceRoot() {
-        return workspaceRoot;
     }
 
     public Path resolvePath(String relativePath) {

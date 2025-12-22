@@ -752,6 +752,20 @@
             openFolder('notes');
         });
 
+        document.getElementById('btn-open-workspace').addEventListener('click', async () => {
+            log('Opening workspace folder...', 'info');
+            try {
+                const result = await api('/api/workspace/open', { method: 'POST' });
+                if (result.ok) {
+                    log('Workspace folder opened', 'success');
+                } else {
+                    log(`Failed to open workspace folder: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                log(`Failed to open workspace folder: ${err.message}`, 'error');
+            }
+        });
+
         document.getElementById('btn-new-file').addEventListener('click', () => promptNewFile('file'));
         document.getElementById('btn-new-folder').addEventListener('click', () => promptNewFile('folder'));
         document.getElementById('btn-refresh-tree').addEventListener('click', () => {
