@@ -1,84 +1,120 @@
-# Mini-IDE
+# Control Room
 
 A lightweight, Cursor-like writing IDE built as a Java + HTML desktop application. Designed for creative writers who want a distraction-free environment with AI assistance.
 
+---
+
 ## Features
 
-- **Monaco Editor**: Full-featured code/text editor with syntax highlighting
-- **File Management**: Browse, create, rename, and delete files/folders
-- **Tab System**: Open multiple files with dirty state tracking
-- **Resizable Panels**: Adjustable layout with persistent sizes
-- **Console**: Real-time logging of actions and API responses
-- **Search**: Full-text search across workspace files
-- **AI Chat**: Chat interface for writing assistance (stub implementation)
-- **AI Actions**: Preview, apply, or reject proposed changes
+* **Monaco Editor** – Full-featured text editor with syntax highlighting
+* **File Management** – Browse, create, rename, and delete files/folders
+* **Tab System** – Open multiple files with dirty state tracking
+* **Resizable Panels** – Adjustable layout with persistent sizes
+* **Console** – Real-time logging of actions and backend messages
+* **Search** – Full-text search across workspace files
+* **AI Chat (stub)** – Chat interface placeholder for future AI integration
+* **AI Actions (stub)** – Preview, apply, or reject proposed changes
+
+---
 
 ## Installation
 
 ### For End Users (No Java Required)
 
-**Windows Installer:**
-- Download `Mini-IDE-1.0.0.exe` from the releases page
-- Double-click to install
-- Creates Start Menu and Desktop shortcuts
-- Includes bundled Java runtime - no separate installation needed
+#### Windows Installer
 
-**Portable Version (Windows/macOS/Linux):**
-- Download `Mini-IDE-1.0.0-portable.zip`
-- Extract anywhere
-- Run:
-  - **Windows**: Double-click `Start-Mini-IDE.bat`
-  - **macOS**: Double-click `Mini-IDE.app` or run `./start.sh`
-  - **Linux**: Run `./start.sh` or `./Mini-IDE/bin/Mini-IDE`
-- Includes bundled Java runtime - no separate installation needed
+* Download the latest `Control-Room-<version>.exe` from the Releases page
+* Double-click to install
+* Creates Start Menu and Desktop shortcuts
+* Includes a bundled Java runtime (no separate Java installation required)
 
-### For Developers
+#### Portable Version (Windows / macOS / Linux)
 
-Requirements:
-- Java 17+ JDK
-- Gradle (or use included wrapper)
+* Download `Control-Room-<version>-portable.zip`
+* Extract anywhere
+* Run:
+
+  * **Windows**: double-click the included launcher (e.g. `Start-Control-Room.bat`, if present)
+  * **macOS / Linux**: run `./start.sh`
+
+> Portable means *no installer and bundled runtime*. User data is still stored in your Documents folder by default.
+
+---
+
+## For Developers
+
+### Requirements
+
+* Java 17+ JDK
+* Gradle (or use the included Gradle wrapper)
+
+### Run from Source
 
 ```bash
-# Clone and run
-git clone <repository>
-cd mini-ide
-./gradlew run        # Linux/macOS
+git clone <repository-url>
+cd control-room
+./gradlew run        # Linux / macOS
 gradlew.bat run      # Windows
 ```
 
-Or double-click `run.bat` on Windows for development mode.
+On Windows, you can also double-click `run.bat`.
+
+---
 
 ## Usage
 
 ### Workspace Location
 
-By default, Mini-IDE stores your files in:
-- **Windows**: `%USERPROFILE%\Documents\Mini-IDE\workspace`
-- **macOS**: `~/Documents/Mini-IDE/workspace`
-- **Linux**: `~/Mini-IDE/workspace`
+By default, Control Room stores user files in:
 
-On first run, sample files are created to help you get started.
+* **Windows**: `%USERPROFILE%\\Documents\\Control-Room\\workspace`
+* **macOS**: `~/Documents/Control-Room/workspace`
+* **Linux**: `~/Control-Room/workspace`
+
+The workspace is created automatically on first run.
+
+### Bundled Sample Workspace (Repository Only)
+
+This repository contains example content under:
+
+```
+sample-workspace/
+```
+
+This folder is **not used directly by the application** at runtime. It exists solely as:
+
+* reference content
+* demo files
+* a starting point for developers and contributors
+
+The actual workspace used by the application always lives in the user’s Documents folder unless explicitly overridden via command-line arguments.
+
+---
 
 ### Keyboard Shortcuts
 
-- **Ctrl+S**: Save current file
+* **Ctrl + S** – Save current file
+
+---
 
 ### Log Files
 
-Logs are stored in:
-- **Windows**: `%APPDATA%\Mini-IDE\logs\mini-ide.log`
-- **macOS**: `~/Library/Logs/Mini-IDE/mini-ide.log`
-- **Linux**: `~/.local/share/Mini-IDE/logs/mini-ide.log`
+Logs are written to:
+
+* **Windows**: `%APPDATA%\\Control-Room\\logs\\control-room.log`
+* **macOS**: `~/Library/Logs/Control-Room/control-room.log`
+* **Linux**: `~/.local/share/Control-Room/logs/control-room.log`
+
+---
 
 ## Building Distributions
 
 ### Prerequisites
 
-1. **Java 17+ JDK** with jpackage (included in JDK 17+)
-2. **WiX Toolset 3.0+** (Windows only, for MSI creation - EXE works without it)
-   - Download from: https://wixtoolset.org/
+1. Java 17+ JDK with `jpackage` (included in standard JDK distributions)
+2. **Windows only (optional)**: WiX Toolset 3.x for MSI generation
 
-### Check Requirements
+### Check Environment
 
 ```bash
 ./gradlew checkJpackage
@@ -87,160 +123,130 @@ Logs are stored in:
 ### Build Commands
 
 ```bash
-# === Recommended for Windows ===
+# Recommended (Windows)
 ./gradlew distWindowsFrictionless
-# Creates:
-#   - build/distributions/Mini-IDE-1.0.0-portable.zip (bundled runtime)
-#   - build/installer/Mini-IDE-1.0.0.exe (installer)
 
-# === Portable ZIP with bundled runtime ===
+# Portable ZIP (bundled runtime)
 ./gradlew dist
-# Creates: build/distributions/Mini-IDE-1.0.0-portable.zip
 
-# === Individual Installers ===
-./gradlew jpackageWinExe     # Windows EXE installer
-./gradlew jpackageWinMsi     # Windows MSI installer (requires WiX)
-./gradlew jpackageMacDmg     # macOS DMG
-./gradlew jpackageLinuxDeb   # Linux DEB package
+# Individual installers
+./gradlew jpackageWinExe
+./gradlew jpackageWinMsi   # requires WiX
+./gradlew jpackageMacDmg
+./gradlew jpackageLinuxDeb
 
-# === App Image (bundled runtime, no installer) ===
+# App image (no installer)
 ./gradlew jpackageAppImage
 ```
 
 ### Output Locations
 
-| Artifact | Location |
-|----------|----------|
-| Portable ZIP | `build/distributions/Mini-IDE-1.0.0-portable.zip` |
-| Windows EXE | `build/installer/Mini-IDE-1.0.0.exe` |
-| Windows MSI | `build/installer/Mini-IDE-1.0.0.msi` |
-| App Image | `build/app-image/Mini-IDE/` |
+| Artifact     | Location                                                  |
+| ------------ | --------------------------------------------------------- |
+| Portable ZIP | `build/distributions/Control-Room-<version>-portable.zip` |
+| Windows EXE  | `build/installer/Control-Room-<version>.exe`              |
+| Windows MSI  | `build/installer/Control-Room-<version>.msi`              |
+| App Image    | `build/app-image/Control-Room/`                           |
 
-### What's in the Portable ZIP?
+---
 
-```
-Mini-IDE-1.0.0-portable/
-├── Start-Mini-IDE.bat    # Windows launcher (double-click)
-├── start.sh              # macOS/Linux launcher
-├── README.txt            # Quick start guide
-└── Mini-IDE/             # App with bundled Java runtime
-    ├── Mini-IDE.exe      # Main executable (Windows)
-    └── runtime/          # Bundled JRE (no system Java needed)
-```
-
-## Developer Command Line Options
+## Command-Line Options (Developer Mode)
 
 ```bash
-# Specify custom workspace
-./gradlew run --args="--workspace /path/to/workspace"
+--workspace <path>   # use a custom workspace directory
+--port <number>     # specify server port
+--dev               # enable development mode logging
+```
 
-# Specify custom port
-./gradlew run --args="--port 3000"
+Example:
 
-# Development mode (console logging enabled)
-./gradlew run --args="--dev"
-
-# Combine options
+```bash
 ./gradlew run --args="--workspace ./my-project --port 9000 --dev"
 ```
+
+---
 
 ## Project Structure
 
 ```
-mini-ide/
-├── build.gradle                 # Build configuration with jpackage
+control-room/
+├── build.gradle
 ├── settings.gradle
-├── run.bat / run.sh            # Development launch scripts
+├── run.bat / run.sh
 ├── README.md
+├── sample-workspace/
 ├── src/main/
 │   ├── java/com/miniide/
-│   │   ├── Main.java           # Application entry point
-│   │   ├── AppConfig.java      # Configuration handling
-│   │   ├── AppLogger.java      # Logging utility
-│   │   ├── BrowserLauncher.java # Cross-platform browser opening
-│   │   ├── FileService.java    # File operations
+│   │   ├── Main.java
+│   │   ├── AppConfig.java
+│   │   ├── AppLogger.java
+│   │   ├── BrowserLauncher.java
+│   │   ├── FileService.java
 │   │   └── models/
 │   │       ├── FileNode.java
 │   │       └── SearchResult.java
 │   └── resources/
-│       ├── public/             # Frontend files
+│       ├── public/
 │       │   ├── index.html
 │       │   ├── styles.css
 │       │   └── app.js
-│       └── icons/              # Application icons
+│       └── icons/
 │           └── ICON-README.md
-└── gradle/wrapper/             # Gradle wrapper
+└── gradle/wrapper/
 ```
+
+> Note: Java package names still use `com.miniide` internally. This is cosmetic and may be renamed later.
+
+---
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/tree` | Get workspace file tree |
-| GET | `/api/file?path=...` | Read file contents |
-| PUT | `/api/file?path=...` | Save file contents |
-| POST | `/api/file` | Create file/folder |
-| DELETE | `/api/file?path=...` | Delete file/folder |
-| POST | `/api/rename` | Rename/move file |
-| GET | `/api/search?q=...` | Search files |
-| POST | `/api/ai/chat` | AI chat (stub) |
+| Method | Endpoint             | Description             |
+| ------ | -------------------- | ----------------------- |
+| GET    | `/api/tree`          | Get workspace file tree |
+| GET    | `/api/file?path=...` | Read file               |
+| PUT    | `/api/file?path=...` | Save file               |
+| POST   | `/api/file`          | Create file or folder   |
+| DELETE | `/api/file?path=...` | Delete file or folder   |
+| POST   | `/api/rename`        | Rename or move file     |
+| GET    | `/api/search?q=...`  | Search workspace        |
+| POST   | `/api/ai/chat`       | AI chat (stub)          |
 
-## Tech Stack
-
-- **Backend**: Java 17 + Javalin 5
-- **JSON**: Jackson
-- **Build**: Gradle with jpackage
-- **Frontend**: Vanilla HTML/CSS/JS
-- **Editor**: Monaco Editor (via CDN)
-- **Layout**: Split.js (via CDN)
-
-## Customizing Icons
-
-To add custom application icons:
-
-1. Create icon files in `src/main/resources/icons/`:
-   - `app-icon.ico` (Windows, 256x256 multi-resolution)
-   - `app-icon.icns` (macOS, 512x512 or 1024x1024)
-   - `app-icon.png` (Linux, 256x256)
-
-2. See `src/main/resources/icons/ICON-README.md` for detailed instructions.
+---
 
 ## Security Notes
 
-This application is designed for **local use only**:
-- No authentication
-- Full filesystem access within workspace
-- Should not be exposed to the internet
+* Designed for **local use only**
+* No authentication
+* Full access within the workspace directory
+* Not intended to be exposed to the internet
 
-Path traversal is prevented by validating all paths stay within the workspace root.
+All paths are validated to prevent directory traversal outside the workspace root.
+
+---
 
 ## Troubleshooting
 
 ### Port Already in Use
 
-Mini-IDE automatically finds an available port if 8080 is busy. Check the console output or log file for the actual URL.
+If port 8080 is unavailable, Control Room automatically selects a free port. Check the console output for the actual URL.
 
-### Browser Doesn't Open
+### Browser Does Not Open
 
-The browser should open automatically. If not:
-1. Check the console/log for the URL
-2. Open manually: http://localhost:8080/
+* Check the console or log file for the URL
+* Open manually in a browser (e.g. `http://localhost:8080/`)
 
-### Java Not Found (Developer Mode)
+### Java Errors (Developer Mode)
 
-For development, ensure Java 17+ JDK is installed:
+Ensure Java 17+ is installed:
+
 ```bash
-java -version  # Should show 17+
+java -version
 ```
 
-Note: End users don't need Java - it's bundled in the portable ZIP and installers.
+End users do **not** need Java; it is bundled with releases.
 
-### jpackage Fails
-
-1. Run `./gradlew checkJpackage` to diagnose
-2. Windows EXE works without extra tools
-3. Windows MSI requires WiX Toolset
-4. Ensure you're using JDK (not JRE)
+---
 
 ## License
 
