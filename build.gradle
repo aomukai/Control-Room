@@ -1,0 +1,563 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.miniide'
+version = '1.0.0'
+
+// Application metadata
+ext {
+    appName = 'Mini-IDE'
+    appVendor = 'Mini-IDE'
+    appDescription = 'A lightweight writing IDE with AI assistance'
+    mainClassName = 'com.miniide.Main'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'io.javalin:javalin:5.6.3'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.3'
+    implementation 'org.slf4j:slf4j-simple:2.0.9'
+}
+
+application {
+    mainClass = mainClassName
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+// Fat JAR for distribution
+jar {
+    manifest {
+        attributes(
+            'Main-Class': mainClassName,
+            'Implementation-Title': appName,
+            'Implementation-Version': version
+        )
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveBaseName = 'mini-ide'
+    archiveClassifier = 'all'
+}
+
+// Create a clean fat jar without classifier for jpackage
+task fatJar(type: Jar) {
+    manifest {
+        attributes(
+            'Main-Class': mainClassName,
+            'Implementation-Title': appName,
+            'Implementation-Version': version
+        )
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    with jar
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveBaseName = 'mini-ide'
+    archiveClassifier = ''
+    destinationDirectory = file("${buildDir}/libs")
+}
+
+// Development run task
+run {
+    standardInput = System.in
+    args '--dev'
+}
+
+// ============================================
+// jpackage Configuration
+// ============================================
+
+// Directory for jpackage input (the fat jar)
+def jpackageInputDir = "${buildDir}/jpackage-input"
+def jpackageOutputDir = "${buildDir}/installer"
+def appImageDir = "${buildDir}/app-image"
+def iconDir = "${projectDir}/src/main/resources/icons"
+def launchersDir = "${buildDir}/launchers"
+
+// Prepare input directory for jpackage
+task prepareJpackageInput(dependsOn: fatJar) {
+    doLast {
+        delete jpackageInputDir
+        mkdir jpackageInputDir
+        copy {
+            from fatJar.archiveFile
+            into jpackageInputDir
+        }
+    }
+}
+
+// Detect jpackage location
+def findJpackage() {
+    def javaHome = System.getProperty('java.home')
+    def jpackagePath = "${javaHome}/bin/jpackage"
+    if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+        jpackagePath += '.exe'
+    }
+    def jpackageFile = file(jpackagePath)
+    if (jpackageFile.exists()) {
+        return jpackageFile.absolutePath
+    }
+    // Try JAVA_HOME environment variable
+    def envJavaHome = System.getenv('JAVA_HOME')
+    if (envJavaHome) {
+        jpackagePath = "${envJavaHome}/bin/jpackage"
+        if (org.gradle.internal.os.OperatingSystem.current().isWindows()) {
+            jpackagePath += '.exe'
+        }
+        jpackageFile = file(jpackagePath)
+        if (jpackageFile.exists()) {
+            return jpackageFile.absolutePath
+        }
+    }
+    return 'jpackage' // Assume it's on PATH
+}
+
+// Windows MSI installer
+task jpackageWinMsi(dependsOn: prepareJpackageInput) {
+    group = 'distribution'
+    description = 'Creates a Windows MSI installer using jpackage (requires WiX Toolset)'
+
+    doLast {
+        def jpackage = findJpackage()
+        def iconFile = file("${iconDir}/app-icon.ico")
+
+        mkdir jpackageOutputDir
+
+        def args = [
+            jpackage,
+            '--type', 'msi',
+            '--input', jpackageInputDir,
+            '--dest', jpackageOutputDir,
+            '--name', appName,
+            '--main-jar', "mini-ide-${version}.jar",
+            '--main-class', mainClassName,
+            '--app-version', version,
+            '--vendor', appVendor,
+            '--description', appDescription,
+            '--win-menu',
+            '--win-shortcut',
+            '--win-dir-chooser',
+            '--win-menu-group', appName
+        ]
+
+        if (iconFile.exists()) {
+            args += ['--icon', iconFile.absolutePath]
+        }
+
+        exec {
+            commandLine args
+        }
+        println "MSI installer created in: ${jpackageOutputDir}"
+    }
+}
+
+// Windows EXE installer
+task jpackageWinExe(dependsOn: prepareJpackageInput) {
+    group = 'distribution'
+    description = 'Creates a Windows EXE installer using jpackage'
+
+    doLast {
+        def jpackage = findJpackage()
+        def iconFile = file("${iconDir}/app-icon.ico")
+
+        mkdir jpackageOutputDir
+
+        def args = [
+            jpackage,
+            '--type', 'exe',
+            '--input', jpackageInputDir,
+            '--dest', jpackageOutputDir,
+            '--name', appName,
+            '--main-jar', "mini-ide-${version}.jar",
+            '--main-class', mainClassName,
+            '--app-version', version,
+            '--vendor', appVendor,
+            '--description', appDescription,
+            '--win-menu',
+            '--win-shortcut',
+            '--win-dir-chooser',
+            '--win-menu-group', appName
+        ]
+
+        if (iconFile.exists()) {
+            args += ['--icon', iconFile.absolutePath]
+        }
+
+        exec {
+            commandLine args
+        }
+        println "EXE installer created in: ${jpackageOutputDir}"
+    }
+}
+
+// macOS DMG package
+task jpackageMacDmg(dependsOn: prepareJpackageInput) {
+    group = 'distribution'
+    description = 'Creates a macOS DMG package using jpackage'
+
+    doLast {
+        def jpackage = findJpackage()
+        def iconFile = file("${iconDir}/app-icon.icns")
+
+        mkdir jpackageOutputDir
+
+        def args = [
+            jpackage,
+            '--type', 'dmg',
+            '--input', jpackageInputDir,
+            '--dest', jpackageOutputDir,
+            '--name', appName,
+            '--main-jar', "mini-ide-${version}.jar",
+            '--main-class', mainClassName,
+            '--app-version', version,
+            '--vendor', appVendor,
+            '--description', appDescription
+        ]
+
+        if (iconFile.exists()) {
+            args += ['--icon', iconFile.absolutePath]
+        }
+
+        exec {
+            commandLine args
+        }
+        println "DMG package created in: ${jpackageOutputDir}"
+    }
+}
+
+// Linux DEB package
+task jpackageLinuxDeb(dependsOn: prepareJpackageInput) {
+    group = 'distribution'
+    description = 'Creates a Linux DEB package using jpackage'
+
+    doLast {
+        def jpackage = findJpackage()
+        def iconFile = file("${iconDir}/app-icon.png")
+
+        mkdir jpackageOutputDir
+
+        def args = [
+            jpackage,
+            '--type', 'deb',
+            '--input', jpackageInputDir,
+            '--dest', jpackageOutputDir,
+            '--name', appName.toLowerCase().replace(' ', '-'),
+            '--main-jar', "mini-ide-${version}.jar",
+            '--main-class', mainClassName,
+            '--app-version', version,
+            '--vendor', appVendor,
+            '--description', appDescription,
+            '--linux-shortcut',
+            '--linux-menu-group', 'Development'
+        ]
+
+        if (iconFile.exists()) {
+            args += ['--icon', iconFile.absolutePath]
+        }
+
+        exec {
+            commandLine args
+        }
+        println "DEB package created in: ${jpackageOutputDir}"
+    }
+}
+
+// App image (no installer, just bundled runtime)
+task jpackageAppImage(dependsOn: prepareJpackageInput) {
+    group = 'distribution'
+    description = 'Creates an app-image with bundled Java runtime'
+
+    doLast {
+        def jpackage = findJpackage()
+        def isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows()
+        def isMac = org.gradle.internal.os.OperatingSystem.current().isMacOsX()
+        def iconFile = file(isWindows ? "${iconDir}/app-icon.ico" :
+                           (isMac ? "${iconDir}/app-icon.icns" : "${iconDir}/app-icon.png"))
+
+        // Clean and create output directory
+        delete appImageDir
+        mkdir appImageDir
+
+        def args = [
+            jpackage,
+            '--type', 'app-image',
+            '--input', jpackageInputDir,
+            '--dest', appImageDir,
+            '--name', appName,
+            '--main-jar', "mini-ide-${version}.jar",
+            '--main-class', mainClassName,
+            '--app-version', version,
+            '--vendor', appVendor,
+            '--description', appDescription
+        ]
+
+        if (iconFile.exists()) {
+            args += ['--icon', iconFile.absolutePath]
+        }
+
+        exec {
+            commandLine args
+        }
+        println "App image created in: ${appImageDir}/${appName}"
+    }
+}
+
+// ============================================
+// Portable Distribution (Bundled Runtime)
+// ============================================
+
+// Create launcher scripts for portable distribution
+task createPortableLaunchers {
+    group = 'distribution'
+    description = 'Creates launcher scripts for portable distribution'
+
+    doLast {
+        delete launchersDir
+        mkdir launchersDir
+
+        // Windows launcher - Start-Mini-IDE.bat
+        def winLauncher = file("${launchersDir}/Start-Mini-IDE.bat")
+        winLauncher.text = '''\
+@echo off
+title Mini-IDE
+cd /d "%~dp0"
+start "" "Mini-IDE\\Mini-IDE.exe"
+'''
+
+        // Unix launcher - start.sh (for macOS and Linux)
+        def unixLauncher = file("${launchersDir}/start.sh")
+        unixLauncher.text = '''\
+#!/bin/bash
+cd "$(dirname "$0")"
+if [ -d "Mini-IDE.app" ]; then
+    # macOS
+    open "Mini-IDE.app"
+elif [ -d "Mini-IDE" ]; then
+    # Linux
+    ./Mini-IDE/bin/Mini-IDE &
+else
+    echo "Error: Mini-IDE application not found"
+    exit 1
+fi
+'''
+
+        // README for portable distribution
+        def readmeFile = file("${launchersDir}/README.txt")
+        readmeFile.text = """\
+Mini-IDE ${version} - Portable Edition
+======================================
+
+This is a portable version of Mini-IDE with a bundled Java runtime.
+No Java installation is required to run this application.
+
+WINDOWS:
+  Double-click "Start-Mini-IDE.bat" to launch the application.
+  Or run "Mini-IDE\\Mini-IDE.exe" directly.
+
+MACOS:
+  Double-click "Mini-IDE.app" or run "./start.sh" in Terminal.
+
+LINUX:
+  Run "./start.sh" or "./Mini-IDE/bin/Mini-IDE" in a terminal.
+
+Your workspace will be created at:
+  Windows: %USERPROFILE%\\Documents\\Mini-IDE\\workspace
+  macOS:   ~/Documents/Mini-IDE/workspace
+  Linux:   ~/Mini-IDE/workspace
+
+For more information, visit the project documentation.
+"""
+    }
+}
+
+// Create truly portable ZIP with bundled runtime
+task distPortableZip(type: Zip, dependsOn: [jpackageAppImage, createPortableLaunchers]) {
+    group = 'distribution'
+    description = 'Creates a portable ZIP distribution with bundled Java runtime (no Java required)'
+
+    archiveBaseName = 'Mini-IDE'
+    archiveVersion = version
+    archiveClassifier = 'portable'
+    destinationDirectory = file("${buildDir}/distributions")
+
+    // Include the app-image (bundled runtime)
+    from(appImageDir) {
+        into ''
+    }
+
+    // Include launcher scripts
+    from(launchersDir) {
+        include 'Start-Mini-IDE.bat'
+        include 'start.sh'
+        include 'README.txt'
+        into ''
+        // Make shell script executable
+        fileMode 0755
+    }
+
+    doLast {
+        println "Portable ZIP created: ${archiveFile.get().asFile.absolutePath}"
+        println "This ZIP includes a bundled Java runtime - no Java installation required!"
+    }
+}
+
+// Alias for portable distribution
+task portableZip {
+    group = 'distribution'
+    description = 'Creates a portable ZIP distribution with bundled Java runtime'
+    dependsOn distPortableZip
+}
+
+// ============================================
+// Frictionless Distribution Tasks
+// ============================================
+
+// Windows frictionless distribution: Portable ZIP + EXE installer
+task distWindowsFrictionless {
+    group = 'distribution'
+    description = 'Creates Windows EXE installer + portable ZIP with bundled runtime'
+
+    dependsOn jpackageAppImage, portableZip, jpackageWinExe
+
+    doLast {
+        println ""
+        println "============================================"
+        println "Windows Frictionless Distribution Complete!"
+        println "============================================"
+        println ""
+        println "Created artifacts:"
+        println "  1. Portable ZIP: ${buildDir}/distributions/Mini-IDE-${version}-portable.zip"
+        println "     (Extract and run Start-Mini-IDE.bat - no Java required)"
+        println ""
+        println "  2. EXE Installer: ${jpackageOutputDir}/Mini-IDE-${version}.exe"
+        println "     (Double-click to install - creates shortcuts)"
+        println ""
+        println "Both include a bundled Java runtime - users need nothing else!"
+        println "============================================"
+    }
+}
+
+// Full distribution for current platform
+task dist {
+    group = 'distribution'
+    description = 'Creates portable ZIP with bundled runtime for current platform'
+
+    dependsOn distPortableZip
+
+    doLast {
+        def os = org.gradle.internal.os.OperatingSystem.current()
+        println ""
+        println "============================================"
+        println "Distribution Complete!"
+        println "============================================"
+        println ""
+        println "Portable ZIP: ${buildDir}/distributions/Mini-IDE-${version}-portable.zip"
+        println ""
+
+        if (os.isWindows()) {
+            println "For Windows installer, also run:"
+            println "  ./gradlew jpackageWinExe   (EXE installer)"
+            println "  ./gradlew jpackageWinMsi   (MSI installer, requires WiX)"
+            println ""
+            println "Or for both portable + installer:"
+            println "  ./gradlew distWindowsFrictionless"
+        } else if (os.isMacOsX()) {
+            println "For macOS installer, also run:"
+            println "  ./gradlew jpackageMacDmg"
+        } else if (os.isLinux()) {
+            println "For Linux package, also run:"
+            println "  ./gradlew jpackageLinuxDeb"
+        }
+        println "============================================"
+    }
+}
+
+// ============================================
+// Helper Tasks
+// ============================================
+
+// Print jpackage requirements
+task checkJpackage {
+    group = 'help'
+    description = 'Checks jpackage availability and requirements'
+
+    doLast {
+        println "=== jpackage Requirements Check ==="
+        println ""
+        println "Java Version: ${System.getProperty('java.version')}"
+        println "Java Home: ${System.getProperty('java.home')}"
+        println ""
+
+        def jpackage = findJpackage()
+        def jpackageFile = file(jpackage)
+        if (jpackageFile.exists() || jpackage == 'jpackage') {
+            println "jpackage: ${jpackage}"
+            try {
+                def result = new ByteArrayOutputStream()
+                exec {
+                    commandLine jpackage, '--version'
+                    standardOutput = result
+                    errorOutput = result
+                    ignoreExitValue = true
+                }
+                println "jpackage version: ${result.toString().trim()}"
+            } catch (Exception e) {
+                println "jpackage: Not found or not executable"
+            }
+        } else {
+            println "jpackage: NOT FOUND"
+        }
+
+        println ""
+        println "=== Platform-specific Requirements ==="
+
+        def os = org.gradle.internal.os.OperatingSystem.current()
+        if (os.isWindows()) {
+            println "Windows EXE: No additional tools required"
+            println "Windows MSI: WiX Toolset 3.0+ required"
+            println "             Download from: https://wixtoolset.org/"
+        } else if (os.isMacOsX()) {
+            println "macOS: Xcode command line tools required"
+        } else if (os.isLinux()) {
+            println "Linux: fakeroot and rpm-build packages may be required"
+        }
+
+        println ""
+        println "=== Recommended Commands ==="
+        println ""
+        if (os.isWindows()) {
+            println "./gradlew distWindowsFrictionless"
+            println "  Creates: Portable ZIP + Windows EXE installer"
+        } else {
+            println "./gradlew dist"
+            println "  Creates: Portable ZIP with bundled runtime"
+        }
+    }
+}
+
+// Clean distribution artifacts
+task cleanDist(type: Delete) {
+    group = 'build'
+    description = 'Cleans distribution artifacts'
+    delete "${buildDir}/distributions"
+    delete "${buildDir}/installer"
+    delete "${buildDir}/app-image"
+    delete "${buildDir}/jpackage-input"
+    delete "${buildDir}/launchers"
+}

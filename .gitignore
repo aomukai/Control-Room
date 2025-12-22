@@ -1,0 +1,13 @@
+# Gradle
+.gradle/
+build/
+
+# Logs
+*.log
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# IDE configs (optional)
+.vscode/

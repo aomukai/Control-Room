@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini-IDE</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Monaco Editor -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/editor/editor.main.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Left Sidebar -->
+        <div id="left-sidebar">
+            <div class="sidebar-header">Mini-IDE</div>
+            <div class="sidebar-buttons">
+                <button class="sidebar-btn" id="btn-commit" title="Commit (Save All)">
+                    <span class="btn-icon">💾</span>
+                    <span class="btn-text">Commit (Save)</span>
+                </button>
+                <button class="sidebar-btn" id="btn-scenes" title="Scenes">
+                    <span class="btn-icon">🎬</span>
+                    <span class="btn-text">Scenes</span>
+                </button>
+                <button class="sidebar-btn" id="btn-chars" title="Characters">
+                    <span class="btn-icon">👤</span>
+                    <span class="btn-text">Chars</span>
+                </button>
+                <button class="sidebar-btn" id="btn-etc" title="More">
+                    <span class="btn-icon">📁</span>
+                    <span class="btn-text">Etc</span>
+                </button>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="file-tree-header">
+                Files
+                <div class="tree-actions">
+                    <button class="tree-action-btn" id="btn-new-file" title="New File">+📄</button>
+                    <button class="tree-action-btn" id="btn-new-folder" title="New Folder">+📁</button>
+                    <button class="tree-action-btn" id="btn-refresh-tree" title="Refresh">🔄</button>
+                </div>
+            </div>
+            <div id="file-tree"></div>
+        </div>
+
+        <!-- Main Split Container -->
+        <div id="main-container">
+            <!-- Horizontal Split: Main Area and Chat Panel -->
+            <div id="main-split">
+                <!-- Center Area (Editor + Bottom Console) -->
+                <div id="center-area">
+                    <!-- Top Tab Strip -->
+                    <div id="tab-strip">
+                        <div class="tab-strip-label">file Navigation (open files tabs)</div>
+                        <div id="tabs-container"></div>
+                    </div>
+
+                    <!-- Vertical Split: Editor and Console -->
+                    <div id="editor-console-split">
+                        <!-- Editor Area -->
+                        <div id="editor-area">
+                            <div id="editor-placeholder">
+                                <div class="placeholder-text">
+                                    <h2>Welcome to Mini-IDE</h2>
+                                    <p>Select a file from the sidebar to start editing</p>
+                                    <p class="shortcut">Ctrl+S to save</p>
+                                </div>
+                            </div>
+                            <div id="monaco-editor"></div>
+                        </div>
+
+                        <!-- Bottom Console -->
+                        <div id="bottom-console">
+                            <div class="console-tabs">
+                                <button class="console-tab active" data-tab="console">Console</button>
+                                <button class="console-tab" data-tab="ai-actions">AI Actions</button>
+                                <button class="console-tab" data-tab="search">Search</button>
+                            </div>
+                            <div class="console-content">
+                                <!-- Console Tab -->
+                                <div id="console-panel" class="console-panel active">
+                                    <div id="console-output"></div>
+                                </div>
+
+                                <!-- AI Actions Tab -->
+                                <div id="ai-actions-panel" class="console-panel">
+                                    <div class="ai-actions-header">Proposed Changes</div>
+                                    <div id="ai-actions-list">
+                                        <div class="ai-action-item">
+                                            <div class="ai-action-info">
+                                                <span class="ai-action-file">scenes/intro.md</span>
+                                                <span class="ai-action-desc">Add more sensory details to the coffee shop scene</span>
+                                            </div>
+                                            <div class="ai-action-buttons">
+                                                <button class="ai-action-btn preview" data-action="preview-1">Preview</button>
+                                                <button class="ai-action-btn apply" data-action="apply-1">Apply</button>
+                                                <button class="ai-action-btn reject" data-action="reject-1">Reject</button>
+                                            </div>
+                                        </div>
+                                        <div class="ai-action-item">
+                                            <div class="ai-action-info">
+                                                <span class="ai-action-file">chars/mara.md</span>
+                                                <span class="ai-action-desc">Expand character backstory section</span>
+                                            </div>
+                                            <div class="ai-action-buttons">
+                                                <button class="ai-action-btn preview" data-action="preview-2">Preview</button>
+                                                <button class="ai-action-btn apply" data-action="apply-2">Apply</button>
+                                                <button class="ai-action-btn reject" data-action="reject-2">Reject</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="diff-preview" class="hidden">
+                                        <div class="diff-header">
+                                            <span>Diff Preview</span>
+                                            <button id="close-diff">×</button>
+                                        </div>
+                                        <pre id="diff-content"></pre>
+                                    </div>
+                                </div>
+
+                                <!-- Search Tab -->
+                                <div id="search-panel" class="console-panel">
+                                    <div class="search-input-container">
+                                        <input type="text" id="search-input" placeholder="Search in workspace...">
+                                        <button id="search-btn">Search</button>
+                                    </div>
+                                    <div id="search-results"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Chat Panel -->
+                <div id="chat-panel">
+                    <div class="chat-header">Chat with AI</div>
+                    <div id="chat-history"></div>
+                    <div class="chat-input-container">
+                        <textarea id="chat-input" placeholder="Ask the AI assistant..."></textarea>
+                        <button id="chat-send">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/split.js/1.6.5/split.min.js"></script>
+    <script>
+        // Load Monaco
+        var require = { paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' } };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/editor/editor.main.nls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/editor/editor.main.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
