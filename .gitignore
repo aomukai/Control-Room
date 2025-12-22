@@ -1,13 +1,16 @@
 # Gradle
 .gradle/
+**/.gradle/
+
+# Build output
 build/
+**/build/
 
-# Logs
-*.log
+# IDE
+.idea/
+.vscode/
+*.iml
 
-# OS / editor junk
+# OS
 .DS_Store
 Thumbs.db
-
-# IDE configs (optional)
-.vscode/
