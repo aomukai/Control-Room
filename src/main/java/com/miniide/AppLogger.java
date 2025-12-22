@@ -32,7 +32,7 @@ public class AppLogger {
         String separator = "=".repeat(60);
         fileOutput.println();
         fileOutput.println(separator);
-        fileOutput.println("Mini-IDE Started at " + LocalDateTime.now().format(TIME_FORMAT));
+        fileOutput.println("Control Room Started at " + LocalDateTime.now().format(TIME_FORMAT));
         fileOutput.println(separator);
     }
 

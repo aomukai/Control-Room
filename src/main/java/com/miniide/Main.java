@@ -75,7 +75,7 @@ public class Main {
             }));
 
         } catch (Exception e) {
-            System.err.println("Failed to start Mini-IDE: " + e.getMessage());
+            System.err.println("Failed to start Control Room: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
         }
@@ -84,7 +84,7 @@ public class Main {
     private static void printBanner(AppConfig config) {
         logger.console("");
         logger.console("========================================");
-        logger.console("  Mini-IDE v" + VERSION);
+        logger.console("  Control Room v" + VERSION);
         logger.console("========================================");
         logger.console("  Starting server...");
         if (config.isDevMode()) {

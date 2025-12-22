@@ -1,4 +1,4 @@
-// Mini-IDE Application
+// Control Room Application
 (function() {
     'use strict';
 
@@ -815,7 +815,7 @@
 
     // Initialize
     function init() {
-        log('Mini-IDE starting...', 'info');
+        log('Control Room starting...', 'info');
 
         initSplitters();
         initMonaco();
@@ -828,7 +828,7 @@
         // Welcome message in chat
         addChatMessage('assistant', 'Hello! I\'m your AI writing assistant. How can I help you with your creative writing project today?');
 
-        log('Mini-IDE ready!', 'success');
+        log('Control Room ready!', 'success');
     }
 
     // Start when DOM is ready

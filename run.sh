@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Mini-IDE - Starting..."
+echo "Control Room - Starting..."
 echo
 
 # Check if gradle-wrapper.jar exists

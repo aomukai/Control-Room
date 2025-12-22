@@ -46,7 +46,7 @@ convert source.png -resize 256x256 app-icon.png
 
 ## Suggested Icon Design
 
-For Mini-IDE, consider an icon that represents:
+For Control Room, consider an icon that represents:
 - A document/text editor (page with lines)
 - Writing/creativity (pen, quill)
 - Code/IDE aesthetic (brackets, terminal)

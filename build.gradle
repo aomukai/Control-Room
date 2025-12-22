@@ -8,8 +8,8 @@ version = '1.0.0'
 
 // Application metadata
 ext {
-    appName = 'Mini-IDE'
-    appVendor = 'Mini-IDE'
+    appName = 'Control Room'
+    appVendor = 'Control Room'
     appDescription = 'A lightweight writing IDE with AI assistance'
     mainClassName = 'com.miniide.Main'
 }
@@ -50,7 +50,7 @@ jar {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    archiveBaseName = 'mini-ide'
+    archiveBaseName = 'control-room'
     archiveClassifier = 'all'
 }
 
@@ -68,7 +68,7 @@ task fatJar(type: Jar) {
     }
     with jar
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    archiveBaseName = 'mini-ide'
+    archiveBaseName = 'control-room'
     archiveClassifier = ''
     destinationDirectory = file("${buildDir}/libs")
 }
@@ -145,7 +145,7 @@ task jpackageWinMsi(dependsOn: prepareJpackageInput) {
             '--input', jpackageInputDir,
             '--dest', jpackageOutputDir,
             '--name', appName,
-            '--main-jar', "mini-ide-${version}.jar",
+            '--main-jar', "control-room-${version}.jar",
             '--main-class', mainClassName,
             '--app-version', version,
             '--vendor', appVendor,
@@ -184,7 +184,7 @@ task jpackageWinExe(dependsOn: prepareJpackageInput) {
             '--input', jpackageInputDir,
             '--dest', jpackageOutputDir,
             '--name', appName,
-            '--main-jar', "mini-ide-${version}.jar",
+            '--main-jar', "control-room-${version}.jar",
             '--main-class', mainClassName,
             '--app-version', version,
             '--vendor', appVendor,
@@ -223,7 +223,7 @@ task jpackageMacDmg(dependsOn: prepareJpackageInput) {
             '--input', jpackageInputDir,
             '--dest', jpackageOutputDir,
             '--name', appName,
-            '--main-jar', "mini-ide-${version}.jar",
+            '--main-jar', "control-room-${version}.jar",
             '--main-class', mainClassName,
             '--app-version', version,
             '--vendor', appVendor,
@@ -258,7 +258,7 @@ task jpackageLinuxDeb(dependsOn: prepareJpackageInput) {
             '--input', jpackageInputDir,
             '--dest', jpackageOutputDir,
             '--name', appName.toLowerCase().replace(' ', '-'),
-            '--main-jar', "mini-ide-${version}.jar",
+            '--main-jar', "control-room-${version}.jar",
             '--main-class', mainClassName,
             '--app-version', version,
             '--vendor', appVendor,
@@ -300,7 +300,7 @@ task jpackageAppImage(dependsOn: prepareJpackageInput) {
             '--input', jpackageInputDir,
             '--dest', appImageDir,
             '--name', appName,
-            '--main-jar', "mini-ide-${version}.jar",
+            '--main-jar', "control-room-${version}.jar",
             '--main-class', mainClassName,
             '--app-version', version,
             '--vendor', appVendor,
@@ -331,13 +331,13 @@ task createPortableLaunchers {
         delete launchersDir
         mkdir launchersDir
 
-        // Windows launcher - Start-Mini-IDE.bat
-        def winLauncher = file("${launchersDir}/Start-Mini-IDE.bat")
+        // Windows launcher - Start-Control-Room.bat
+        def winLauncher = file("${launchersDir}/Start-Control-Room.bat")
         winLauncher.text = '''\
 @echo off
-title Mini-IDE
+title Control Room
 cd /d "%~dp0"
-start "" "Mini-IDE\\Mini-IDE.exe"
+start "" "Control Room\\Control Room.exe"
 '''
 
         // Unix launcher - start.sh (for macOS and Linux)
@@ -345,14 +345,14 @@ start "" "Mini-IDE\\Mini-IDE.exe"
         unixLauncher.text = '''\
 #!/bin/bash
 cd "$(dirname "$0")"
-if [ -d "Mini-IDE.app" ]; then
+if [ -d "Control Room.app" ]; then
     # macOS
-    open "Mini-IDE.app"
-elif [ -d "Mini-IDE" ]; then
+    open "Control Room.app"
+elif [ -d "Control Room" ]; then
     # Linux
-    ./Mini-IDE/bin/Mini-IDE &
+    "./Control Room/bin/Control Room" &
 else
-    echo "Error: Mini-IDE application not found"
+    echo "Error: Control Room application not found"
     exit 1
 fi
 '''
@@ -360,26 +360,26 @@ fi
         // README for portable distribution
         def readmeFile = file("${launchersDir}/README.txt")
         readmeFile.text = """\
-Mini-IDE ${version} - Portable Edition
-======================================
+Control Room ${version} - Portable Edition
+==========================================
 
-This is a portable version of Mini-IDE with a bundled Java runtime.
+This is a portable version of Control Room with a bundled Java runtime.
 No Java installation is required to run this application.
 
 WINDOWS:
-  Double-click "Start-Mini-IDE.bat" to launch the application.
-  Or run "Mini-IDE\\Mini-IDE.exe" directly.
+  Double-click "Start-Control-Room.bat" to launch the application.
+  Or run "Control Room\\Control Room.exe" directly.
 
 MACOS:
-  Double-click "Mini-IDE.app" or run "./start.sh" in Terminal.
+  Double-click "Control Room.app" or run "./start.sh" in Terminal.
 
 LINUX:
-  Run "./start.sh" or "./Mini-IDE/bin/Mini-IDE" in a terminal.
+  Run "./start.sh" or "./Control Room/bin/Control Room" in a terminal.
 
 Your workspace will be created at:
-  Windows: %USERPROFILE%\\Documents\\Mini-IDE\\workspace
-  macOS:   ~/Documents/Mini-IDE/workspace
-  Linux:   ~/Mini-IDE/workspace
+  Windows: %USERPROFILE%\\Documents\\Control-Room\\workspace
+  macOS:   ~/Documents/Control-Room/workspace
+  Linux:   ~/Control-Room/workspace
 
 For more information, visit the project documentation.
 """
@@ -391,7 +391,7 @@ task distPortableZip(type: Zip, dependsOn: [jpackageAppImage, createPortableLaun
     group = 'distribution'
     description = 'Creates a portable ZIP distribution with bundled Java runtime (no Java required)'
 
-    archiveBaseName = 'Mini-IDE'
+    archiveBaseName = 'Control-Room'
     archiveVersion = version
     archiveClassifier = 'portable'
     destinationDirectory = file("${buildDir}/distributions")
@@ -403,7 +403,7 @@ task distPortableZip(type: Zip, dependsOn: [jpackageAppImage, createPortableLaun
 
     // Include launcher scripts
     from(launchersDir) {
-        include 'Start-Mini-IDE.bat'
+        include 'Start-Control-Room.bat'
         include 'start.sh'
         include 'README.txt'
         into ''
@@ -442,10 +442,10 @@ task distWindowsFrictionless {
         println "============================================"
         println ""
         println "Created artifacts:"
-        println "  1. Portable ZIP: ${buildDir}/distributions/Mini-IDE-${version}-portable.zip"
-        println "     (Extract and run Start-Mini-IDE.bat - no Java required)"
+        println "  1. Portable ZIP: ${buildDir}/distributions/Control-Room-${version}-portable.zip"
+        println "     (Extract and run Start-Control-Room.bat - no Java required)"
         println ""
-        println "  2. EXE Installer: ${jpackageOutputDir}/Mini-IDE-${version}.exe"
+        println "  2. EXE Installer: ${jpackageOutputDir}/Control-Room-${version}.exe"
         println "     (Double-click to install - creates shortcuts)"
         println ""
         println "Both include a bundled Java runtime - users need nothing else!"
@@ -467,7 +467,7 @@ task dist {
         println "Distribution Complete!"
         println "============================================"
         println ""
-        println "Portable ZIP: ${buildDir}/distributions/Mini-IDE-${version}-portable.zip"
+        println "Portable ZIP: ${buildDir}/distributions/Control-Room-${version}-portable.zip"
         println ""
 
         if (os.isWindows()) {

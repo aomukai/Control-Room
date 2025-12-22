@@ -11,7 +11,7 @@ import java.nio.file.Paths;
  */
 public class AppConfig {
 
-    private static final String APP_NAME = "Mini-IDE";
+    private static final String APP_NAME = "Control Room";
 
     private final Path workspacePath;
     private final Path logPath;
@@ -43,9 +43,9 @@ public class AppConfig {
 
     /**
      * Get the default workspace path based on the operating system.
-     * Windows: %USERPROFILE%\Documents\Mini-IDE\workspace
-     * macOS: ~/Documents/Mini-IDE/workspace
-     * Linux: ~/Mini-IDE/workspace
+     * Windows: %USERPROFILE%\Documents\Control-Room\workspace
+     * macOS: ~/Documents/Control-Room/workspace
+     * Linux: ~/Control-Room/workspace
      */
     public static Path getDefaultWorkspacePath() {
         String os = System.getProperty("os.name").toLowerCase();
@@ -69,9 +69,9 @@ public class AppConfig {
 
     /**
      * Get the log directory path based on the operating system.
-     * Windows: %APPDATA%\Mini-IDE\logs
-     * macOS: ~/Library/Logs/Mini-IDE
-     * Linux: ~/.local/share/Mini-IDE/logs
+     * Windows: %APPDATA%\Control-Room\logs
+     * macOS: ~/Library/Logs/Control-Room
+     * Linux: ~/.local/share/Control-Room/logs
      */
     public static Path getLogDirectory() {
         String os = System.getProperty("os.name").toLowerCase();
@@ -94,7 +94,7 @@ public class AppConfig {
      * Get the log file path.
      */
     public static Path getLogFilePath() {
-        return getLogDirectory().resolve("mini-ide.log");
+        return getLogDirectory().resolve("control-room.log");
     }
 
     /**

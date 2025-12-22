@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 
-title Mini-IDE (Development)
+title Control Room (Development)
 
 echo.
 echo  ==========================================
-echo     Mini-IDE - Development Mode
+echo     Control Room - Development Mode
 echo  ==========================================
 echo.
 
