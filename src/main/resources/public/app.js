@@ -27,7 +27,9 @@
         diffContent: document.getElementById('diff-content'),
         closeDiff: document.getElementById('close-diff'),
         btnRevealFile: document.getElementById('btn-reveal-file'),
-        btnOpenFolder: document.getElementById('btn-open-folder')
+        btnOpenFolder: document.getElementById('btn-open-folder'),
+        btnFind: document.getElementById('btn-find'),
+        btnSearch: document.getElementById('btn-search')
     };
 
     // Initialize Split.js
@@ -305,9 +307,10 @@
             item.classList.toggle('selected', item.dataset.path === path);
         });
 
-        // Update Reveal File and Open Folder button states
+        // Update Reveal File, Open Folder, and Find button states
         elements.btnRevealFile.disabled = !path;
         elements.btnOpenFolder.disabled = !path;
+        elements.btnFind.disabled = !path;
     }
 
     function createTab(path) {
@@ -375,6 +378,7 @@
                 elements.monacoEditor.classList.remove('active');
                 elements.btnRevealFile.disabled = true;
                 elements.btnOpenFolder.disabled = true;
+                elements.btnFind.disabled = true;
             }
         }
 
@@ -926,6 +930,21 @@
             } catch (err) {
                 log(`Failed to open containing folder: ${err.message}`, 'error');
             }
+        });
+
+        // Find button - triggers Monaco find widget
+        elements.btnFind.addEventListener('click', () => {
+            if (state.editor && state.activeFile) {
+                state.editor.trigger('keyboard', 'actions.find');
+                log('Find in file (Ctrl+F)', 'info');
+            } else {
+                log('No file open to search', 'warning');
+            }
+        });
+
+        // Search button - opens workspace search
+        elements.btnSearch.addEventListener('click', () => {
+            openWorkspaceSearch();
         });
 
         document.getElementById('btn-new-file').addEventListener('click', () => promptNewFile('file'));
