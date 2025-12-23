@@ -589,32 +589,131 @@
                 return;
             }
 
-            elements.searchResults.innerHTML = '';
-            results.slice(0, 100).forEach(result => {
-                const item = document.createElement('div');
-                item.className = 'search-result';
-                item.innerHTML = `
-                    <span class="search-result-file">${escapeHtml(result.file)}</span>
-                    <span class="search-result-line">:${result.line}</span>
-                    <div class="search-result-preview">${escapeHtml(result.preview)}</div>
-                `;
-                item.addEventListener('click', () => {
-                    openFile(result.file).then(() => {
-                        // Jump to line
-                        if (state.editor) {
-                            state.editor.revealLineInCenter(result.line);
-                            state.editor.setPosition({ lineNumber: result.line, column: 1 });
-                            state.editor.focus();
-                        }
-                    });
-                });
-                elements.searchResults.appendChild(item);
+            // Group results by file
+            const grouped = new Map();
+            results.forEach(result => {
+                if (!grouped.has(result.file)) {
+                    grouped.set(result.file, []);
+                }
+                grouped.get(result.file).push(result);
             });
 
-            log(`Search found ${results.length} results for "${query}"`, 'info');
+            elements.searchResults.innerHTML = '';
+
+            // Render grouped results
+            grouped.forEach((fileResults, file) => {
+                // File header (collapsible)
+                const fileGroup = document.createElement('div');
+                fileGroup.className = 'search-file-group';
+
+                const fileHeader = document.createElement('div');
+                fileHeader.className = 'search-file-header';
+                fileHeader.innerHTML = `
+                    <span class="search-file-icon">📄</span>
+                    <span class="search-file-name">${escapeHtml(file)}</span>
+                    <span class="search-file-count">${fileResults.length}</span>
+                `;
+                fileGroup.appendChild(fileHeader);
+
+                // Matches container
+                const matchesContainer = document.createElement('div');
+                matchesContainer.className = 'search-matches expanded';
+
+                fileResults.forEach(result => {
+                    const item = document.createElement('div');
+                    item.className = 'search-match';
+
+                    // Highlight the query in preview
+                    const highlightedPreview = highlightSearchMatch(result.preview, query);
+
+                    item.innerHTML = `
+                        <span class="search-match-line">${result.line}</span>
+                        <span class="search-match-preview">${highlightedPreview}</span>
+                    `;
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        jumpToSearchResult(result.file, result.line, query);
+                    });
+                    matchesContainer.appendChild(item);
+                });
+
+                fileGroup.appendChild(matchesContainer);
+
+                // Toggle collapse on header click
+                fileHeader.addEventListener('click', () => {
+                    matchesContainer.classList.toggle('expanded');
+                    fileHeader.classList.toggle('collapsed');
+                });
+
+                elements.searchResults.appendChild(fileGroup);
+            });
+
+            log(`Search found ${results.length} results in ${grouped.size} files for "${query}"`, 'info');
         } catch (err) {
             log(`Search failed: ${err.message}`, 'error');
         }
+    }
+
+    function highlightSearchMatch(text, query) {
+        if (!query) return escapeHtml(text);
+        const escaped = escapeHtml(text);
+        const queryEscaped = escapeHtml(query);
+        const regex = new RegExp(`(${queryEscaped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return escaped.replace(regex, '<mark class="search-highlight">$1</mark>');
+    }
+
+    async function jumpToSearchResult(file, line, query) {
+        try {
+            await openFile(file);
+            if (state.editor) {
+                // Reveal line in center
+                state.editor.revealLineInCenter(line);
+
+                // Find the query in this line and select it
+                const model = state.editor.getModel();
+                if (model && query) {
+                    const lineContent = model.getLineContent(line);
+                    const matchIndex = lineContent.toLowerCase().indexOf(query.toLowerCase());
+                    if (matchIndex !== -1) {
+                        // Select the matched text
+                        state.editor.setSelection({
+                            startLineNumber: line,
+                            startColumn: matchIndex + 1,
+                            endLineNumber: line,
+                            endColumn: matchIndex + query.length + 1
+                        });
+                    } else {
+                        // Just position cursor at start of line
+                        state.editor.setPosition({ lineNumber: line, column: 1 });
+                    }
+                } else {
+                    state.editor.setPosition({ lineNumber: line, column: 1 });
+                }
+                state.editor.focus();
+            }
+        } catch (err) {
+            log(`Failed to open search result: ${err.message}`, 'error');
+        }
+    }
+
+    function openWorkspaceSearch() {
+        // Switch to Search tab
+        document.querySelectorAll('.console-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.console-panel').forEach(p => p.classList.remove('active'));
+
+        const searchTab = document.querySelector('.console-tab[data-tab="search"]');
+        const searchPanel = document.getElementById('search-panel');
+
+        if (searchTab && searchPanel) {
+            searchTab.classList.add('active');
+            searchPanel.classList.add('active');
+        }
+
+        // Focus the search input
+        elements.searchInput.focus();
+        elements.searchInput.select();
+
+        log('Workspace search (Ctrl+Shift+F)', 'info');
     }
 
     // Chat
@@ -876,9 +975,30 @@
 
         // Global keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 's') {
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+            if (cmdOrCtrl && e.key === 's') {
                 e.preventDefault();
                 saveCurrentFile();
+            }
+
+            // E1: Find in File (Ctrl+F / Cmd+F)
+            if (cmdOrCtrl && e.key === 'f' && !e.shiftKey) {
+                e.preventDefault();
+                if (state.editor && state.activeFile) {
+                    // Trigger Monaco's built-in find widget
+                    state.editor.trigger('keyboard', 'actions.find');
+                    log('Find in file (Ctrl+F)', 'info');
+                } else {
+                    log('No file open to search', 'warning');
+                }
+            }
+
+            // E2: Find in Workspace (Ctrl+Shift+F / Cmd+Shift+F)
+            if (cmdOrCtrl && e.shiftKey && e.key === 'F') {
+                e.preventDefault();
+                openWorkspaceSearch();
             }
         });
 
