@@ -102,7 +102,9 @@ public class Main {
         app.get("/api/search", Main::search);
         app.post("/api/ai/chat", Main::aiChat);
         app.post("/api/workspace/open", Main::openWorkspace);
+        app.post("/api/workspace/terminal", Main::openWorkspaceTerminal);
         app.post("/api/file/reveal", Main::revealFile);
+        app.post("/api/file/open-folder", Main::openContainingFolder);
     }
 
     private static void registerExceptionHandlers(Javalin app) {
@@ -357,6 +359,127 @@ public class Main {
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
         } catch (Exception e) {
             logger.error("Failed to reveal file: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
+    private static void openWorkspaceTerminal(Context ctx) {
+        try {
+            String workspacePath = fileService.getWorkspaceRoot().toString();
+            String os = System.getProperty("os.name").toLowerCase();
+
+            ProcessBuilder pb = null;
+            String terminalUsed = null;
+
+            if (os.contains("win")) {
+                // Windows: Try Windows Terminal first, fallback to cmd.exe
+                if (isCommandAvailable("wt.exe")) {
+                    pb = new ProcessBuilder("wt.exe", "-d", workspacePath);
+                    terminalUsed = "Windows Terminal";
+                } else {
+                    pb = new ProcessBuilder("cmd.exe", "/c", "start", "cmd.exe", "/k", "cd", "/d", workspacePath);
+                    terminalUsed = "Command Prompt";
+                }
+            } else if (os.contains("mac")) {
+                // macOS: Open Terminal.app at workspace root
+                String script = "tell application \"Terminal\" to do script \"cd '" + workspacePath.replace("'", "'\\''") + "'\"";
+                pb = new ProcessBuilder("osascript", "-e", script);
+                terminalUsed = "Terminal.app";
+            } else {
+                // Linux: Try common terminal emulators in order of preference
+                String[] terminals = {"x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"};
+                for (String terminal : terminals) {
+                    if (isCommandAvailable(terminal)) {
+                        if (terminal.equals("gnome-terminal") || terminal.equals("xfce4-terminal")) {
+                            pb = new ProcessBuilder(terminal, "--working-directory=" + workspacePath);
+                        } else if (terminal.equals("konsole")) {
+                            pb = new ProcessBuilder(terminal, "--workdir", workspacePath);
+                        } else {
+                            // x-terminal-emulator and xterm: use cd in shell
+                            pb = new ProcessBuilder(terminal, "-e", "sh", "-c", "cd '" + workspacePath + "' && exec $SHELL");
+                        }
+                        terminalUsed = terminal;
+                        break;
+                    }
+                }
+
+                if (pb == null) {
+                    logger.warn("No terminal emulator found on Linux");
+                    ctx.json(Map.of("ok", false, "error", "No terminal emulator found. Please install one of: gnome-terminal, konsole, xfce4-terminal, or xterm"));
+                    return;
+                }
+            }
+
+            pb.start();
+            logger.info("Opened terminal at workspace: " + workspacePath + " (using " + terminalUsed + ")");
+            ctx.json(Map.of("ok", true, "terminal", terminalUsed));
+        } catch (Exception e) {
+            logger.error("Failed to open terminal: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
+    private static boolean isCommandAvailable(String command) {
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("where", command);
+            } else {
+                pb = new ProcessBuilder("which", command);
+            }
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            int exitCode = process.waitFor();
+            return exitCode == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static void openContainingFolder(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String path = json.has("path") ? json.get("path").asText() : null;
+
+            if (path == null || path.isEmpty()) {
+                ctx.json(Map.of("ok", false, "error", "Path is required"));
+                return;
+            }
+
+            // Use FileService.resolvePath for safety checks (no path traversal)
+            java.nio.file.Path absPath = fileService.resolvePath(path);
+
+            if (!java.nio.file.Files.exists(absPath)) {
+                ctx.json(Map.of("ok", false, "error", "File not found: " + path));
+                return;
+            }
+
+            // Get the parent directory
+            java.nio.file.Path parentDir = absPath.getParent();
+            if (parentDir == null) {
+                parentDir = absPath; // If no parent, use the path itself
+            }
+
+            String os = System.getProperty("os.name").toLowerCase();
+            ProcessBuilder pb;
+
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("explorer.exe", parentDir.toString());
+            } else if (os.contains("mac")) {
+                pb = new ProcessBuilder("open", parentDir.toString());
+            } else {
+                pb = new ProcessBuilder("xdg-open", parentDir.toString());
+            }
+
+            pb.start();
+            logger.info("Opened containing folder: " + parentDir.toString());
+            ctx.json(Map.of("ok", true));
+        } catch (SecurityException e) {
+            logger.warn("Security violation in open folder: " + e.getMessage());
+            ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to open containing folder: " + e.getMessage());
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
         }
     }

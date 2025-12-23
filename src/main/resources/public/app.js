@@ -26,7 +26,8 @@
         diffPreview: document.getElementById('diff-preview'),
         diffContent: document.getElementById('diff-content'),
         closeDiff: document.getElementById('close-diff'),
-        btnRevealFile: document.getElementById('btn-reveal-file')
+        btnRevealFile: document.getElementById('btn-reveal-file'),
+        btnOpenFolder: document.getElementById('btn-open-folder')
     };
 
     // Initialize Split.js
@@ -304,8 +305,9 @@
             item.classList.toggle('selected', item.dataset.path === path);
         });
 
-        // Update Reveal File button state
+        // Update Reveal File and Open Folder button states
         elements.btnRevealFile.disabled = !path;
+        elements.btnOpenFolder.disabled = !path;
     }
 
     function createTab(path) {
@@ -372,6 +374,7 @@
                 elements.editorPlaceholder.classList.remove('hidden');
                 elements.monacoEditor.classList.remove('active');
                 elements.btnRevealFile.disabled = true;
+                elements.btnOpenFolder.disabled = true;
             }
         }
 
@@ -771,6 +774,20 @@
             }
         });
 
+        document.getElementById('btn-open-terminal').addEventListener('click', async () => {
+            log('Opening terminal at workspace...', 'info');
+            try {
+                const result = await api('/api/workspace/terminal', { method: 'POST' });
+                if (result.ok) {
+                    log(`Terminal opened (${result.terminal || 'terminal'})`, 'success');
+                } else {
+                    log(`Failed to open terminal: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                log(`Failed to open terminal: ${err.message}`, 'error');
+            }
+        });
+
         elements.btnRevealFile.addEventListener('click', async () => {
             if (!state.activeFile) return;
             log(`Revealing file: ${state.activeFile}`, 'info');
@@ -787,6 +804,28 @@
                 }
             } catch (err) {
                 log(`Failed to reveal file: ${err.message}`, 'error');
+            }
+        });
+
+        elements.btnOpenFolder.addEventListener('click', async () => {
+            if (!state.activeFile) {
+                log('No active file to open containing folder', 'warning');
+                return;
+            }
+            log(`Opening containing folder for: ${state.activeFile}`, 'info');
+            try {
+                const result = await api('/api/file/open-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: state.activeFile })
+                });
+                if (result.ok) {
+                    log('Containing folder opened', 'success');
+                } else {
+                    log(`Failed to open containing folder: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                log(`Failed to open containing folder: ${err.message}`, 'error');
             }
         });
 
