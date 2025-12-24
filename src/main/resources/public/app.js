@@ -196,6 +196,12 @@
                 icon.textContent = isExpanded ? '📂' : '📁';
             });
 
+            // Context menu for folders (rename/delete)
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showContextMenu(e, node);
+            });
+
             // Auto-expand root level folders
             if (depth === 1) {
                 childContainer.classList.add('expanded');
@@ -436,12 +442,24 @@
         contextMenu.style.left = `${e.clientX}px`;
         contextMenu.style.top = `${e.clientY}px`;
 
-        const actions = [
-            { label: 'Open', action: () => openFile(node.path) },
-            { label: 'Rename', action: () => promptRename(node.path) },
-            { divider: true },
-            { label: 'Delete', action: () => promptDelete(node.path) }
-        ];
+        const actions = [];
+
+        // Only show "Open" for files, not folders
+        if (node.type === 'file') {
+            actions.push({ label: 'Open', action: () => openFile(node.path) });
+        }
+
+        // For folders: add "New File Here" and "New Folder Here"
+        if (node.type === 'folder') {
+            actions.push({ label: 'New File Here...', action: () => promptNewFile('file', node.path) });
+            actions.push({ label: 'New Folder Here...', action: () => promptNewFile('folder', node.path) });
+            actions.push({ divider: true });
+        }
+
+        actions.push({ label: 'Rename', action: () => promptRename(node.path, node.type) });
+        actions.push({ label: 'Move...', action: () => promptMove(node.path, node.type) });
+        actions.push({ divider: true });
+        actions.push({ label: 'Delete', action: () => promptDelete(node.path) });
 
         actions.forEach(item => {
             if (item.divider) {
@@ -473,16 +491,19 @@
     document.addEventListener('click', hideContextMenu);
 
     // Modals
-    function showModal(title, placeholder, callback) {
+    function showModal(title, placeholder, callback, hint = '') {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
 
         const modal = document.createElement('div');
         modal.className = 'modal';
 
+        const hintHtml = hint ? `<div class="modal-hint">${escapeHtml(hint)}</div>` : '';
+
         modal.innerHTML = `
             <div class="modal-title">${escapeHtml(title)}</div>
             <input type="text" class="modal-input" placeholder="${escapeHtml(placeholder)}">
+            ${hintHtml}
             <div class="modal-buttons">
                 <button class="modal-btn modal-btn-secondary" data-action="cancel">Cancel</button>
                 <button class="modal-btn modal-btn-primary" data-action="confirm">OK</button>
@@ -517,7 +538,7 @@
         });
     }
 
-    async function promptRename(oldPath) {
+    async function promptRename(oldPath, nodeType = 'file') {
         showModal('Rename', oldPath, async (newPath) => {
             if (!newPath || newPath === oldPath) return;
 
@@ -528,11 +549,86 @@
                     body: JSON.stringify({ from: oldPath, to: newPath })
                 });
                 log(`Renamed: ${oldPath} -> ${newPath}`, 'success');
+
+                // Update open tabs after rename
+                updateOpenTabsAfterRename(oldPath, newPath, nodeType);
+
                 await loadFileTree();
             } catch (err) {
                 log(`Rename failed: ${err.message}`, 'error');
             }
         });
+    }
+
+    function updateOpenTabsAfterRename(oldPath, newPath, nodeType) {
+        // Collect paths to update
+        const pathsToUpdate = [];
+
+        if (nodeType === 'folder') {
+            // For folder rename, find all open files under the old folder path
+            const oldPrefix = oldPath.endsWith('/') ? oldPath : oldPath + '/';
+            for (const [filePath] of state.openFiles) {
+                if (filePath.startsWith(oldPrefix)) {
+                    const newFilePath = newPath + filePath.substring(oldPath.length);
+                    pathsToUpdate.push({ oldFilePath: filePath, newFilePath });
+                }
+            }
+        } else {
+            // For file rename, just update if it's open
+            if (state.openFiles.has(oldPath)) {
+                pathsToUpdate.push({ oldFilePath: oldPath, newFilePath: newPath });
+            }
+        }
+
+        // Update each affected file
+        pathsToUpdate.forEach(({ oldFilePath, newFilePath }) => {
+            const fileData = state.openFiles.get(oldFilePath);
+            if (!fileData) return;
+
+            // Update the openFiles map
+            state.openFiles.delete(oldFilePath);
+            state.openFiles.set(newFilePath, fileData);
+
+            // Update the tab
+            const tab = document.querySelector(`.tab[data-path="${CSS.escape(oldFilePath)}"]`);
+            if (tab) {
+                tab.dataset.path = newFilePath;
+                const tabName = tab.querySelector('.tab-name');
+                if (tabName) {
+                    tabName.textContent = newFilePath.split('/').pop();
+                }
+            }
+
+            // Update activeFile if it was the renamed file
+            if (state.activeFile === oldFilePath) {
+                state.activeFile = newFilePath;
+            }
+
+            log(`Updated tab: ${oldFilePath} -> ${newFilePath}`, 'info');
+        });
+    }
+
+    async function promptMove(oldPath, nodeType = 'file') {
+        const hint = 'e.g. notes/README.md (change the folder to move the file)';
+        showModal('Move to', oldPath, async (newPath) => {
+            if (!newPath || newPath === oldPath) return;
+
+            try {
+                await api('/api/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from: oldPath, to: newPath })
+                });
+                log(`Moved: ${oldPath} -> ${newPath}`, 'success');
+
+                // Update open tabs after move (reuse rename logic)
+                updateOpenTabsAfterRename(oldPath, newPath, nodeType);
+
+                await loadFileTree();
+            } catch (err) {
+                log(`Move failed: ${err.message}`, 'error');
+            }
+        }, hint);
     }
 
     async function promptDelete(path) {
@@ -555,9 +651,19 @@
         }
     }
 
-    async function promptNewFile(type = 'file') {
-        const placeholder = type === 'folder' ? 'folder/name' : 'path/to/file.txt';
-        showModal(`New ${type}`, placeholder, async (path) => {
+    async function promptNewFile(type = 'file', parentPath = '') {
+        // Default placeholder based on type
+        let placeholder = type === 'folder' ? 'folder-name' : 'file.txt';
+
+        // If parentPath is provided, pre-fill with parent path prefix
+        if (parentPath) {
+            const prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
+            placeholder = prefix + placeholder;
+        }
+
+        const title = parentPath ? `New ${type} in ${parentPath}` : `New ${type}`;
+
+        showModal(title, placeholder, async (path) => {
             if (!path) return;
 
             try {

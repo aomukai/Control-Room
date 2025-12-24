@@ -952,12 +952,13 @@ html, body {
 }
 
 .modal {
-    background: var(--bg-medium);
-    border: 1px solid var(--border-color);
+    background: var(--bg-medium, #252526);
+    border: 1px solid var(--border-color, #454545);
     border-radius: 8px;
     padding: 20px;
     min-width: 300px;
     max-width: 400px;
+    color: var(--text-primary, #cccccc);
 }
 
 .modal-title {
@@ -981,6 +982,13 @@ html, body {
 .modal-input:focus {
     outline: none;
     border-color: var(--accent-color);
+}
+
+.modal-hint {
+    font-size: 11px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.65));
+    margin-bottom: 12px;
+    font-style: italic;
 }
 
 .modal-buttons {
