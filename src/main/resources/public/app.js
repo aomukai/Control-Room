@@ -6,6 +6,7 @@
     // - openFiles: per-path file data (model, content) - shared across all tabs for same file
     // - openTabs: per-tab view info (just references a path)
     // - logs: structured log entries for console display
+    // - segments: cached scene segments per file path
     const state = {
         editor: null,
         openFiles: new Map(),  // path -> { model, content, originalContent }
@@ -14,7 +15,8 @@
         activeTabId: null,     // current tab ID
         fileTree: null,
         tabCounter: 0,         // for generating unique tab IDs
-        logs: []               // { timestamp, level, message }
+        logs: [],              // { timestamp, level, message }
+        segments: new Map()    // path -> [{ id, start, end, content }]
     };
 
     // Generate unique tab ID
@@ -204,6 +206,26 @@
             return response.text();
         } catch (err) {
             log(`API Error: ${err.message}`, 'error');
+            throw err;
+        }
+    }
+
+    // Scene Segments API
+    async function apiGetSegments(path, forceRefresh = false) {
+        path = normalizeWorkspacePath(path);
+
+        // Return cached if available and not forcing refresh
+        if (!forceRefresh && state.segments.has(path)) {
+            return state.segments.get(path);
+        }
+
+        try {
+            const segments = await api(`/api/segments?path=${encodeURIComponent(path)}`);
+            state.segments.set(path, segments);
+            log(`Loaded ${segments.length} segment(s) for: ${path}`, 'info');
+            return segments;
+        } catch (err) {
+            log(`Failed to load segments for ${path}: ${err.message}`, 'error');
             throw err;
         }
     }

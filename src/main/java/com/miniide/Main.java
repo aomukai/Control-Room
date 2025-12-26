@@ -2,6 +2,7 @@ package com.miniide;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -106,6 +107,7 @@ public class Main {
         app.post("/api/rename", Main::renameFile);
         app.post("/api/duplicate", Main::duplicateFile);
         app.get("/api/search", Main::search);
+        app.get("/api/segments", Main::getSegments);
         app.post("/api/ai/chat", Main::aiChat);
         app.post("/api/workspace/open", Main::openWorkspace);
         app.post("/api/workspace/terminal", Main::openWorkspaceTerminal);
@@ -259,6 +261,22 @@ public class Main {
             String pattern = ctx.queryParam("pattern"); // optional glob pattern
             List<SearchResult> results = workspaceService.search(query, pattern);
             ctx.json(results);
+        } catch (Exception e) {
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getSegments(Context ctx) {
+        try {
+            String path = ctx.queryParam("path");
+            if (path == null || path.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "Path parameter required"));
+                return;
+            }
+            List<SceneSegment> segments = workspaceService.getSceneSegments(path);
+            ctx.json(segments);
+        } catch (FileNotFoundException e) {
+            ctx.status(404).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }

@@ -1,6 +1,7 @@
 package com.miniide;
 
 import com.miniide.models.FileNode;
+import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import com.miniide.models.TextEdit;
 
@@ -483,6 +484,31 @@ public class WorkspaceService {
         // 3. Apply edits in reverse order (to preserve line numbers)
         // 4. Write result back
         throw new UnsupportedOperationException("applyPatch not yet implemented");
+    }
+
+    // -------------------------------------------------------------------------
+    // Scene Segmentation (Stub for future AI use)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Retrieves scene segments from a file.
+     * Stub implementation - returns a single segment containing the entire file content.
+     * Future implementations will parse the file and return meaningful segments
+     * for scene-aware editing and AI-assisted segment rewriting.
+     *
+     * @param relativePath workspace-relative path to file
+     * @return list of scene segments
+     * @throws IOException if file doesn't exist or can't be read
+     */
+    public List<SceneSegment> getSceneSegments(String relativePath) throws IOException {
+        String content = readFile(relativePath);
+
+        List<SceneSegment> segments = new ArrayList<>();
+        // Stub: return single segment with entire content
+        segments.add(new SceneSegment("seg-1", 0, content.length(), content));
+
+        log("Retrieved " + segments.size() + " segment(s) for: " + relativePath);
+        return segments;
     }
 
     // -------------------------------------------------------------------------
