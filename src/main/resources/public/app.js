@@ -3,12 +3,58 @@
     'use strict';
 
     // State
+    // - openFiles: per-path file data (model, content) - shared across all tabs for same file
+    // - openTabs: per-tab view info (just references a path)
     const state = {
         editor: null,
-        openFiles: new Map(), // path -> { content, originalContent, model }
-        activeFile: null,
-        fileTree: null
+        openFiles: new Map(),  // path -> { model, content, originalContent }
+        openTabs: new Map(),   // tabId -> { path }
+        activeFile: null,      // current file path
+        activeTabId: null,     // current tab ID
+        fileTree: null,
+        tabCounter: 0          // for generating unique tab IDs
     };
+
+    // Generate unique tab ID
+    function generateTabId() {
+        return `tab-${++state.tabCounter}`;
+    }
+
+    // Normalize a workspace path to canonical form:
+    // - Forward slashes only
+    // - No leading slash
+    // - No duplicate slashes
+    function normalizeWorkspacePath(path) {
+        if (!path) return '';
+
+        // Convert backslashes to forward slashes
+        let normalized = path.replace(/\\/g, '/');
+
+        // Strip leading slashes (treat "/chars" as "chars")
+        while (normalized.startsWith('/')) {
+            normalized = normalized.substring(1);
+        }
+
+        // Collapse any duplicate slashes
+        normalized = normalized.replace(/\/+/g, '/');
+
+        // Remove trailing slash (except for empty path)
+        if (normalized.endsWith('/') && normalized.length > 1) {
+            normalized = normalized.slice(0, -1);
+        }
+
+        return normalized;
+    }
+
+    // Count how many tabs reference a given path
+    function countTabsForPath(path) {
+        path = normalizeWorkspacePath(path);
+        let count = 0;
+        for (const [, tabData] of state.openTabs) {
+            if (tabData.path === path) count++;
+        }
+        return count;
+    }
 
     // DOM Elements
     const elements = {
@@ -83,13 +129,13 @@
                 saveCurrentFile();
             });
 
-            // Track changes for dirty state
+            // Track changes for dirty state (updates shared file state)
             state.editor.onDidChangeModelContent(() => {
                 if (state.activeFile) {
                     const file = state.openFiles.get(state.activeFile);
                     if (file) {
                         file.content = state.editor.getValue();
-                        updateTabDirtyState(state.activeFile);
+                        updateDirtyStateForPath(state.activeFile);
                     }
                 }
             });
@@ -249,26 +295,81 @@
     }
 
     // File Operations
+    // Opens file - reuses existing tab if one exists for this path
     async function openFile(path) {
+        path = normalizeWorkspacePath(path);
         try {
-            if (!state.openFiles.has(path)) {
-                log(`Opening file: ${path}`, 'info');
-                const content = await api(`/api/file?path=${encodeURIComponent(path)}`);
-
-                const model = monaco.editor.createModel(content, getLanguageForFile(path));
-                state.openFiles.set(path, {
-                    content,
-                    originalContent: content,
-                    model
-                });
-
-                createTab(path);
+            // Check if there's already a tab for this path
+            const existingTabId = findTabIdByPath(path);
+            if (existingTabId) {
+                // Reuse existing tab
+                setActiveTab(existingTabId);
+                return;
             }
 
-            setActiveFile(path);
+            // No existing tab - need to open the file
+            await ensureFileLoaded(path);
+
+            // Create a new tab for this file
+            const tabId = generateTabId();
+            state.openTabs.set(tabId, { path });
+
+            createTab(tabId, path);
+            setActiveTab(tabId);
         } catch (err) {
             log(`Failed to open file: ${err.message}`, 'error');
         }
+    }
+
+    // Open file in a NEW tab, even if already open elsewhere
+    // Multiple tabs share the same underlying file state
+    async function openFileInNewTab(path) {
+        path = normalizeWorkspacePath(path);
+        try {
+            log(`Opening file in new tab: ${path}`, 'info');
+
+            // Ensure file is loaded (reuses existing if already loaded)
+            await ensureFileLoaded(path);
+
+            // Always create a new tab
+            const tabId = generateTabId();
+            state.openTabs.set(tabId, { path });
+
+            createTab(tabId, path);
+            setActiveTab(tabId);
+        } catch (err) {
+            log(`Failed to open file: ${err.message}`, 'error');
+        }
+    }
+
+    // Ensure a file is loaded into openFiles (loads from backend if needed)
+    async function ensureFileLoaded(path) {
+        path = normalizeWorkspacePath(path);
+        if (state.openFiles.has(path)) {
+            // Already loaded - nothing to do
+            return;
+        }
+
+        log(`Loading file: ${path}`, 'info');
+        const content = await api(`/api/file?path=${encodeURIComponent(path)}`);
+        const model = monaco.editor.createModel(content, getLanguageForFile(path));
+
+        state.openFiles.set(path, {
+            model,
+            content,
+            originalContent: content
+        });
+    }
+
+    // Find first tab ID for a given path
+    function findTabIdByPath(path) {
+        path = normalizeWorkspacePath(path);
+        for (const [tabId, tabData] of state.openTabs) {
+            if (tabData.path === path) {
+                return tabId;
+            }
+        }
+        return null;
     }
 
     function getLanguageForFile(path) {
@@ -293,11 +394,17 @@
         return languages[ext] || 'plaintext';
     }
 
-    function setActiveFile(path) {
-        state.activeFile = path;
-        const file = state.openFiles.get(path);
+    function setActiveTab(tabId) {
+        const tabData = state.openTabs.get(tabId);
+        if (!tabData) return;
 
-        if (file && state.editor) {
+        const file = state.openFiles.get(tabData.path);
+        if (!file) return;
+
+        state.activeTabId = tabId;
+        state.activeFile = tabData.path;
+
+        if (state.editor) {
             state.editor.setModel(file.model);
             elements.editorPlaceholder.classList.add('hidden');
             elements.monacoEditor.classList.add('active');
@@ -305,23 +412,24 @@
 
         // Update tab active state
         document.querySelectorAll('.tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.path === path);
+            tab.classList.toggle('active', tab.dataset.tabId === tabId);
         });
 
         // Update tree selection
         document.querySelectorAll('.tree-item').forEach(item => {
-            item.classList.toggle('selected', item.dataset.path === path);
+            item.classList.toggle('selected', item.dataset.path === tabData.path);
         });
 
         // Update Reveal File, Open Folder, and Find button states
-        elements.btnRevealFile.disabled = !path;
-        elements.btnOpenFolder.disabled = !path;
-        elements.btnFind.disabled = !path;
+        elements.btnRevealFile.disabled = !tabData.path;
+        elements.btnOpenFolder.disabled = !tabData.path;
+        elements.btnFind.disabled = !tabData.path;
     }
 
-    function createTab(path) {
+    function createTab(tabId, path) {
         const tab = document.createElement('div');
         tab.className = 'tab';
+        tab.dataset.tabId = tabId;
         tab.dataset.path = path;
 
         const name = document.createElement('span');
@@ -333,53 +441,73 @@
         close.textContent = '×';
         close.addEventListener('click', (e) => {
             e.stopPropagation();
-            closeFile(path);
+            closeTab(tabId);
         });
 
         tab.appendChild(name);
         tab.appendChild(close);
 
-        tab.addEventListener('click', () => setActiveFile(path));
+        tab.addEventListener('click', () => setActiveTab(tabId));
 
         elements.tabsContainer.appendChild(tab);
     }
 
-    function updateTabDirtyState(path) {
+    // Update dirty state for ALL tabs showing a given path
+    function updateDirtyStateForPath(path) {
+        path = normalizeWorkspacePath(path);
         const file = state.openFiles.get(path);
-        const tab = document.querySelector(`.tab[data-path="${path}"]`);
+        if (!file) return;
 
-        if (file && tab) {
-            const isDirty = file.content !== file.originalContent;
-            tab.classList.toggle('dirty', isDirty);
+        const isDirty = file.content !== file.originalContent;
+
+        // Update all tabs that reference this path
+        for (const [tabId, tabData] of state.openTabs) {
+            if (tabData.path === path) {
+                const tabEl = document.querySelector(`.tab[data-tab-id="${tabId}"]`);
+                if (tabEl) {
+                    tabEl.classList.toggle('dirty', isDirty);
+                }
+            }
         }
     }
 
-    async function closeFile(path) {
+    // Close a specific tab by ID
+    function closeTab(tabId, force = false) {
+        const tabData = state.openTabs.get(tabId);
+        if (!tabData) return;
+
+        const path = tabData.path;
         const file = state.openFiles.get(path);
 
-        if (file && file.content !== file.originalContent) {
+        // Check for unsaved changes (unless forced)
+        if (!force && file && file.content !== file.originalContent) {
             const confirmed = confirm(`${path} has unsaved changes. Close anyway?`);
             if (!confirmed) return;
         }
 
-        // Remove tab
-        const tab = document.querySelector(`.tab[data-path="${path}"]`);
+        // Remove tab element
+        const tab = document.querySelector(`.tab[data-tab-id="${tabId}"]`);
         if (tab) tab.remove();
 
-        // Dispose model
-        if (file && file.model) {
-            file.model.dispose();
+        // Remove tab from openTabs
+        state.openTabs.delete(tabId);
+
+        // If this was the last tab for this path, dispose the model and remove from openFiles
+        if (countTabsForPath(path) === 0 && file) {
+            if (file.model) {
+                file.model.dispose();
+            }
+            state.openFiles.delete(path);
         }
 
-        state.openFiles.delete(path);
-
-        // Switch to another open file or show placeholder
-        if (state.activeFile === path) {
-            const remaining = Array.from(state.openFiles.keys());
+        // Switch to another tab or show placeholder
+        if (state.activeTabId === tabId) {
+            const remaining = Array.from(state.openTabs.keys());
             if (remaining.length > 0) {
-                setActiveFile(remaining[remaining.length - 1]);
+                setActiveTab(remaining[remaining.length - 1]);
             } else {
                 state.activeFile = null;
+                state.activeTabId = null;
                 elements.editorPlaceholder.classList.remove('hidden');
                 elements.monacoEditor.classList.remove('active');
                 elements.btnRevealFile.disabled = true;
@@ -388,7 +516,62 @@
             }
         }
 
-        log(`Closed file: ${path}`, 'info');
+        log(`Closed tab: ${path}`, 'info');
+    }
+
+    // Close all tabs matching a path (for file deletion)
+    // For folders, closes all tabs whose path starts with folderPath/
+    // Also cleans up openFiles entries for deleted paths
+    function closeTabsForPath(path, isFolder = false) {
+        path = normalizeWorkspacePath(path);
+        const tabsToClose = [];
+        const filesToCleanup = [];
+
+        // Find matching tabs
+        for (const [tabId, tabData] of state.openTabs) {
+            if (isFolder) {
+                const folderPrefix = path + '/';
+                if (tabData.path === path || tabData.path.startsWith(folderPrefix)) {
+                    tabsToClose.push(tabId);
+                }
+            } else {
+                if (tabData.path === path) {
+                    tabsToClose.push(tabId);
+                }
+            }
+        }
+
+        // Find matching openFiles entries to clean up
+        for (const [filePath] of state.openFiles) {
+            if (isFolder) {
+                const folderPrefix = path + '/';
+                if (filePath === path || filePath.startsWith(folderPrefix)) {
+                    filesToCleanup.push(filePath);
+                }
+            } else {
+                if (filePath === path) {
+                    filesToCleanup.push(filePath);
+                }
+            }
+        }
+
+        // Close all matching tabs (force close - no unsaved prompt for deleted files)
+        tabsToClose.forEach(tabId => closeTab(tabId, true));
+
+        // Clean up any remaining openFiles entries (in case tabs were already closed)
+        filesToCleanup.forEach(filePath => {
+            const file = state.openFiles.get(filePath);
+            if (file) {
+                if (file.model) {
+                    file.model.dispose();
+                }
+                state.openFiles.delete(filePath);
+            }
+        });
+
+        if (tabsToClose.length > 0) {
+            log(`Closed ${tabsToClose.length} tab(s) for deleted path: ${path}`, 'info');
+        }
     }
 
     async function saveCurrentFile() {
@@ -405,13 +588,14 @@
             });
 
             file.originalContent = file.content;
-            updateTabDirtyState(state.activeFile);
+            updateDirtyStateForPath(state.activeFile);
             log(`Saved: ${state.activeFile}`, 'success');
         } catch (err) {
             log(`Failed to save: ${err.message}`, 'error');
         }
     }
 
+    // Save all dirty files (iterates over openFiles, not tabs)
     async function saveAllFiles() {
         for (const [path, file] of state.openFiles) {
             if (file.content !== file.originalContent) {
@@ -422,7 +606,7 @@
                         body: file.content
                     });
                     file.originalContent = file.content;
-                    updateTabDirtyState(path);
+                    updateDirtyStateForPath(path);
                     log(`Saved: ${path}`, 'success');
                 } catch (err) {
                     log(`Failed to save ${path}: ${err.message}`, 'error');
@@ -444,9 +628,9 @@
 
         const actions = [];
 
-        // Only show "Open" for files, not folders
+        // Only show "Open in New Tab" for files, not folders
         if (node.type === 'file') {
-            actions.push({ label: 'Open', action: () => openFile(node.path) });
+            actions.push({ label: 'Open in New Tab', action: () => openFileInNewTab(node.path) });
         }
 
         // For folders: add "New File Here" and "New Folder Here"
@@ -459,7 +643,7 @@
         actions.push({ label: 'Rename', action: () => promptRename(node.path, node.type) });
         actions.push({ label: 'Move...', action: () => promptMove(node.path, node.type) });
         actions.push({ divider: true });
-        actions.push({ label: 'Delete', action: () => promptDelete(node.path) });
+        actions.push({ label: 'Delete', action: () => promptDelete(node.path, node.type) });
 
         actions.forEach(item => {
             if (item.divider) {
@@ -539,7 +723,9 @@
     }
 
     async function promptRename(oldPath, nodeType = 'file') {
+        oldPath = normalizeWorkspacePath(oldPath);
         showModal('Rename', oldPath, async (newPath) => {
+            newPath = normalizeWorkspacePath(newPath);
             if (!newPath || newPath === oldPath) return;
 
             try {
@@ -561,36 +747,66 @@
     }
 
     function updateOpenTabsAfterRename(oldPath, newPath, nodeType) {
-        // Collect paths to update
-        const pathsToUpdate = [];
+        // Normalize paths at entry point
+        oldPath = normalizeWorkspacePath(oldPath);
+        newPath = normalizeWorkspacePath(newPath);
+
+        // Collect files and tabs to update
+        const filesToUpdate = [];  // { oldFilePath, newFilePath }
+        const tabsToUpdate = [];   // { tabId, oldFilePath, newFilePath }
 
         if (nodeType === 'folder') {
-            // For folder rename, find all open files under the old folder path
-            const oldPrefix = oldPath.endsWith('/') ? oldPath : oldPath + '/';
+            // For folder rename, find all files/tabs under the old folder path
+            const oldPrefix = oldPath + '/';
+
+            // Find affected files
             for (const [filePath] of state.openFiles) {
                 if (filePath.startsWith(oldPrefix)) {
                     const newFilePath = newPath + filePath.substring(oldPath.length);
-                    pathsToUpdate.push({ oldFilePath: filePath, newFilePath });
+                    filesToUpdate.push({ oldFilePath: filePath, newFilePath: normalizeWorkspacePath(newFilePath) });
+                }
+            }
+
+            // Find affected tabs
+            for (const [tabId, tabData] of state.openTabs) {
+                if (tabData.path.startsWith(oldPrefix)) {
+                    const newFilePath = newPath + tabData.path.substring(oldPath.length);
+                    tabsToUpdate.push({ tabId, oldFilePath: tabData.path, newFilePath: normalizeWorkspacePath(newFilePath) });
                 }
             }
         } else {
-            // For file rename, just update if it's open
+            // For file rename, update the file and all tabs with that path
             if (state.openFiles.has(oldPath)) {
-                pathsToUpdate.push({ oldFilePath: oldPath, newFilePath: newPath });
+                filesToUpdate.push({ oldFilePath: oldPath, newFilePath: newPath });
+            }
+
+            for (const [tabId, tabData] of state.openTabs) {
+                if (tabData.path === oldPath) {
+                    tabsToUpdate.push({ tabId, oldFilePath: oldPath, newFilePath: newPath });
+                }
             }
         }
 
-        // Update each affected file
-        pathsToUpdate.forEach(({ oldFilePath, newFilePath }) => {
+        // Update openFiles entries (move from old path to new path)
+        filesToUpdate.forEach(({ oldFilePath, newFilePath }) => {
             const fileData = state.openFiles.get(oldFilePath);
-            if (!fileData) return;
+            if (fileData) {
+                state.openFiles.delete(oldFilePath);
+                state.openFiles.set(newFilePath, fileData);
+                log(`Updated file entry: ${oldFilePath} -> ${newFilePath}`, 'info');
+            }
+        });
 
-            // Update the openFiles map
-            state.openFiles.delete(oldFilePath);
-            state.openFiles.set(newFilePath, fileData);
+        // Update each affected tab
+        tabsToUpdate.forEach(({ tabId, oldFilePath, newFilePath }) => {
+            const tabData = state.openTabs.get(tabId);
+            if (!tabData) return;
 
-            // Update the tab
-            const tab = document.querySelector(`.tab[data-path="${CSS.escape(oldFilePath)}"]`);
+            // Update the path in the tab data
+            tabData.path = newFilePath;
+
+            // Update the tab element
+            const tab = document.querySelector(`.tab[data-tab-id="${tabId}"]`);
             if (tab) {
                 tab.dataset.path = newFilePath;
                 const tabName = tab.querySelector('.tab-name');
@@ -599,8 +815,8 @@
                 }
             }
 
-            // Update activeFile if it was the renamed file
-            if (state.activeFile === oldFilePath) {
+            // Update activeFile if this is the active tab
+            if (state.activeTabId === tabId) {
                 state.activeFile = newFilePath;
             }
 
@@ -609,8 +825,10 @@
     }
 
     async function promptMove(oldPath, nodeType = 'file') {
+        oldPath = normalizeWorkspacePath(oldPath);
         const hint = 'e.g. notes/README.md (change the folder to move the file)';
         showModal('Move to', oldPath, async (newPath) => {
+            newPath = normalizeWorkspacePath(newPath);
             if (!newPath || newPath === oldPath) return;
 
             try {
@@ -631,7 +849,8 @@
         }, hint);
     }
 
-    async function promptDelete(path) {
+    async function promptDelete(path, nodeType = 'file') {
+        path = normalizeWorkspacePath(path);
         if (!confirm(`Delete "${path}"?`)) return;
 
         try {
@@ -640,10 +859,8 @@
             });
             log(`Deleted: ${path}`, 'success');
 
-            // Close if open
-            if (state.openFiles.has(path)) {
-                closeFile(path);
-            }
+            // Close all tabs for this path (and children if folder)
+            closeTabsForPath(path, nodeType === 'folder');
 
             await loadFileTree();
         } catch (err) {
@@ -652,18 +869,19 @@
     }
 
     async function promptNewFile(type = 'file', parentPath = '') {
+        parentPath = normalizeWorkspacePath(parentPath);
         // Default placeholder based on type
         let placeholder = type === 'folder' ? 'folder-name' : 'file.txt';
 
         // If parentPath is provided, pre-fill with parent path prefix
         if (parentPath) {
-            const prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
-            placeholder = prefix + placeholder;
+            placeholder = parentPath + '/' + placeholder;
         }
 
         const title = parentPath ? `New ${type} in ${parentPath}` : `New ${type}`;
 
         showModal(title, placeholder, async (path) => {
+            path = normalizeWorkspacePath(path);
             if (!path) return;
 
             try {

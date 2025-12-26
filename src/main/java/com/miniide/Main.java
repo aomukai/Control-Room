@@ -9,6 +9,8 @@ import io.javalin.json.JavalinJackson;
 import io.javalin.http.staticfiles.Location;
 
 import java.io.FileNotFoundException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -16,7 +18,7 @@ public class Main {
 
     private static final String VERSION = "1.0.0";
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private static FileService fileService;
+    private static WorkspaceService workspaceService;
     private static AppLogger logger;
 
     public static void main(String[] args) {
@@ -33,8 +35,11 @@ public class Main {
             // Print startup banner
             printBanner(config);
 
-            // Initialize file service with workspace
-            fileService = new FileService(config.getWorkspacePath().toString());
+            // Initialize workspace (FileService handles initial setup/seeding)
+            new FileService(config.getWorkspacePath().toString());
+
+            // Create WorkspaceService for all runtime file operations
+            workspaceService = new WorkspaceService(config.getWorkspacePath());
             logger.info("Workspace initialized: " + config.getWorkspacePath());
 
             // Create and configure Javalin
@@ -99,6 +104,7 @@ public class Main {
         app.post("/api/file", Main::createFile);
         app.delete("/api/file", Main::deleteFile);
         app.post("/api/rename", Main::renameFile);
+        app.post("/api/duplicate", Main::duplicateFile);
         app.get("/api/search", Main::search);
         app.post("/api/ai/chat", Main::aiChat);
         app.post("/api/workspace/open", Main::openWorkspace);
@@ -126,7 +132,7 @@ public class Main {
 
     private static void getTree(Context ctx) {
         try {
-            ctx.json(fileService.getTree());
+            ctx.json(workspaceService.getTree(""));
         } catch (Exception e) {
             logger.error("Error getting tree: " + e.getMessage());
             ctx.status(500).json(Map.of("error", e.getMessage()));
@@ -140,7 +146,7 @@ public class Main {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            String content = fileService.readFile(path);
+            String content = workspaceService.readFile(path);
             ctx.contentType("text/plain; charset=utf-8").result(content);
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Map.of("error", e.getMessage()));
@@ -157,7 +163,7 @@ public class Main {
                 return;
             }
             String content = ctx.body();
-            fileService.writeFile(path, content);
+            workspaceService.writeFile(path, content);
             logger.info("File saved: " + path);
             ctx.json(Map.of("success", true, "message", "File saved: " + path));
         } catch (Exception e) {
@@ -177,7 +183,11 @@ public class Main {
                 return;
             }
 
-            fileService.createFileOrFolder(path, type, initialContent);
+            if ("folder".equals(type)) {
+                workspaceService.createFolder(path);
+            } else {
+                workspaceService.createFile(path, initialContent);
+            }
             logger.info("Created " + type + ": " + path);
             ctx.json(Map.of("success", true, "message", "Created: " + path));
         } catch (Exception e) {
@@ -192,7 +202,7 @@ public class Main {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            fileService.deleteFileOrFolder(path);
+            workspaceService.deleteEntry(path);
             logger.info("Deleted: " + path);
             ctx.json(Map.of("success", true, "message", "Deleted: " + path));
         } catch (FileNotFoundException e) {
@@ -213,9 +223,29 @@ public class Main {
                 return;
             }
 
-            fileService.rename(from, to);
+            workspaceService.renameEntry(from, to);
             logger.info("Renamed: " + from + " -> " + to);
             ctx.json(Map.of("success", true, "message", "Renamed: " + from + " -> " + to));
+        } catch (FileNotFoundException e) {
+            ctx.status(404).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void duplicateFile(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String path = json.has("path") ? json.get("path").asText() : null;
+
+            if (path == null || path.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "Path is required"));
+                return;
+            }
+
+            String newPath = workspaceService.duplicateEntry(path);
+            logger.info("Duplicated: " + path + " -> " + newPath);
+            ctx.json(Map.of("success", true, "message", "Duplicated: " + path, "newPath", newPath));
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -226,7 +256,8 @@ public class Main {
     private static void search(Context ctx) {
         try {
             String query = ctx.queryParam("q");
-            List<SearchResult> results = fileService.search(query);
+            String pattern = ctx.queryParam("pattern"); // optional glob pattern
+            List<SearchResult> results = workspaceService.search(query, pattern);
             ctx.json(results);
         } catch (Exception e) {
             ctx.status(500).json(Map.of("error", e.getMessage()));
@@ -297,7 +328,7 @@ public class Main {
 
     private static void openWorkspace(Context ctx) {
         try {
-            String workspacePath = fileService.getWorkspaceRoot().toString();
+            String workspacePath = workspaceService.getWorkspaceRoot().toString();
             String os = System.getProperty("os.name").toLowerCase();
 
             ProcessBuilder pb;
@@ -328,10 +359,10 @@ public class Main {
                 return;
             }
 
-            // Use FileService.resolvePath for safety checks (no path traversal)
-            java.nio.file.Path absPath = fileService.resolvePath(path);
+            // Use WorkspaceService.resolvePath for safety checks (no path traversal)
+            Path absPath = workspaceService.resolvePath(path);
 
-            if (!java.nio.file.Files.exists(absPath)) {
+            if (!Files.exists(absPath)) {
                 ctx.json(Map.of("ok", false, "error", "File not found: " + path));
                 return;
             }
@@ -347,7 +378,7 @@ public class Main {
                 pb = new ProcessBuilder("open", "-R", absPath.toString());
             } else {
                 // Linux: xdg-open parent directory (reveal not standardized)
-                java.nio.file.Path parentDir = absPath.getParent();
+                Path parentDir = absPath.getParent();
                 pb = new ProcessBuilder("xdg-open", parentDir.toString());
             }
 
@@ -365,7 +396,7 @@ public class Main {
 
     private static void openWorkspaceTerminal(Context ctx) {
         try {
-            String workspacePath = fileService.getWorkspaceRoot().toString();
+            String workspacePath = workspaceService.getWorkspaceRoot().toString();
             String os = System.getProperty("os.name").toLowerCase();
 
             ProcessBuilder pb = null;
@@ -447,16 +478,16 @@ public class Main {
                 return;
             }
 
-            // Use FileService.resolvePath for safety checks (no path traversal)
-            java.nio.file.Path absPath = fileService.resolvePath(path);
+            // Use WorkspaceService.resolvePath for safety checks (no path traversal)
+            Path absPath = workspaceService.resolvePath(path);
 
-            if (!java.nio.file.Files.exists(absPath)) {
+            if (!Files.exists(absPath)) {
                 ctx.json(Map.of("ok", false, "error", "File not found: " + path));
                 return;
             }
 
             // Get the parent directory
-            java.nio.file.Path parentDir = absPath.getParent();
+            Path parentDir = absPath.getParent();
             if (parentDir == null) {
                 parentDir = absPath; // If no parent, use the path itself
             }

@@ -47,11 +47,23 @@ public class WorkspaceService {
      * @throws SecurityException if path escapes workspace root
      */
     public Path resolvePath(String relativePath) {
-        if (relativePath == null || relativePath.isEmpty()) {
+        if (relativePath == null || relativePath.isBlank() || ".".equals(relativePath)) {
             return workspaceRoot;
         }
+
         // Normalize separators
         String normalized = relativePath.replace('\\', '/');
+
+        // Strip leading slash - treat "/chars" as workspace-relative "chars"
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+
+        // Handle empty after stripping
+        if (normalized.isEmpty()) {
+            return workspaceRoot;
+        }
+
         Path resolved = workspaceRoot.resolve(normalized).normalize();
         if (!resolved.startsWith(workspaceRoot)) {
             throw new SecurityException("Path escapes workspace root: " + relativePath);

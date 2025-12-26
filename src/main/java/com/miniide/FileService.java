@@ -1,26 +1,23 @@
 package com.miniide;
 
-import com.miniide.models.FileNode;
-import com.miniide.models.SearchResult;
-
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Stream;
 
+/**
+ * FileService handles workspace initialization and seeding.
+ *
+ * NOTE: For all runtime file operations (read, write, create, delete, rename, search),
+ * use {@link WorkspaceService} instead. This class is retained only for:
+ * - Initial workspace setup
+ * - Seeding new workspaces with sample content
+ */
 public class FileService {
     private final Path workspaceRoot;
 
     public FileService(String workspacePath) {
         this.workspaceRoot = Paths.get(workspacePath).toAbsolutePath().normalize();
         initializeWorkspace();
-    }
-
-    public Path getWorkspaceRoot() {
-        return workspaceRoot;
     }
 
     private void initializeWorkspace() {
@@ -155,7 +152,11 @@ public class FileService {
             "Open any file to start editing. Use Ctrl+S to save.\n");
     }
 
-    public Path resolvePath(String relativePath) {
+    // -------------------------------------------------------------------------
+    // Internal helper for seeding (writes files during workspace init)
+    // -------------------------------------------------------------------------
+
+    private Path resolvePath(String relativePath) {
         if (relativePath == null || relativePath.isEmpty()) {
             return workspaceRoot;
         }
@@ -166,135 +167,9 @@ public class FileService {
         return resolved;
     }
 
-    public FileNode getTree() throws IOException {
-        return buildTree(workspaceRoot, "");
-    }
-
-    private FileNode buildTree(Path dir, String relativePath) throws IOException {
-        String name = relativePath.isEmpty() ? "workspace" : dir.getFileName().toString();
-        FileNode node = new FileNode(name, relativePath, "folder");
-
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-            List<FileNode> folders = new ArrayList<>();
-            List<FileNode> files = new ArrayList<>();
-
-            for (Path entry : stream) {
-                String childRelPath = relativePath.isEmpty()
-                    ? entry.getFileName().toString()
-                    : relativePath + "/" + entry.getFileName().toString();
-
-                if (Files.isDirectory(entry)) {
-                    folders.add(buildTree(entry, childRelPath));
-                } else {
-                    files.add(new FileNode(entry.getFileName().toString(), childRelPath, "file"));
-                }
-            }
-
-            folders.sort(Comparator.comparing(FileNode::getName, String.CASE_INSENSITIVE_ORDER));
-            files.sort(Comparator.comparing(FileNode::getName, String.CASE_INSENSITIVE_ORDER));
-
-            folders.forEach(node::addChild);
-            files.forEach(node::addChild);
-        }
-
-        return node;
-    }
-
-    public String readFile(String relativePath) throws IOException {
-        Path path = resolvePath(relativePath);
-        if (!Files.exists(path)) {
-            throw new FileNotFoundException("File not found: " + relativePath);
-        }
-        if (Files.isDirectory(path)) {
-            throw new IOException("Cannot read directory as file");
-        }
-        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-    }
-
-    public void writeFile(String relativePath, String content) throws IOException {
+    private void writeFile(String relativePath, String content) throws IOException {
         Path path = resolvePath(relativePath);
         Files.createDirectories(path.getParent());
         Files.write(path, content.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public void createFileOrFolder(String relativePath, String type, String initialContent) throws IOException {
-        Path path = resolvePath(relativePath);
-        if (Files.exists(path)) {
-            throw new IOException("Path already exists: " + relativePath);
-        }
-        if ("folder".equals(type)) {
-            Files.createDirectories(path);
-        } else {
-            Files.createDirectories(path.getParent());
-            String content = initialContent != null ? initialContent : "";
-            Files.write(path, content.getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
-    public void deleteFileOrFolder(String relativePath) throws IOException {
-        Path path = resolvePath(relativePath);
-        if (!Files.exists(path)) {
-            throw new FileNotFoundException("Path not found: " + relativePath);
-        }
-        if (Files.isDirectory(path)) {
-            try (Stream<Path> walk = Files.walk(path)) {
-                walk.sorted(Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            Files.delete(p);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    });
-            }
-        } else {
-            Files.delete(path);
-        }
-    }
-
-    public void rename(String fromPath, String toPath) throws IOException {
-        Path from = resolvePath(fromPath);
-        Path to = resolvePath(toPath);
-        if (!Files.exists(from)) {
-            throw new FileNotFoundException("Source not found: " + fromPath);
-        }
-        if (Files.exists(to)) {
-            throw new IOException("Target already exists: " + toPath);
-        }
-        Files.createDirectories(to.getParent());
-        Files.move(from, to);
-    }
-
-    public List<SearchResult> search(String query) throws IOException {
-        List<SearchResult> results = new ArrayList<>();
-        if (query == null || query.trim().isEmpty()) {
-            return results;
-        }
-
-        String lowerQuery = query.toLowerCase();
-
-        try (Stream<Path> walk = Files.walk(workspaceRoot)) {
-            walk.filter(Files::isRegularFile)
-                .forEach(file -> {
-                    try {
-                        String relativePath = workspaceRoot.relativize(file).toString().replace('\\', '/');
-                        List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-                        for (int i = 0; i < lines.size(); i++) {
-                            String line = lines.get(i);
-                            if (line.toLowerCase().contains(lowerQuery)) {
-                                String preview = line.trim();
-                                if (preview.length() > 100) {
-                                    preview = preview.substring(0, 100) + "...";
-                                }
-                                results.add(new SearchResult(relativePath, i + 1, preview));
-                            }
-                        }
-                    } catch (IOException e) {
-                        // Skip unreadable files
-                    }
-                });
-        }
-
-        return results;
     }
 }
