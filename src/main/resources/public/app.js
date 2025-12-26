@@ -5,6 +5,7 @@
     // State
     // - openFiles: per-path file data (model, content) - shared across all tabs for same file
     // - openTabs: per-tab view info (just references a path)
+    // - logs: structured log entries for console display
     const state = {
         editor: null,
         openFiles: new Map(),  // path -> { model, content, originalContent }
@@ -12,7 +13,8 @@
         activeFile: null,      // current file path
         activeTabId: null,     // current tab ID
         fileTree: null,
-        tabCounter: 0          // for generating unique tab IDs
+        tabCounter: 0,         // for generating unique tab IDs
+        logs: []               // { timestamp, level, message }
     };
 
     // Generate unique tab ID
@@ -144,16 +146,41 @@
         });
     }
 
-    // Console logging
-    function log(message, type = 'info') {
-        const line = document.createElement('div');
-        line.className = `console-line ${type}`;
+    // Console logging with structured entries
+    function normalizeLogLevel(level) {
+        const allowed = ['info', 'success', 'warning', 'error'];
+        return allowed.includes(level) ? level : 'info';
+    }
 
-        const time = new Date().toLocaleTimeString();
-        line.innerHTML = `<span class="console-time">[${time}]</span>${escapeHtml(message)}`;
+    function log(message, level = 'info') {
+        const now = new Date();
+        const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-        elements.consoleOutput.appendChild(line);
-        elements.consoleOutput.scrollTop = elements.consoleOutput.scrollHeight;
+        level = normalizeLogLevel(level);
+
+        const entry = { timestamp, level, message };
+        state.logs.push(entry);
+        renderConsole();
+    }
+
+    function renderConsole() {
+        const container = elements.consoleOutput;
+        if (!container) return;
+        container.innerHTML = '';
+
+        for (const entry of state.logs) {
+            const line = document.createElement('div');
+            line.className = `console-entry console-${entry.level}`;
+
+            line.innerHTML = `
+                <span class="console-time">[${entry.timestamp}]</span>
+                <span class="console-level">${entry.level.toUpperCase()}</span>
+                <span class="console-msg">${escapeHtml(entry.message)}</span>
+            `;
+            container.appendChild(line);
+        }
+
+        container.scrollTop = container.scrollHeight;
     }
 
     function escapeHtml(text) {
@@ -824,29 +851,216 @@
         });
     }
 
+    // Collect all folder paths from the file tree for move dialog
+    function collectFolderPaths(node, currentPath = '') {
+        const results = [];
+
+        // Build path for this node
+        let nodePath = currentPath;
+        if (node.name && node.name !== 'workspace') {
+            nodePath = currentPath ? `${currentPath}/${node.name}` : node.name;
+            nodePath = normalizeWorkspacePath(nodePath);
+        }
+
+        if (node.type === 'folder') {
+            // Include this folder (except synthetic root)
+            if (nodePath) {
+                results.push(nodePath);
+            }
+
+            if (Array.isArray(node.children)) {
+                for (const child of node.children) {
+                    results.push(...collectFolderPaths(child, nodePath));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    function getAllFolderPaths() {
+        if (!state.fileTree) return [''];
+        const paths = collectFolderPaths(state.fileTree, '');
+        // Always include root (empty string) as first option
+        return [''].concat(paths.sort());
+    }
+
     async function promptMove(oldPath, nodeType = 'file') {
         oldPath = normalizeWorkspacePath(oldPath);
-        const hint = 'e.g. notes/README.md (change the folder to move the file)';
-        showModal('Move to', oldPath, async (newPath) => {
-            newPath = normalizeWorkspacePath(newPath);
-            if (!newPath || newPath === oldPath) return;
 
-            try {
-                await api('/api/rename', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ from: oldPath, to: newPath })
-                });
-                log(`Moved: ${oldPath} -> ${newPath}`, 'success');
+        // Split old path into folder + basename
+        let oldFolder = '';
+        let oldName = oldPath;
+        const lastSlash = oldPath.lastIndexOf('/');
+        if (lastSlash !== -1) {
+            oldFolder = oldPath.substring(0, lastSlash);
+            oldName = oldPath.substring(lastSlash + 1);
+        }
 
-                // Update open tabs after move (reuse rename logic)
-                updateOpenTabsAfterRename(oldPath, newPath, nodeType);
+        // Collect folders
+        let folders = getAllFolderPaths();
 
-                await loadFileTree();
-            } catch (err) {
-                log(`Move failed: ${err.message}`, 'error');
+        // If moving a folder, filter out invalid destinations (self and descendants)
+        if (nodeType === 'folder') {
+            folders = folders.filter(folder => {
+                if (!folder) return true; // root always allowed
+                if (folder === oldPath) return false;
+                return !folder.startsWith(oldPath + '/');
+            });
+        }
+
+        // Build modal DOM
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal move-modal';
+
+        const title = document.createElement('div');
+        title.className = 'modal-title';
+        title.textContent = nodeType === 'folder' ? 'Move Folder' : 'Move File';
+
+        const folderLabel = document.createElement('label');
+        folderLabel.className = 'move-label';
+        folderLabel.textContent = 'Destination folder:';
+
+        const folderSelect = document.createElement('select');
+        folderSelect.className = 'modal-input move-select';
+        for (const folder of folders) {
+            const option = document.createElement('option');
+            option.value = folder;
+            option.textContent = folder || '/ (workspace root)';
+            if (folder === oldFolder) {
+                option.selected = true;
             }
-        }, hint);
+            folderSelect.appendChild(option);
+        }
+
+        const nameLabel = document.createElement('label');
+        nameLabel.className = 'move-label';
+        nameLabel.textContent = nodeType === 'folder' ? 'Folder name:' : 'File name:';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'modal-input';
+        nameInput.value = oldName;
+
+        const preview = document.createElement('div');
+        preview.className = 'move-preview';
+
+        function updatePreview() {
+            const folder = folderSelect.value;
+            const name = nameInput.value.trim();
+            if (!name) {
+                preview.textContent = 'New path: (invalid – empty name)';
+                preview.classList.add('invalid');
+                return;
+            }
+            const combined = folder ? `${folder}/${name}` : name;
+            const normalized = normalizeWorkspacePath(combined);
+            preview.textContent = `New path: ${normalized}`;
+            preview.classList.remove('invalid');
+        }
+
+        folderSelect.addEventListener('change', updatePreview);
+        nameInput.addEventListener('input', updatePreview);
+        updatePreview();
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-buttons';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'modal-btn modal-btn-secondary';
+        cancelBtn.textContent = 'Cancel';
+
+        const okBtn = document.createElement('button');
+        okBtn.className = 'modal-btn modal-btn-primary';
+        okBtn.textContent = 'Move';
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(okBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(folderLabel);
+        modal.appendChild(folderSelect);
+        modal.appendChild(nameLabel);
+        modal.appendChild(nameInput);
+        modal.appendChild(preview);
+        modal.appendChild(buttons);
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        function closeModal() {
+            overlay.remove();
+        }
+
+        // Focus filename input and select it
+        nameInput.focus();
+        nameInput.select();
+
+        return new Promise(resolve => {
+            cancelBtn.addEventListener('click', () => {
+                closeModal();
+                resolve();
+            });
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    closeModal();
+                    resolve();
+                }
+            });
+
+            okBtn.addEventListener('click', async () => {
+                const folder = folderSelect.value;
+                const name = nameInput.value.trim();
+                if (!name) {
+                    nameInput.focus();
+                    return;
+                }
+                const combined = folder ? `${folder}/${name}` : name;
+                const newPath = normalizeWorkspacePath(combined);
+                if (!newPath || newPath === oldPath) {
+                    closeModal();
+                    resolve();
+                    return;
+                }
+
+                try {
+                    await api('/api/rename', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ from: oldPath, to: newPath })
+                    });
+                    log(`Moved: ${oldPath} -> ${newPath}`, 'success');
+
+                    // Update open tabs after move
+                    updateOpenTabsAfterRename(oldPath, newPath, nodeType);
+
+                    await loadFileTree();
+                } catch (err) {
+                    log(`Move failed: ${err.message}`, 'error');
+                }
+
+                closeModal();
+                resolve();
+            });
+
+            nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    okBtn.click();
+                } else if (e.key === 'Escape') {
+                    cancelBtn.click();
+                }
+            });
+
+            folderSelect.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    cancelBtn.click();
+                }
+            });
+        });
     }
 
     async function promptDelete(path, nodeType = 'file') {
