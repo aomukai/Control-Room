@@ -441,7 +441,23 @@
             return () => listeners.delete(listener);
         }
 
+        async function loadFromServer() {
+            try {
+                const response = await fetch('/api/notifications');
+                if (!response.ok) return;
+                const data = await response.json();
+                data.forEach(notification => {
+                    applyDefaults(notification);
+                    notifications.set(notification.id, notification);
+                });
+                emit();
+            } catch (err) {
+                console.warn('[NotificationStore] Failed to load from server:', err.message);
+            }
+        }
+
         return {
+            loadFromServer,
             push,
             info,
             success,
@@ -471,6 +487,9 @@
 
     function initNotifications() {
         state.notifications.store = notificationStore;
+
+        // Load persisted notifications from server
+        notificationStore.loadFromServer();
 
         notificationStore.subscribe(() => {
             renderToastStack();
