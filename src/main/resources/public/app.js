@@ -20,7 +20,18 @@
             filterLevel: 'info',   // minimum level to show
             autoScrollEnabled: true
         },
-        segments: new Map()    // path -> [{ id, start, end, content }]
+        segments: new Map(),    // path -> [{ id, start, end, content }]
+        notifications: {
+            store: null,
+            filters: {
+                levels: new Set(['info', 'success', 'warning', 'error']),
+                scopes: new Set(['global', 'workbench', 'editor', 'terminal', 'jobs'])
+            },
+            centerOpen: false,
+            highlightId: null,
+            toastLimit: 4,
+            toastTimers: new Map()
+        }
     };
 
     // Generate unique tab ID
@@ -83,7 +94,20 @@
         btnRevealFile: document.getElementById('btn-reveal-file'),
         btnOpenFolder: document.getElementById('btn-open-folder'),
         btnFind: document.getElementById('btn-find'),
-        btnSearch: document.getElementById('btn-search')
+        btnSearch: document.getElementById('btn-search'),
+        toastStack: document.getElementById('toast-stack'),
+        statusBar: document.getElementById('status-bar'),
+        statusText: document.getElementById('status-text'),
+        statusAlert: document.getElementById('status-alert'),
+        notificationBell: document.getElementById('notification-bell'),
+        notificationCount: document.getElementById('notification-count'),
+        notificationCenter: document.getElementById('notification-center'),
+        notificationList: document.getElementById('notification-list'),
+        notificationMarkRead: document.getElementById('notification-mark-read'),
+        notificationClearNonErrors: document.getElementById('notification-clear-non-errors'),
+        notificationClose: document.getElementById('notification-close'),
+        notificationFilterLevels: document.getElementById('notification-filter-levels'),
+        notificationFilterScopes: document.getElementById('notification-filter-scopes')
     };
 
     // Initialize Split.js
@@ -225,6 +249,571 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Notification Store (frontend)
+    function createNotificationStore() {
+        const notifications = new Map();
+        const listeners = new Set();
+
+        function emit() {
+            listeners.forEach(listener => listener());
+        }
+
+        function normalizeLevel(level) {
+            if (!level) return 'info';
+            const normalized = level.toString().trim().toLowerCase();
+            if (normalized === 'warn') return 'warning';
+            const allowed = ['info', 'success', 'warning', 'error'];
+            return allowed.includes(normalized) ? normalized : 'info';
+        }
+
+        function normalizeScope(scope) {
+            if (!scope) return 'global';
+            const normalized = scope.toString().trim().toLowerCase();
+            const allowed = ['global', 'workbench', 'editor', 'terminal', 'jobs'];
+            return allowed.includes(normalized) ? normalized : 'global';
+        }
+
+        function normalizeCategory(category) {
+            if (!category) return 'info';
+            const normalized = category.toString().trim().toLowerCase();
+            const allowed = ['blocking', 'attention', 'social', 'info'];
+            return allowed.includes(normalized) ? normalized : 'info';
+        }
+
+        function generateId() {
+            if (window.crypto && window.crypto.randomUUID) {
+                return window.crypto.randomUUID();
+            }
+            return `notif-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        function applyDefaults(notification) {
+            if (!notification.level) notification.level = 'info';
+            if (!notification.scope) notification.scope = 'global';
+            if (!notification.category) notification.category = 'info';
+            if (!notification.timestamp) notification.timestamp = Date.now();
+            if (typeof notification.persistent !== 'boolean') notification.persistent = false;
+            if (typeof notification.read !== 'boolean') notification.read = false;
+        }
+
+        function push(level, scope, message, details, category, persistent, actionLabel, actionPayload, source) {
+            const notification = {
+                id: generateId(),
+                level: normalizeLevel(level),
+                scope: normalizeScope(scope),
+                category: normalizeCategory(category),
+                message: message || '',
+                details: details || '',
+                source: source || '',
+                timestamp: Date.now(),
+                actionLabel: actionLabel || '',
+                actionPayload: actionPayload || null,
+                persistent: Boolean(persistent),
+                read: false
+            };
+            applyDefaults(notification);
+            notifications.set(notification.id, notification);
+            emit();
+            return notification;
+        }
+
+        function info(message, scope) {
+            return push('info', scope, message);
+        }
+
+        function success(message, scope) {
+            return push('success', scope, message);
+        }
+
+        function warning(message, scope) {
+            return push('warning', scope, message);
+        }
+
+        function error(message, scope, blocking) {
+            const category = blocking ? 'blocking' : 'info';
+            return push('error', scope, message, '', category, blocking, '', null, 'system');
+        }
+
+        function editorSaveSuccess(filePath) {
+            return success(`Saved ${filePath}`, 'editor');
+        }
+
+        function editorSaveFailure(filePath, details) {
+            return push('error', 'editor', `Save failed: ${filePath}`, details || '', 'blocking', true, 'Retry', null, 'editor');
+        }
+
+        function editorDiscardWarning(filePath) {
+            return push('warning', 'editor', `Changes discarded in ${filePath}`, '', 'attention', false, '', null, 'editor');
+        }
+
+        function editorSearchNoResults(term, workspace) {
+            const target = workspace ? 'workspace' : 'this file';
+            return info(`No results for "${term}" in ${target}`, 'editor');
+        }
+
+        function issueCreated(issueId, title, author, assignee) {
+            const details = `Author: ${author}` + (assignee ? ` | Assignee: ${assignee}` : '');
+            return push('info', 'workbench', `Issue #${issueId} created: ${title}`, details, 'attention', false, 'View Issue',
+                { type: 'open-issue', issueId }, 'issues');
+        }
+
+        function issueClosed(issueId, title) {
+            return push('success', 'workbench', `Issue #${issueId} closed: ${title}`, '', 'info', false, 'View Issue',
+                { type: 'open-issue', issueId }, 'issues');
+        }
+
+        function issueCommentAdded(issueId, author) {
+            return push('info', 'workbench', `Comment added to Issue #${issueId}`, `By: ${author}`, 'social', false, 'View Thread',
+                { type: 'open-issue', issueId }, 'issues');
+        }
+
+        function agentPatchProposal(file, patchId) {
+            return push('info', 'editor', `Patch proposed for ${file}`, `Patch: ${patchId}`, 'attention', true, 'Review Patch',
+                { type: 'review-patch', patchId, filePath: file }, 'agent');
+        }
+
+        function getAll() {
+            return Array.from(notifications.values()).sort((a, b) => b.timestamp - a.timestamp);
+        }
+
+        function getByLevelAndScope(levels, scopes) {
+            return getAll().filter(notification => {
+                if (levels && levels.size > 0 && !levels.has(notification.level)) {
+                    return false;
+                }
+                if (scopes && scopes.size > 0 && !scopes.has(notification.scope)) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function getUnreadCount() {
+            let count = 0;
+            notifications.forEach(notification => {
+                if (!notification.read) count++;
+            });
+            return count;
+        }
+
+        function getUnreadCountByScope(scope) {
+            let count = 0;
+            notifications.forEach(notification => {
+                if (!notification.read && notification.scope === scope) count++;
+            });
+            return count;
+        }
+
+        function markRead(id) {
+            if (!id) return;
+            const notification = notifications.get(id);
+            if (notification) {
+                notification.read = true;
+                emit();
+            }
+        }
+
+        function markAllRead() {
+            notifications.forEach(notification => {
+                notification.read = true;
+            });
+            emit();
+        }
+
+        function clearNonErrors() {
+            notifications.forEach((notification, id) => {
+                if (notification.level !== 'error') {
+                    notifications.delete(id);
+                }
+            });
+            emit();
+        }
+
+        function clearAll() {
+            notifications.clear();
+            emit();
+        }
+
+        function subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        }
+
+        return {
+            push,
+            info,
+            success,
+            warning,
+            error,
+            editorSaveSuccess,
+            editorSaveFailure,
+            editorDiscardWarning,
+            editorSearchNoResults,
+            issueCreated,
+            issueClosed,
+            issueCommentAdded,
+            agentPatchProposal,
+            getAll,
+            getByLevelAndScope,
+            getUnreadCount,
+            getUnreadCountByScope,
+            markRead,
+            markAllRead,
+            clearNonErrors,
+            clearAll,
+            subscribe
+        };
+    }
+
+    const notificationStore = createNotificationStore();
+
+    function initNotifications() {
+        state.notifications.store = notificationStore;
+
+        notificationStore.subscribe(() => {
+            renderToastStack();
+            renderStatusBar();
+            if (state.notifications.centerOpen) {
+                renderNotificationCenterList();
+            }
+        });
+
+        if (elements.notificationBell) {
+            elements.notificationBell.addEventListener('click', () => {
+                toggleNotificationCenter();
+            });
+        }
+
+        if (elements.notificationMarkRead) {
+            elements.notificationMarkRead.addEventListener('click', () => {
+                notificationStore.markAllRead();
+            });
+        }
+
+        if (elements.notificationClearNonErrors) {
+            elements.notificationClearNonErrors.addEventListener('click', () => {
+                notificationStore.clearNonErrors();
+            });
+        }
+
+        if (elements.notificationClose) {
+            elements.notificationClose.addEventListener('click', () => {
+                closeNotificationCenter();
+            });
+        }
+
+        if (elements.notificationFilterLevels) {
+            elements.notificationFilterLevels.querySelectorAll('input[type="checkbox"]').forEach(input => {
+                input.addEventListener('change', () => {
+                    updateNotificationFilters();
+                });
+            });
+        }
+
+        if (elements.notificationFilterScopes) {
+            elements.notificationFilterScopes.querySelectorAll('input[type="checkbox"]').forEach(input => {
+                input.addEventListener('change', () => {
+                    updateNotificationFilters();
+                });
+            });
+        }
+
+        if (elements.statusAlert) {
+            elements.statusAlert.addEventListener('click', () => {
+                const blocking = getMostRecentBlockingError();
+                openNotificationCenter(blocking ? blocking.id : null);
+            });
+        }
+
+        renderToastStack();
+        renderStatusBar();
+    }
+
+    function updateNotificationFilters() {
+        if (!elements.notificationFilterLevels || !elements.notificationFilterScopes) {
+            return;
+        }
+
+        state.notifications.filters.levels.clear();
+        state.notifications.filters.scopes.clear();
+
+        elements.notificationFilterLevels.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            if (input.checked) {
+                state.notifications.filters.levels.add(input.dataset.level);
+            }
+        });
+
+        elements.notificationFilterScopes.querySelectorAll('input[type="checkbox"]').forEach(input => {
+            if (input.checked) {
+                state.notifications.filters.scopes.add(input.dataset.scope);
+            }
+        });
+
+        renderNotificationCenterList();
+    }
+
+    function getMostRecentBlockingError() {
+        const all = notificationStore.getAll();
+        return all.find(notification => !notification.read && notification.level === 'error' && notification.category === 'blocking') || null;
+    }
+
+    function renderStatusBar() {
+        if (!elements.notificationCount || !elements.statusAlert) {
+            return;
+        }
+
+        const unreadCount = notificationStore.getUnreadCount();
+        if (unreadCount > 0) {
+            elements.notificationCount.textContent = unreadCount;
+            elements.notificationCount.classList.remove('hidden');
+        } else {
+            elements.notificationCount.classList.add('hidden');
+        }
+
+        const blocking = getMostRecentBlockingError();
+        if (blocking) {
+            elements.statusAlert.textContent = blocking.message || 'Blocking error (click for details)';
+            elements.statusAlert.classList.remove('hidden');
+        } else {
+            elements.statusAlert.classList.add('hidden');
+        }
+    }
+
+    function renderToastStack() {
+        if (!elements.toastStack) return;
+
+        const active = notificationStore.getAll().filter(notification => !notification.read || notification.persistent);
+        const visible = active.slice(0, state.notifications.toastLimit);
+        const visibleIds = new Set(visible.map(notification => notification.id));
+
+        for (const [id, timer] of state.notifications.toastTimers) {
+            if (!visibleIds.has(id)) {
+                clearTimeout(timer);
+                state.notifications.toastTimers.delete(id);
+            }
+        }
+
+        elements.toastStack.innerHTML = '';
+
+        visible.forEach(notification => {
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${notification.level}`;
+
+            const level = document.createElement('div');
+            level.className = 'toast-level';
+            level.textContent = notification.level.toUpperCase();
+
+            const message = document.createElement('div');
+            message.className = 'toast-message';
+            message.textContent = notification.message || '';
+
+            toast.appendChild(level);
+            toast.appendChild(message);
+
+            if (notification.details) {
+                const details = document.createElement('div');
+                details.className = 'toast-details';
+                details.textContent = notification.details;
+                toast.appendChild(details);
+            }
+
+            if (notification.actionLabel) {
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'toast-action';
+                action.textContent = notification.actionLabel;
+                action.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleNotificationAction(notification);
+                });
+                toast.appendChild(action);
+            }
+
+            toast.addEventListener('click', () => {
+                if (notification.actionLabel) {
+                    handleNotificationAction(notification);
+                } else {
+                    openNotificationCenter(notification.id);
+                    notificationStore.markRead(notification.id);
+                }
+            });
+
+            elements.toastStack.appendChild(toast);
+            scheduleToastDismiss(notification);
+        });
+    }
+
+    function scheduleToastDismiss(notification) {
+        if (!notification || notification.persistent) {
+            return;
+        }
+        if (state.notifications.toastTimers.has(notification.id)) {
+            return;
+        }
+
+        const duration = getToastDuration(notification.level);
+        if (duration <= 0) return;
+
+        const timer = setTimeout(() => {
+            notificationStore.markRead(notification.id);
+            state.notifications.toastTimers.delete(notification.id);
+        }, duration);
+
+        state.notifications.toastTimers.set(notification.id, timer);
+    }
+
+    function getToastDuration(level) {
+        switch (level) {
+            case 'success':
+            case 'info':
+                return 5000;
+            case 'warning':
+                return 9000;
+            case 'error':
+                return 12000;
+            default:
+                return 5000;
+        }
+    }
+
+    function openNotificationCenter(highlightId) {
+        if (!elements.notificationCenter) return;
+        state.notifications.centerOpen = true;
+        state.notifications.highlightId = highlightId || null;
+        elements.notificationCenter.classList.remove('hidden');
+        elements.notificationCenter.setAttribute('aria-hidden', 'false');
+        renderNotificationCenterList();
+    }
+
+    function closeNotificationCenter() {
+        if (!elements.notificationCenter) return;
+        state.notifications.centerOpen = false;
+        state.notifications.highlightId = null;
+        elements.notificationCenter.classList.add('hidden');
+        elements.notificationCenter.setAttribute('aria-hidden', 'true');
+    }
+
+    function toggleNotificationCenter() {
+        if (state.notifications.centerOpen) {
+            closeNotificationCenter();
+        } else {
+            openNotificationCenter();
+        }
+    }
+
+    function renderNotificationCenterList() {
+        if (!elements.notificationList) return;
+
+        const levels = state.notifications.filters.levels;
+        const scopes = state.notifications.filters.scopes;
+        const notifications = notificationStore.getByLevelAndScope(levels, scopes);
+
+        elements.notificationList.innerHTML = '';
+
+        notifications.forEach(notification => {
+            const item = document.createElement('div');
+            item.className = 'notification-item';
+            if (!notification.read) {
+                item.classList.add('unread');
+            }
+            if (state.notifications.highlightId === notification.id) {
+                item.classList.add('highlight');
+            }
+
+            const meta = document.createElement('div');
+            meta.className = 'notification-meta';
+            meta.innerHTML = `
+                <span>${notification.level.toUpperCase()} · ${notification.scope}</span>
+                <span>${formatTimestamp(notification.timestamp)}</span>
+            `;
+
+            const message = document.createElement('div');
+            message.className = 'notification-message';
+            message.textContent = notification.message || '';
+
+            const details = document.createElement('div');
+            details.className = 'notification-details';
+            const detailText = [];
+            if (notification.details) detailText.push(notification.details);
+            if (notification.source) detailText.push(`Source: ${notification.source}`);
+            details.textContent = detailText.join(' | ');
+
+            if (notification.category) {
+                const badge = document.createElement('span');
+                badge.className = 'notification-badge';
+                badge.textContent = notification.category.toUpperCase();
+                meta.appendChild(badge);
+            }
+
+            item.appendChild(meta);
+            item.appendChild(message);
+            item.appendChild(details);
+
+            if (notification.actionLabel) {
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'notification-action';
+                action.textContent = notification.actionLabel;
+                action.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleNotificationAction(notification);
+                });
+                item.appendChild(action);
+            }
+
+            item.addEventListener('click', () => {
+                item.classList.toggle('expanded');
+                notificationStore.markRead(notification.id);
+                state.notifications.highlightId = notification.id;
+            });
+
+            elements.notificationList.appendChild(item);
+        });
+    }
+
+    function handleNotificationAction(notification) {
+        if (!notification) return;
+        dispatchNotificationAction(notification);
+        notificationStore.markRead(notification.id);
+    }
+
+    function dispatchNotificationAction(notification) {
+        const payload = notification.actionPayload;
+        if (!payload || typeof payload !== 'object') {
+            openNotificationCenter(notification.id);
+            return;
+        }
+
+        switch (payload.type) {
+            case 'open-notification-center':
+                openNotificationCenter(notification.id);
+                break;
+            case 'open-issue':
+                log(`Open issue requested: ${payload.issueId}`, 'info');
+                openNotificationCenter(notification.id);
+                break;
+            case 'open-file':
+                if (payload.filePath) {
+                    openFile(payload.filePath);
+                }
+                openNotificationCenter(notification.id);
+                break;
+            case 'open-patch':
+            case 'review-patch':
+                log(`Patch review requested: ${payload.patchId || 'unknown'}`, 'info');
+                openNotificationCenter(notification.id);
+                break;
+            default:
+                openNotificationCenter(notification.id);
+        }
+    }
+
+    function formatTimestamp(timestamp) {
+        const date = new Date(timestamp);
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
 
     // API Functions
@@ -568,6 +1157,7 @@
         if (!force && file && file.content !== file.originalContent) {
             const confirmed = confirm(`${path} has unsaved changes. Close anyway?`);
             if (!confirmed) return;
+            notificationStore.editorDiscardWarning(path);
         }
 
         // Remove tab element
@@ -675,8 +1265,10 @@
             file.originalContent = file.content;
             updateDirtyStateForPath(state.activeFile);
             log(`Saved: ${state.activeFile}`, 'success');
+            notificationStore.editorSaveSuccess(state.activeFile);
         } catch (err) {
             log(`Failed to save: ${err.message}`, 'error');
+            notificationStore.editorSaveFailure(state.activeFile, err.message);
         }
     }
 
@@ -693,8 +1285,10 @@
                     file.originalContent = file.content;
                     updateDirtyStateForPath(path);
                     log(`Saved: ${path}`, 'success');
+                    notificationStore.editorSaveSuccess(path);
                 } catch (err) {
                     log(`Failed to save ${path}: ${err.message}`, 'error');
+                    notificationStore.editorSaveFailure(path, err.message);
                 }
             }
         }
@@ -1186,6 +1780,7 @@
 
             if (results.length === 0) {
                 elements.searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
+                notificationStore.editorSearchNoResults(query, true);
                 return;
             }
 
@@ -1635,6 +2230,7 @@
         initAIActions();
         initSidebarButtons();
         initEventListeners();
+        initNotifications();
         loadFileTree();
 
         // Welcome message in chat

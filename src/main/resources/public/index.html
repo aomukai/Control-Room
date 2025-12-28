@@ -155,6 +155,18 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Status Bar -->
+                    <div id="status-bar">
+                        <div id="status-left">
+                            <span id="status-text">Ready</span>
+                            <button id="status-alert" class="hidden" type="button"></button>
+                        </div>
+                        <div id="status-right">
+                            <button id="notification-bell" type="button" title="Notifications">Bell</button>
+                            <span id="notification-count" class="hidden">0</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Right Chat Panel -->
@@ -168,6 +180,39 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Toast Stack -->
+    <div id="toast-stack"></div>
+
+    <!-- Notification Center -->
+    <div id="notification-center" class="hidden" aria-hidden="true">
+        <div class="notification-center-header">
+            <div class="notification-center-title">Notifications</div>
+            <div class="notification-center-actions">
+                <button id="notification-mark-read" type="button">Mark all read</button>
+                <button id="notification-clear-non-errors" type="button">Clear non-errors</button>
+                <button id="notification-close" type="button">Close</button>
+            </div>
+        </div>
+        <div class="notification-filters">
+            <div class="notification-filter-group" id="notification-filter-levels">
+                <span class="filter-label">Levels</span>
+                <label><input type="checkbox" data-level="info" checked>Info</label>
+                <label><input type="checkbox" data-level="success" checked>Success</label>
+                <label><input type="checkbox" data-level="warning" checked>Warning</label>
+                <label><input type="checkbox" data-level="error" checked>Error</label>
+            </div>
+            <div class="notification-filter-group" id="notification-filter-scopes">
+                <span class="filter-label">Scopes</span>
+                <label><input type="checkbox" data-scope="global" checked>Global</label>
+                <label><input type="checkbox" data-scope="workbench" checked>Workbench</label>
+                <label><input type="checkbox" data-scope="editor" checked>Editor</label>
+                <label><input type="checkbox" data-scope="terminal" checked>Terminal</label>
+                <label><input type="checkbox" data-scope="jobs" checked>Jobs</label>
+            </div>
+        </div>
+        <div id="notification-list"></div>
     </div>
 
     <!-- Scripts -->
