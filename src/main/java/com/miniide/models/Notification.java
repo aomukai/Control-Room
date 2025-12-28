@@ -1,21 +1,142 @@
 package com.miniide.models;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public class Notification {
 
+    public enum Level {
+        INFO,
+        SUCCESS,
+        WARNING,
+        ERROR;
+
+        @JsonCreator
+        public static Level fromString(String value) {
+            if (value == null) {
+                return null;
+            }
+            String normalized = value.trim().toLowerCase();
+            switch (normalized) {
+                case "info":
+                    return INFO;
+                case "success":
+                    return SUCCESS;
+                case "warn":
+                case "warning":
+                    return WARNING;
+                case "error":
+                    return ERROR;
+                default:
+                    return null;
+            }
+        }
+
+        @JsonValue
+        public String toJson() {
+            return name().toLowerCase();
+        }
+    }
+
+    public enum Scope {
+        GLOBAL,
+        WORKBENCH,
+        EDITOR,
+        TERMINAL,
+        JOBS;
+
+        @JsonCreator
+        public static Scope fromString(String value) {
+            if (value == null) {
+                return null;
+            }
+            String normalized = value.trim().toLowerCase();
+            switch (normalized) {
+                case "global":
+                    return GLOBAL;
+                case "workbench":
+                    return WORKBENCH;
+                case "editor":
+                    return EDITOR;
+                case "terminal":
+                    return TERMINAL;
+                case "jobs":
+                    return JOBS;
+                default:
+                    return null;
+            }
+        }
+
+        @JsonValue
+        public String toJson() {
+            return name().toLowerCase();
+        }
+    }
+
+    public enum Category {
+        BLOCKING,
+        ATTENTION,
+        SOCIAL,
+        INFO;
+
+        @JsonCreator
+        public static Category fromString(String value) {
+            if (value == null) {
+                return null;
+            }
+            String normalized = value.trim().toLowerCase();
+            switch (normalized) {
+                case "blocking":
+                    return BLOCKING;
+                case "attention":
+                    return ATTENTION;
+                case "social":
+                    return SOCIAL;
+                case "info":
+                    return INFO;
+                default:
+                    return null;
+            }
+        }
+
+        @JsonValue
+        public String toJson() {
+            return name().toLowerCase();
+        }
+    }
+
     private String id;
+    private Level level;
+    private Scope scope;
+    private Category category;
     private String message;
-    private String level; // info, success, warn, error
-    private long createdAt;
+    private String details;
+    private String source;
+    @JsonAlias("createdAt")
+    private long timestamp;
+    private String actionLabel;
+    private Object actionPayload;
+    private boolean persistent;
     private boolean read;
 
     public Notification() {
     }
 
-    public Notification(String id, String message, String level, long createdAt, boolean read) {
+    public Notification(String id, Level level, Scope scope, Category category, String message, String details,
+                        String source, long timestamp, String actionLabel, Object actionPayload,
+                        boolean persistent, boolean read) {
         this.id = id;
-        this.message = message;
         this.level = level;
-        this.createdAt = createdAt;
+        this.scope = scope;
+        this.category = category;
+        this.message = message;
+        this.details = details;
+        this.source = source;
+        this.timestamp = timestamp;
+        this.actionLabel = actionLabel;
+        this.actionPayload = actionPayload;
+        this.persistent = persistent;
         this.read = read;
     }
 
@@ -27,6 +148,30 @@ public class Notification {
         this.id = id;
     }
 
+    public Level getLevel() {
+        return level;
+    }
+
+    public void setLevel(Level level) {
+        this.level = level;
+    }
+
+    public Scope getScope() {
+        return scope;
+    }
+
+    public void setScope(Scope scope) {
+        this.scope = scope;
+    }
+
+    public Category getCategory() {
+        return category;
+    }
+
+    public void setCategory(Category category) {
+        this.category = category;
+    }
+
     public String getMessage() {
         return message;
     }
@@ -35,20 +180,52 @@ public class Notification {
         this.message = message;
     }
 
-    public String getLevel() {
-        return level;
+    public String getDetails() {
+        return details;
     }
 
-    public void setLevel(String level) {
-        this.level = level;
+    public void setDetails(String details) {
+        this.details = details;
     }
 
-    public long getCreatedAt() {
-        return createdAt;
+    public String getSource() {
+        return source;
     }
 
-    public void setCreatedAt(long createdAt) {
-        this.createdAt = createdAt;
+    public void setSource(String source) {
+        this.source = source;
+    }
+
+    public long getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public String getActionLabel() {
+        return actionLabel;
+    }
+
+    public void setActionLabel(String actionLabel) {
+        this.actionLabel = actionLabel;
+    }
+
+    public Object getActionPayload() {
+        return actionPayload;
+    }
+
+    public void setActionPayload(Object actionPayload) {
+        this.actionPayload = actionPayload;
+    }
+
+    public boolean isPersistent() {
+        return persistent;
+    }
+
+    public void setPersistent(boolean persistent) {
+        this.persistent = persistent;
     }
 
     public boolean isRead() {
@@ -63,9 +240,12 @@ public class Notification {
     public String toString() {
         return "Notification{" +
             "id='" + id + '\'' +
-            ", level='" + level + '\'' +
+            ", level=" + level +
+            ", scope=" + scope +
+            ", category=" + category +
             ", message='" + message + '\'' +
-            ", createdAt=" + createdAt +
+            ", timestamp=" + timestamp +
+            ", persistent=" + persistent +
             ", read=" + read +
             '}';
     }
