@@ -15,7 +15,11 @@
         activeTabId: null,     // current tab ID
         fileTree: null,
         tabCounter: 0,         // for generating unique tab IDs
-        logs: [],              // { timestamp, level, message }
+        console: {
+            logs: [],              // { timestamp, level, message }
+            filterLevel: 'info',   // minimum level to show
+            autoScrollEnabled: true
+        },
         segments: new Map()    // path -> [{ id, start, end, content }]
     };
 
@@ -161,8 +165,35 @@
         level = normalizeLogLevel(level);
 
         const entry = { timestamp, level, message };
-        state.logs.push(entry);
+        addLog(entry);
         renderConsole();
+    }
+
+    function addLog(entry) {
+        if (!entry) return;
+        state.console.logs.push(entry);
+    }
+
+    function clearLogs() {
+        state.console.logs = [];
+    }
+
+    function setFilterLevel(level) {
+        // Accept "warn" alias and default to "info" if invalid
+        const normalized = level === 'warn' ? 'warning' : level;
+        const allowed = ['info', 'success', 'warning', 'error'];
+        state.console.filterLevel = allowed.includes(normalized) ? normalized : 'info';
+    }
+
+    function setAutoScrollEnabled(enabled) {
+        state.console.autoScrollEnabled = Boolean(enabled);
+    }
+
+    function passesLogFilter(entry) {
+        const order = ['info', 'success', 'warning', 'error'];
+        const minIndex = order.indexOf(state.console.filterLevel);
+        const entryIndex = order.indexOf(entry.level);
+        return entryIndex >= minIndex;
     }
 
     function renderConsole() {
@@ -170,7 +201,10 @@
         if (!container) return;
         container.innerHTML = '';
 
-        for (const entry of state.logs) {
+        for (const entry of state.console.logs) {
+            if (!passesLogFilter(entry)) {
+                continue;
+            }
             const line = document.createElement('div');
             line.className = `console-entry console-${entry.level}`;
 
@@ -182,7 +216,9 @@
             container.appendChild(line);
         }
 
-        container.scrollTop = container.scrollHeight;
+        if (state.console.autoScrollEnabled) {
+            container.scrollTop = container.scrollHeight;
+        }
     }
 
     function escapeHtml(text) {
