@@ -251,6 +251,79 @@
         return div.innerHTML;
     }
 
+    // Issue API (frontend wrapper)
+    const issueApi = {
+        async list(filters = {}) {
+            const params = new URLSearchParams();
+            if (filters.tag) params.set('tag', filters.tag);
+            if (filters.assignedTo) params.set('assignedTo', filters.assignedTo);
+            if (filters.status) params.set('status', filters.status);
+            if (filters.priority) params.set('priority', filters.priority);
+            const query = params.toString();
+            const url = '/api/issues' + (query ? '?' + query : '');
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Failed to fetch issues');
+            return response.json();
+        },
+
+        async get(id) {
+            const response = await fetch(`/api/issues/${id}`);
+            if (!response.ok) {
+                if (response.status === 404) throw new Error(`Issue #${id} not found`);
+                throw new Error('Failed to fetch issue');
+            }
+            return response.json();
+        },
+
+        async create(data) {
+            const response = await fetch('/api/issues', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to create issue');
+            }
+            return response.json();
+        },
+
+        async update(id, data) {
+            const response = await fetch(`/api/issues/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to update issue');
+            }
+            return response.json();
+        },
+
+        async delete(id) {
+            const response = await fetch(`/api/issues/${id}`, { method: 'DELETE' });
+            if (!response.ok) {
+                if (response.status === 404) throw new Error(`Issue #${id} not found`);
+                throw new Error('Failed to delete issue');
+            }
+            return response.json();
+        },
+
+        async addComment(issueId, data) {
+            const response = await fetch(`/api/issues/${issueId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to add comment');
+            }
+            return response.json();
+        }
+    };
+
     // Notification Store (frontend)
     function createNotificationStore() {
         const notifications = new Map();
