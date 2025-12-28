@@ -2,6 +2,11 @@ package com.miniide;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.miniide.models.Issue;
+import com.miniide.models.Notification;
+import com.miniide.models.Notification.Level;
+import com.miniide.models.Notification.Scope;
+import com.miniide.models.Notification.Category;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import io.javalin.Javalin;
@@ -12,14 +17,20 @@ import io.javalin.http.staticfiles.Location;
 import java.io.FileNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 public class Main {
 
     private static final String VERSION = "1.0.0";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static WorkspaceService workspaceService;
+    private static NotificationStore notificationStore;
+    private static IssueMemoryService issueService;
     private static AppLogger logger;
 
     public static void main(String[] args) {
@@ -42,6 +53,11 @@ public class Main {
             // Create WorkspaceService for all runtime file operations
             workspaceService = new WorkspaceService(config.getWorkspacePath());
             logger.info("Workspace initialized: " + config.getWorkspacePath());
+
+            // Initialize notification and issue services
+            notificationStore = new NotificationStore();
+            issueService = new IssueMemoryService();
+            logger.info("Notification and Issue services initialized");
 
             // Create and configure Javalin
             Javalin app = Javalin.create(cfg -> {
@@ -113,6 +129,23 @@ public class Main {
         app.post("/api/workspace/terminal", Main::openWorkspaceTerminal);
         app.post("/api/file/reveal", Main::revealFile);
         app.post("/api/file/open-folder", Main::openContainingFolder);
+
+        // Notification endpoints
+        app.get("/api/notifications", Main::getNotifications);
+        app.get("/api/notifications/unread-count", Main::getUnreadCount);
+        app.get("/api/notifications/{id}", Main::getNotification);
+        app.post("/api/notifications", Main::createNotification);
+        app.put("/api/notifications/{id}", Main::updateNotification);
+        app.delete("/api/notifications/{id}", Main::deleteNotification);
+        app.post("/api/notifications/mark-all-read", Main::markAllNotificationsRead);
+        app.post("/api/notifications/clear", Main::clearNotifications);
+
+        // Issue endpoints
+        app.get("/api/issues", Main::getIssues);
+        app.get("/api/issues/{id}", Main::getIssue);
+        app.post("/api/issues", Main::createIssue);
+        app.put("/api/issues/{id}", Main::updateIssue);
+        app.delete("/api/issues/{id}", Main::deleteIssue);
     }
 
     private static void registerExceptionHandlers(Javalin app) {
@@ -530,6 +563,350 @@ public class Main {
         } catch (Exception e) {
             logger.error("Failed to open containing folder: " + e.getMessage());
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
+    // ===== Notification Endpoints =====
+
+    private static void getNotifications(Context ctx) {
+        try {
+            String levelParam = ctx.queryParam("level");
+            String scopeParam = ctx.queryParam("scope");
+
+            Set<Level> levels = null;
+            Set<Scope> scopes = null;
+
+            if (levelParam != null && !levelParam.isBlank()) {
+                levels = new HashSet<>();
+                for (String l : levelParam.split(",")) {
+                    Level level = Level.fromString(l.trim());
+                    if (level != null) {
+                        levels.add(level);
+                    }
+                }
+            }
+
+            if (scopeParam != null && !scopeParam.isBlank()) {
+                scopes = new HashSet<>();
+                for (String s : scopeParam.split(",")) {
+                    Scope scope = Scope.fromString(s.trim());
+                    if (scope != null) {
+                        scopes.add(scope);
+                    }
+                }
+            }
+
+            List<Notification> notifications;
+            if (levels != null || scopes != null) {
+                notifications = notificationStore.getByLevelAndScope(levels, scopes);
+            } else {
+                notifications = notificationStore.getAll();
+            }
+
+            ctx.json(notifications);
+        } catch (Exception e) {
+            logger.error("Error getting notifications: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getNotification(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            List<Notification> all = notificationStore.getAll();
+            Optional<Notification> found = all.stream()
+                .filter(n -> id.equals(n.getId()))
+                .findFirst();
+
+            if (found.isPresent()) {
+                ctx.json(found.get());
+            } else {
+                ctx.status(404).json(Map.of("error", "Notification not found: " + id));
+            }
+        } catch (Exception e) {
+            logger.error("Error getting notification: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getUnreadCount(Context ctx) {
+        try {
+            String scopeParam = ctx.queryParam("scope");
+            int count;
+
+            if (scopeParam != null && !scopeParam.isBlank()) {
+                Scope scope = Scope.fromString(scopeParam);
+                if (scope != null) {
+                    count = notificationStore.getUnreadCountByScope(scope);
+                } else {
+                    count = notificationStore.getUnreadCount();
+                }
+            } else {
+                count = notificationStore.getUnreadCount();
+            }
+
+            ctx.json(Map.of("unreadCount", count));
+        } catch (Exception e) {
+            logger.error("Error getting unread count: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void createNotification(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+
+            String message = json.has("message") ? json.get("message").asText() : null;
+            if (message == null || message.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Message is required"));
+                return;
+            }
+
+            Level level = Level.INFO;
+            if (json.has("level")) {
+                Level parsed = Level.fromString(json.get("level").asText());
+                if (parsed != null) level = parsed;
+            }
+
+            Scope scope = Scope.GLOBAL;
+            if (json.has("scope")) {
+                Scope parsed = Scope.fromString(json.get("scope").asText());
+                if (parsed != null) scope = parsed;
+            }
+
+            Category category = Category.INFO;
+            if (json.has("category")) {
+                Category parsed = Category.fromString(json.get("category").asText());
+                if (parsed != null) category = parsed;
+            }
+
+            String details = json.has("details") ? json.get("details").asText() : null;
+            boolean persistent = json.has("persistent") && json.get("persistent").asBoolean();
+            String actionLabel = json.has("actionLabel") ? json.get("actionLabel").asText() : null;
+            Object actionPayload = json.has("actionPayload") ? json.get("actionPayload") : null;
+            String source = json.has("source") ? json.get("source").asText() : null;
+
+            Notification notification = notificationStore.push(level, scope, message, details,
+                category, persistent, actionLabel, actionPayload, source);
+
+            logger.info("Notification created via API: " + notification.getId());
+            ctx.status(201).json(notification);
+        } catch (Exception e) {
+            logger.error("Error creating notification: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void updateNotification(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            JsonNode json = objectMapper.readTree(ctx.body());
+
+            // Currently only supports marking as read
+            if (json.has("read") && json.get("read").asBoolean()) {
+                notificationStore.markRead(id);
+                logger.info("Notification marked as read: " + id);
+                ctx.json(Map.of("success", true, "message", "Notification marked as read"));
+            } else {
+                ctx.json(Map.of("success", true, "message", "No changes made"));
+            }
+        } catch (Exception e) {
+            logger.error("Error updating notification: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void deleteNotification(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            boolean deleted = notificationStore.delete(id);
+
+            if (deleted) {
+                logger.info("Notification deleted: " + id);
+                ctx.json(Map.of("success", true, "message", "Notification deleted"));
+            } else {
+                ctx.status(404).json(Map.of("error", "Notification not found: " + id));
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting notification: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void markAllNotificationsRead(Context ctx) {
+        try {
+            notificationStore.markAllRead();
+            logger.info("All notifications marked as read");
+            ctx.json(Map.of("success", true, "message", "All notifications marked as read"));
+        } catch (Exception e) {
+            logger.error("Error marking all notifications read: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void clearNotifications(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            boolean clearAll = json.has("all") && json.get("all").asBoolean();
+
+            if (clearAll) {
+                notificationStore.clearAll();
+                logger.info("All notifications cleared");
+                ctx.json(Map.of("success", true, "message", "All notifications cleared"));
+            } else {
+                notificationStore.clearNonErrors();
+                logger.info("Non-error notifications cleared");
+                ctx.json(Map.of("success", true, "message", "Non-error notifications cleared"));
+            }
+        } catch (Exception e) {
+            logger.error("Error clearing notifications: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ===== Issue Endpoints =====
+
+    private static void getIssues(Context ctx) {
+        try {
+            String tag = ctx.queryParam("tag");
+            String assignedTo = ctx.queryParam("assignedTo");
+            String status = ctx.queryParam("status");
+
+            List<Issue> issues;
+
+            if (tag != null && !tag.isBlank()) {
+                issues = issueService.listIssuesByTag(tag);
+            } else if (assignedTo != null && !assignedTo.isBlank()) {
+                issues = issueService.listIssuesByAssignee(assignedTo);
+            } else {
+                issues = issueService.listIssues();
+            }
+
+            // Filter by status if provided
+            if (status != null && !status.isBlank()) {
+                List<Issue> filtered = new ArrayList<>();
+                for (Issue issue : issues) {
+                    if (status.equalsIgnoreCase(issue.getStatus())) {
+                        filtered.add(issue);
+                    }
+                }
+                issues = filtered;
+            }
+
+            ctx.json(issues);
+        } catch (Exception e) {
+            logger.error("Error getting issues: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getIssue(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            Optional<Issue> issue = issueService.getIssue(id);
+
+            if (issue.isPresent()) {
+                ctx.json(issue.get());
+            } else {
+                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+            }
+        } catch (Exception e) {
+            logger.error("Error getting issue: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void createIssue(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+
+            String title = json.has("title") ? json.get("title").asText() : null;
+            if (title == null || title.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Title is required"));
+                return;
+            }
+
+            String body = json.has("body") ? json.get("body").asText() : "";
+            String openedBy = json.has("openedBy") ? json.get("openedBy").asText() : "user";
+            String assignedTo = json.has("assignedTo") ? json.get("assignedTo").asText() : null;
+
+            List<String> tags = new ArrayList<>();
+            if (json.has("tags") && json.get("tags").isArray()) {
+                for (JsonNode tagNode : json.get("tags")) {
+                    tags.add(tagNode.asText());
+                }
+            }
+
+            Issue issue = issueService.createIssue(title, body, openedBy, assignedTo, tags);
+            logger.info("Issue created via API: " + issue.getId() + " - " + issue.getTitle());
+            ctx.status(201).json(issue);
+        } catch (Exception e) {
+            logger.error("Error creating issue: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void updateIssue(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            Optional<Issue> existing = issueService.getIssue(id);
+
+            if (existing.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+                return;
+            }
+
+            JsonNode json = objectMapper.readTree(ctx.body());
+            Issue issue = existing.get();
+
+            if (json.has("title")) {
+                issue.setTitle(json.get("title").asText());
+            }
+            if (json.has("body")) {
+                issue.setBody(json.get("body").asText());
+            }
+            if (json.has("openedBy")) {
+                issue.setOpenedBy(json.get("openedBy").asText());
+            }
+            if (json.has("assignedTo")) {
+                issue.setAssignedTo(json.get("assignedTo").asText());
+            }
+            if (json.has("status")) {
+                issue.setStatus(json.get("status").asText());
+            }
+            if (json.has("tags") && json.get("tags").isArray()) {
+                List<String> tags = new ArrayList<>();
+                for (JsonNode tagNode : json.get("tags")) {
+                    tags.add(tagNode.asText());
+                }
+                issue.setTags(tags);
+            }
+
+            Issue updated = issueService.updateIssue(issue);
+            logger.info("Issue updated via API: " + updated.getId());
+            ctx.json(updated);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error updating issue: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void deleteIssue(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            boolean deleted = issueService.deleteIssue(id);
+
+            if (deleted) {
+                logger.info("Issue deleted via API: " + id);
+                ctx.json(Map.of("success", true, "message", "Issue deleted"));
+            } else {
+                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting issue: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }
 }

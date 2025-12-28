@@ -170,6 +170,19 @@ public class NotificationStore {
         saveAll();
     }
 
+    public boolean delete(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        Notification removed = notifications.remove(id);
+        if (removed != null) {
+            log("Notification deleted: " + id);
+            saveAll();
+            return true;
+        }
+        return false;
+    }
+
     // Backward-compatible entry point
     public Notification push(String message, String level) {
         return push(Level.fromString(level), Scope.GLOBAL, message);
