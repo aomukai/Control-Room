@@ -2,6 +2,7 @@ package com.miniide;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.models.Notification;
 import com.miniide.models.Notification.Level;
@@ -146,6 +147,7 @@ public class Main {
         app.post("/api/issues", Main::createIssue);
         app.put("/api/issues/{id}", Main::updateIssue);
         app.delete("/api/issues/{id}", Main::deleteIssue);
+        app.post("/api/issues/{id}/comments", Main::addComment);
     }
 
     private static void registerExceptionHandlers(Javalin app) {
@@ -802,14 +804,16 @@ public class Main {
 
     private static void getIssue(Context ctx) {
         try {
-            String id = ctx.pathParam("id");
+            int id = Integer.parseInt(ctx.pathParam("id"));
             Optional<Issue> issue = issueService.getIssue(id);
 
             if (issue.isPresent()) {
                 ctx.json(issue.get());
             } else {
-                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + id));
             }
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (Exception e) {
             logger.error("Error getting issue: " + e.getMessage());
             ctx.status(500).json(Map.of("error", e.getMessage()));
@@ -829,6 +833,7 @@ public class Main {
             String body = json.has("body") ? json.get("body").asText() : "";
             String openedBy = json.has("openedBy") ? json.get("openedBy").asText() : "user";
             String assignedTo = json.has("assignedTo") ? json.get("assignedTo").asText() : null;
+            String priority = json.has("priority") ? json.get("priority").asText() : "normal";
 
             List<String> tags = new ArrayList<>();
             if (json.has("tags") && json.get("tags").isArray()) {
@@ -837,8 +842,8 @@ public class Main {
                 }
             }
 
-            Issue issue = issueService.createIssue(title, body, openedBy, assignedTo, tags);
-            logger.info("Issue created via API: " + issue.getId() + " - " + issue.getTitle());
+            Issue issue = issueService.createIssue(title, body, openedBy, assignedTo, tags, priority);
+            logger.info("Issue created via API: #" + issue.getId() + " - " + issue.getTitle());
             ctx.status(201).json(issue);
         } catch (Exception e) {
             logger.error("Error creating issue: " + e.getMessage());
@@ -848,11 +853,11 @@ public class Main {
 
     private static void updateIssue(Context ctx) {
         try {
-            String id = ctx.pathParam("id");
+            int id = Integer.parseInt(ctx.pathParam("id"));
             Optional<Issue> existing = issueService.getIssue(id);
 
             if (existing.isEmpty()) {
-                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + id));
                 return;
             }
 
@@ -871,6 +876,9 @@ public class Main {
             if (json.has("assignedTo")) {
                 issue.setAssignedTo(json.get("assignedTo").asText());
             }
+            if (json.has("priority")) {
+                issue.setPriority(json.get("priority").asText());
+            }
             if (json.has("status")) {
                 issue.setStatus(json.get("status").asText());
             }
@@ -883,8 +891,10 @@ public class Main {
             }
 
             Issue updated = issueService.updateIssue(issue);
-            logger.info("Issue updated via API: " + updated.getId());
+            logger.info("Issue updated via API: #" + updated.getId());
             ctx.json(updated);
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (IllegalArgumentException e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -895,17 +905,55 @@ public class Main {
 
     private static void deleteIssue(Context ctx) {
         try {
-            String id = ctx.pathParam("id");
+            int id = Integer.parseInt(ctx.pathParam("id"));
             boolean deleted = issueService.deleteIssue(id);
 
             if (deleted) {
-                logger.info("Issue deleted via API: " + id);
-                ctx.json(Map.of("success", true, "message", "Issue deleted"));
+                logger.info("Issue deleted via API: #" + id);
+                ctx.json(Map.of("success", true, "message", "Issue #" + id + " deleted"));
             } else {
-                ctx.status(404).json(Map.of("error", "Issue not found: " + id));
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + id));
             }
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (Exception e) {
             logger.error("Error deleting issue: " + e.getMessage());
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void addComment(Context ctx) {
+        try {
+            int issueId = Integer.parseInt(ctx.pathParam("id"));
+            JsonNode json = objectMapper.readTree(ctx.body());
+
+            String author = json.has("author") ? json.get("author").asText() : "user";
+            String body = json.has("body") ? json.get("body").asText() : null;
+
+            if (body == null || body.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Comment body is required"));
+                return;
+            }
+
+            Comment.CommentAction action = null;
+            if (json.has("action") && json.get("action").isObject()) {
+                JsonNode actionNode = json.get("action");
+                String type = actionNode.has("type") ? actionNode.get("type").asText() : null;
+                String details = actionNode.has("details") ? actionNode.get("details").asText() : null;
+                if (type != null) {
+                    action = new Comment.CommentAction(type, details);
+                }
+            }
+
+            Comment comment = issueService.addComment(issueId, author, body, action);
+            logger.info("Comment added to Issue #" + issueId + " by " + author);
+            ctx.status(201).json(comment);
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(404).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error adding comment: " + e.getMessage());
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }

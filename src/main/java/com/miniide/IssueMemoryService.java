@@ -1,5 +1,6 @@
 package com.miniide;
 
+import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.storage.JsonStorage;
 
@@ -8,8 +9,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,14 +18,16 @@ import java.nio.file.Paths;
 public class IssueMemoryService {
 
     private static final String STORAGE_PATH = "data/issues.json";
-    private final Map<String, Issue> issues = new ConcurrentHashMap<>();
+    private final Map<Integer, Issue> issues = new ConcurrentHashMap<>();
+    private final AtomicInteger idCounter = new AtomicInteger(0);
 
     public IssueMemoryService() {
         loadFromDisk();
     }
 
-    public Issue createIssue(String title, String body, String openedBy, String assignedTo, List<String> tags) {
-        String id = UUID.randomUUID().toString();
+    public Issue createIssue(String title, String body, String openedBy, String assignedTo,
+                             List<String> tags, String priority) {
+        int id = idCounter.incrementAndGet();
         long now = System.currentTimeMillis();
 
         Issue issue = new Issue(
@@ -34,27 +37,25 @@ public class IssueMemoryService {
             openedBy,
             assignedTo,
             tags,
+            priority,
             "open",
             now,
             now
         );
 
         issues.put(id, issue);
-        log("Issue created: " + issue.getId() + " – " + issue.getTitle());
+        log("Issue created: #" + issue.getId() + " – " + issue.getTitle());
         saveAll();
         return issue;
     }
 
-    public Optional<Issue> getIssue(String id) {
-        if (id == null || id.isBlank()) {
-            return Optional.empty();
-        }
+    public Optional<Issue> getIssue(int id) {
         return Optional.ofNullable(issues.get(id));
     }
 
     public List<Issue> listIssues() {
         List<Issue> results = new ArrayList<>(issues.values());
-        results.sort(Comparator.comparingLong(Issue::getCreatedAt));
+        results.sort(Comparator.comparingLong(Issue::getCreatedAt).reversed());
         return results;
     }
 
@@ -68,7 +69,7 @@ public class IssueMemoryService {
                 results.add(issue);
             }
         }
-        results.sort(Comparator.comparingLong(Issue::getCreatedAt));
+        results.sort(Comparator.comparingLong(Issue::getCreatedAt).reversed());
         return results;
     }
 
@@ -78,22 +79,36 @@ public class IssueMemoryService {
         }
         List<Issue> results = new ArrayList<>();
         for (Issue issue : issues.values()) {
-            if (assignedTo.equals(issue.getAssignedTo())) {
+            if (assignedTo.equalsIgnoreCase(issue.getAssignedTo())) {
                 results.add(issue);
             }
         }
-        results.sort(Comparator.comparingLong(Issue::getCreatedAt));
+        results.sort(Comparator.comparingLong(Issue::getCreatedAt).reversed());
+        return results;
+    }
+
+    public List<Issue> listIssuesByPriority(String priority) {
+        if (priority == null || priority.isBlank()) {
+            return listIssues();
+        }
+        List<Issue> results = new ArrayList<>();
+        for (Issue issue : issues.values()) {
+            if (priority.equalsIgnoreCase(issue.getPriority())) {
+                results.add(issue);
+            }
+        }
+        results.sort(Comparator.comparingLong(Issue::getCreatedAt).reversed());
         return results;
     }
 
     public Issue updateIssue(Issue updated) {
-        if (updated == null || updated.getId() == null || updated.getId().isBlank()) {
+        if (updated == null || updated.getId() <= 0) {
             throw new IllegalArgumentException("Issue id is required for update");
         }
 
         Issue existing = issues.get(updated.getId());
         if (existing == null) {
-            throw new IllegalArgumentException("Issue not found: " + updated.getId());
+            throw new IllegalArgumentException("Issue not found: #" + updated.getId());
         }
 
         existing.setTitle(updated.getTitle());
@@ -101,6 +116,7 @@ public class IssueMemoryService {
         existing.setOpenedBy(updated.getOpenedBy());
         existing.setAssignedTo(updated.getAssignedTo());
         existing.setTags(updated.getTags());
+        existing.setPriority(updated.getPriority());
         existing.setStatus(updated.getStatus());
         existing.setUpdatedAt(System.currentTimeMillis());
 
@@ -108,13 +124,23 @@ public class IssueMemoryService {
         return existing;
     }
 
-    public boolean deleteIssue(String id) {
-        if (id == null || id.isBlank()) {
-            return false;
+    public Comment addComment(int issueId, String author, String body, Comment.CommentAction action) {
+        Issue issue = issues.get(issueId);
+        if (issue == null) {
+            throw new IllegalArgumentException("Issue not found: #" + issueId);
         }
+
+        Comment comment = new Comment(author, body, System.currentTimeMillis(), action);
+        issue.addComment(comment);
+        log("Comment added to Issue #" + issueId + " by " + author);
+        saveAll();
+        return comment;
+    }
+
+    public boolean deleteIssue(int id) {
         Issue removed = issues.remove(id);
         if (removed != null) {
-            log("Issue deleted: " + removed.getId() + " – " + removed.getTitle());
+            log("Issue deleted: #" + removed.getId() + " – " + removed.getTitle());
             saveAll();
         }
         return removed != null;
@@ -129,12 +155,17 @@ public class IssueMemoryService {
 
         try {
             List<Issue> stored = JsonStorage.readJsonList(STORAGE_PATH, Issue[].class);
+            int maxId = 0;
             for (Issue issue : stored) {
-                if (issue.getId() != null && !issue.getId().isBlank()) {
+                if (issue.getId() > 0) {
                     issues.put(issue.getId(), issue);
+                    if (issue.getId() > maxId) {
+                        maxId = issue.getId();
+                    }
                 }
             }
-            log("Loaded " + stored.size() + " issue(s) from disk.");
+            idCounter.set(maxId);
+            log("Loaded " + stored.size() + " issue(s) from disk. Next ID: " + (maxId + 1));
         } catch (Exception e) {
             logWarning("Failed to load issues from " + STORAGE_PATH + ": " + e.getMessage());
         }

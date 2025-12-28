@@ -6,37 +6,41 @@ import java.util.Objects;
 
 public class Issue {
 
-    private String id;
+    private int id;
     private String title;
     private String body;
     private String openedBy;
     private String assignedTo;
     private List<String> tags = new ArrayList<>();
-    private String status;
+    private String priority = "normal";  // low, normal, high, urgent
+    private String status = "open";      // open, closed, waiting-on-user
+    private List<Comment> comments = new ArrayList<>();
     private long createdAt;
     private long updatedAt;
+    private Long closedAt;
 
     public Issue() {
     }
 
-    public Issue(String id, String title, String body, String openedBy, String assignedTo, List<String> tags,
-                 String status, long createdAt, long updatedAt) {
+    public Issue(int id, String title, String body, String openedBy, String assignedTo,
+                 List<String> tags, String priority, String status, long createdAt, long updatedAt) {
         this.id = id;
         this.title = title;
         this.body = body;
         this.openedBy = openedBy;
         this.assignedTo = assignedTo;
         this.tags = tags != null ? new ArrayList<>(tags) : new ArrayList<>();
-        this.status = status;
+        this.priority = priority != null ? priority : "normal";
+        this.status = status != null ? status : "open";
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
 
-    public String getId() {
+    public int getId() {
         return id;
     }
 
-    public void setId(String id) {
+    public void setId(int id) {
         this.id = id;
     }
 
@@ -80,12 +84,40 @@ public class Issue {
         this.tags = tags != null ? new ArrayList<>(tags) : new ArrayList<>();
     }
 
+    public String getPriority() {
+        return priority;
+    }
+
+    public void setPriority(String priority) {
+        this.priority = priority != null ? priority : "normal";
+    }
+
     public String getStatus() {
         return status;
     }
 
     public void setStatus(String status) {
-        this.status = status;
+        String oldStatus = this.status;
+        this.status = status != null ? status : "open";
+        // Auto-set closedAt when transitioning to closed
+        if ("closed".equalsIgnoreCase(this.status) && !"closed".equalsIgnoreCase(oldStatus)) {
+            this.closedAt = System.currentTimeMillis();
+        }
+    }
+
+    public List<Comment> getComments() {
+        return comments;
+    }
+
+    public void setComments(List<Comment> comments) {
+        this.comments = comments != null ? new ArrayList<>(comments) : new ArrayList<>();
+    }
+
+    public void addComment(Comment comment) {
+        if (comment != null) {
+            this.comments.add(comment);
+            this.updatedAt = System.currentTimeMillis();
+        }
     }
 
     public long getCreatedAt() {
@@ -104,17 +136,28 @@ public class Issue {
         this.updatedAt = updatedAt;
     }
 
+    public Long getClosedAt() {
+        return closedAt;
+    }
+
+    public void setClosedAt(Long closedAt) {
+        this.closedAt = closedAt;
+    }
+
     @Override
     public String toString() {
         return "Issue{" +
-            "id='" + id + '\'' +
+            "id=" + id +
             ", title='" + title + '\'' +
+            ", priority='" + priority + '\'' +
             ", status='" + status + '\'' +
             ", openedBy='" + openedBy + '\'' +
             ", assignedTo='" + assignedTo + '\'' +
             ", tags=" + tags +
+            ", comments=" + comments.size() +
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +
+            ", closedAt=" + closedAt +
             '}';
     }
 
@@ -123,7 +166,7 @@ public class Issue {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Issue issue = (Issue) o;
-        return Objects.equals(id, issue.id);
+        return id == issue.id;
     }
 
     @Override
