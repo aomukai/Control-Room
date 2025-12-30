@@ -41,6 +41,15 @@
         },
         viewMode: {
             current: 'editor' // 'editor' | 'workbench' | 'settings'
+        },
+        issueBoard: {
+            issues: [],
+            isLoading: false,
+            error: null,
+            filters: {
+                status: 'all', // 'all' | 'open' | 'closed' | 'waiting-on-user'
+                priority: 'all' // 'all' | 'urgent' | 'high' | 'normal' | 'low'
+            }
         }
     };
 
@@ -1309,15 +1318,244 @@
     }
 
     function renderWorkbenchChatPane() {
+        // Now renders the Issue Board instead of placeholder
+        renderIssueBoard();
+    }
+
+    // ============================================
+    // ISSUE BOARD
+    // ============================================
+
+    async function loadIssues() {
+        state.issueBoard.isLoading = true;
+        state.issueBoard.error = null;
+        renderIssueBoardContent();
+
+        try {
+            // Build filters for API call
+            const filters = {};
+            if (state.issueBoard.filters.status !== 'all') {
+                filters.status = state.issueBoard.filters.status;
+            }
+            if (state.issueBoard.filters.priority !== 'all') {
+                filters.priority = state.issueBoard.filters.priority;
+            }
+
+            const issues = await issueApi.list(filters);
+            state.issueBoard.issues = issues;
+            state.issueBoard.isLoading = false;
+            renderIssueBoardContent();
+        } catch (err) {
+            state.issueBoard.isLoading = false;
+            state.issueBoard.error = err.message;
+            renderIssueBoardContent();
+        }
+    }
+
+    function renderIssueBoard() {
         const container = document.getElementById('workbench-chat-content');
         if (!container) return;
 
         container.innerHTML = `
-            <div class="workbench-placeholder">
-                <h3>Conference Mode</h3>
-                <p>Multi-agent discussion and collaboration<br>coming soon.</p>
+            <div class="issue-board">
+                <div class="issue-board-header">
+                    <div class="issue-board-title">
+                        <span class="issue-board-icon">📋</span>
+                        <span>Issue Board</span>
+                    </div>
+                    <div class="issue-board-actions">
+                        <button type="button" class="issue-board-btn" id="issue-board-refresh" title="Refresh">
+                            <span>↻</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="issue-board-filters">
+                    <div class="issue-filter-group">
+                        <label class="issue-filter-label">Status</label>
+                        <select id="issue-filter-status" class="issue-filter-select">
+                            <option value="all">All</option>
+                            <option value="open">Open</option>
+                            <option value="closed">Closed</option>
+                            <option value="waiting-on-user">Waiting</option>
+                        </select>
+                    </div>
+                    <div class="issue-filter-group">
+                        <label class="issue-filter-label">Priority</label>
+                        <select id="issue-filter-priority" class="issue-filter-select">
+                            <option value="all">All</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="high">High</option>
+                            <option value="normal">Normal</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+                    <div class="issue-filter-stats" id="issue-filter-stats"></div>
+                </div>
+                <div class="issue-board-content" id="issue-board-list"></div>
             </div>
         `;
+
+        // Set current filter values
+        const statusSelect = document.getElementById('issue-filter-status');
+        const prioritySelect = document.getElementById('issue-filter-priority');
+        if (statusSelect) statusSelect.value = state.issueBoard.filters.status;
+        if (prioritySelect) prioritySelect.value = state.issueBoard.filters.priority;
+
+        // Wire event listeners
+        initIssueBoardListeners();
+
+        // Load issues
+        loadIssues();
+    }
+
+    function initIssueBoardListeners() {
+        const refreshBtn = document.getElementById('issue-board-refresh');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                loadIssues();
+            });
+        }
+
+        const statusSelect = document.getElementById('issue-filter-status');
+        if (statusSelect) {
+            statusSelect.addEventListener('change', (e) => {
+                state.issueBoard.filters.status = e.target.value;
+                loadIssues();
+            });
+        }
+
+        const prioritySelect = document.getElementById('issue-filter-priority');
+        if (prioritySelect) {
+            prioritySelect.addEventListener('change', (e) => {
+                state.issueBoard.filters.priority = e.target.value;
+                loadIssues();
+            });
+        }
+    }
+
+    function renderIssueBoardContent() {
+        const container = document.getElementById('issue-board-list');
+        const statsContainer = document.getElementById('issue-filter-stats');
+        if (!container) return;
+
+        // Loading state
+        if (state.issueBoard.isLoading) {
+            container.innerHTML = `
+                <div class="issue-board-loading">
+                    <div class="issue-loading-spinner"></div>
+                    <span>Loading issues...</span>
+                </div>
+            `;
+            if (statsContainer) statsContainer.textContent = '';
+            return;
+        }
+
+        // Error state
+        if (state.issueBoard.error) {
+            container.innerHTML = `
+                <div class="issue-board-error">
+                    <span class="issue-error-icon">⚠</span>
+                    <span>${escapeHtml(state.issueBoard.error)}</span>
+                    <button type="button" class="issue-retry-btn" onclick="loadIssues()">Retry</button>
+                </div>
+            `;
+            if (statsContainer) statsContainer.textContent = '';
+            return;
+        }
+
+        const issues = state.issueBoard.issues;
+
+        // Update stats
+        if (statsContainer) {
+            const openCount = issues.filter(i => i.status === 'open').length;
+            statsContainer.textContent = `${issues.length} issue${issues.length !== 1 ? 's' : ''} (${openCount} open)`;
+        }
+
+        // Empty state
+        if (issues.length === 0) {
+            container.innerHTML = `
+                <div class="issue-board-empty">
+                    <span class="issue-empty-icon">📭</span>
+                    <span class="issue-empty-text">No issues found</span>
+                    <span class="issue-empty-hint">Issues created by agents will appear here</span>
+                </div>
+            `;
+            return;
+        }
+
+        // Render issue cards
+        container.innerHTML = '';
+        issues.forEach(issue => {
+            const card = createIssueCard(issue);
+            container.appendChild(card);
+        });
+    }
+
+    function createIssueCard(issue) {
+        const card = document.createElement('div');
+        card.className = 'issue-card';
+        card.dataset.issueId = issue.id;
+
+        // Status class
+        const statusClass = `issue-status-${issue.status.replace(/-/g, '')}`;
+
+        // Priority indicator
+        const priorityClass = `issue-priority-${issue.priority}`;
+        const priorityIcon = getPriorityIcon(issue.priority);
+
+        // Comment count
+        const commentCount = issue.comments ? issue.comments.length : 0;
+
+        // Tags (show first 2)
+        const tagsHtml = issue.tags && issue.tags.length > 0
+            ? issue.tags.slice(0, 2).map(t => `<span class="issue-card-tag">${escapeHtml(t)}</span>`).join('')
+            : '';
+        const moreTagsHtml = issue.tags && issue.tags.length > 2
+            ? `<span class="issue-card-tag-more">+${issue.tags.length - 2}</span>`
+            : '';
+
+        card.innerHTML = `
+            <div class="issue-card-header">
+                <span class="issue-card-id">#${issue.id}</span>
+                <span class="issue-card-status ${statusClass}">${formatStatus(issue.status)}</span>
+            </div>
+            <div class="issue-card-title">${escapeHtml(issue.title)}</div>
+            <div class="issue-card-meta">
+                <span class="issue-card-priority ${priorityClass}" title="${issue.priority} priority">
+                    ${priorityIcon}
+                </span>
+                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">→ ${escapeHtml(issue.assignedTo)}</span>` : ''}
+                ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">💬 ${commentCount}</span>` : ''}
+                <span class="issue-card-time" title="${formatTimestamp(issue.updatedAt)}">${formatRelativeTime(issue.updatedAt)}</span>
+            </div>
+            ${tagsHtml || moreTagsHtml ? `<div class="issue-card-tags">${tagsHtml}${moreTagsHtml}</div>` : ''}
+        `;
+
+        // Click to open issue modal
+        card.addEventListener('click', () => {
+            openIssueModal(issue.id);
+        });
+
+        return card;
+    }
+
+    function getPriorityIcon(priority) {
+        switch (priority) {
+            case 'urgent': return '🔴';
+            case 'high': return '🟠';
+            case 'normal': return '🔵';
+            case 'low': return '⚪';
+            default: return '🔵';
+        }
+    }
+
+    function formatStatus(status) {
+        switch (status) {
+            case 'open': return 'Open';
+            case 'closed': return 'Closed';
+            case 'waiting-on-user': return 'Waiting';
+            default: return status;
+        }
     }
 
     // ============================================
@@ -2881,6 +3119,45 @@
         });
 
         document.body.appendChild(workbenchBtn);
+
+        // Button to create a test issue
+        const createIssueBtn = document.createElement('button');
+        createIssueBtn.type = 'button';
+        createIssueBtn.className = 'dev-debug-btn';
+        createIssueBtn.style.bottom = '150px';
+        createIssueBtn.textContent = 'Create Test Issue';
+        createIssueBtn.title = 'Create a sample issue for testing';
+
+        createIssueBtn.addEventListener('click', async () => {
+            try {
+                const priorities = ['low', 'normal', 'high', 'urgent'];
+                const agents = ['Planner', 'Writer', 'Editor', 'Critic', 'Continuity'];
+                const randomPriority = priorities[Math.floor(Math.random() * priorities.length)];
+                const randomAgent = agents[Math.floor(Math.random() * agents.length)];
+                const randomAssignee = agents[Math.floor(Math.random() * agents.length)];
+
+                const issue = await issueApi.create({
+                    title: `Test Issue: Sample problem #${Date.now() % 1000}`,
+                    body: 'This is a test issue created from the dev tools.',
+                    openedBy: randomAgent,
+                    assignedTo: randomAssignee,
+                    tags: ['test', 'dev'],
+                    priority: randomPriority
+                });
+
+                log(`Dev: Created test issue #${issue.id}`, 'success');
+                notificationStore.issueCreated(issue.id, issue.title, issue.openedBy, issue.assignedTo);
+
+                // Refresh issue board if in workbench view
+                if (isWorkbenchView()) {
+                    loadIssues();
+                }
+            } catch (err) {
+                log(`Dev: Failed to create test issue: ${err.message}`, 'error');
+            }
+        });
+
+        document.body.appendChild(createIssueBtn);
     }
 
     // Initialize
