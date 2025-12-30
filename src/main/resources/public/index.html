@@ -214,7 +214,14 @@
 
                 <!-- Right Chat Panel -->
                 <div id="chat-panel">
-                    <div class="chat-header">Chat with AI</div>
+                    <div class="chat-header">
+                        <span class="chat-title">Chat with AI</span>
+                        <div class="chat-header-actions">
+                            <select id="agent-select" title="Agent" aria-label="Agent">
+                                <option value="">Loading agents...</option>
+                            </select>
+                        </div>
+                    </div>
                     <div id="chat-history"></div>
                     <div class="chat-input-container">
                         <textarea id="chat-input" placeholder="Ask the AI assistant..."></textarea>

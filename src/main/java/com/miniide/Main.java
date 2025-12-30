@@ -31,6 +31,7 @@ public class Main {
     private static final String VERSION = "1.0.0";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static WorkspaceService workspaceService;
+    private static AgentRegistry agentRegistry;
     private static NotificationStore notificationStore;
     private static IssueMemoryService issueService;
     private static AppLogger logger;
@@ -55,6 +56,10 @@ public class Main {
             // Create WorkspaceService for all runtime file operations
             workspaceService = new WorkspaceService(config.getWorkspacePath());
             logger.info("Workspace initialized: " + config.getWorkspacePath());
+
+            // Initialize agent registry
+            agentRegistry = new AgentRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
+            logger.info("Agent registry initialized");
 
             // Initialize notification and issue services
             notificationStore = new NotificationStore();
@@ -131,6 +136,7 @@ public class Main {
         app.post("/api/workspace/terminal", Main::openWorkspaceTerminal);
         app.post("/api/file/reveal", Main::revealFile);
         app.post("/api/file/open-folder", Main::openContainingFolder);
+        app.get("/api/agents", Main::getAgents);
 
         // Notification endpoints
         app.get("/api/notifications", Main::getNotifications);
@@ -378,6 +384,15 @@ public class Main {
         return "That's an interesting thought! As your writing assistant, I'm here to help develop your story. " +
                "I can see you're working on a noir-style narrative set in Neo-Seattle. " +
                "Would you like me to help with character development, plot structure, or scene descriptions?";
+    }
+
+    private static void getAgents(Context ctx) {
+        try {
+            ctx.json(agentRegistry.listEnabledAgents());
+        } catch (Exception e) {
+            logger.error("Failed to list agents: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
     }
 
     private static void openWorkspace(Context ctx) {

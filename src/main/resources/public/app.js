@@ -50,6 +50,10 @@
                 status: 'all', // 'all' | 'open' | 'closed' | 'waiting-on-user'
                 priority: 'all' // 'all' | 'urgent' | 'high' | 'normal' | 'low'
             }
+        },
+        agents: {
+            list: [],
+            selectedId: null
         }
     };
 
@@ -106,6 +110,7 @@
         chatHistory: document.getElementById('chat-history'),
         chatInput: document.getElementById('chat-input'),
         chatSend: document.getElementById('chat-send'),
+        agentSelect: document.getElementById('agent-select'),
         searchInput: document.getElementById('search-input'),
         searchBtn: document.getElementById('search-btn'),
         searchResults: document.getElementById('search-results'),
@@ -354,6 +359,12 @@
                 throw new Error(err.error || 'Failed to add comment');
             }
             return response.json();
+        }
+    };
+
+    const agentApi = {
+        async list() {
+            return api('/api/agents');
         }
     };
 
@@ -1288,15 +1299,6 @@
     // WORKBENCH VIEW RENDERING
     // ============================================
 
-    // Static list of agent roles (placeholder)
-    const AGENT_ROLES = [
-        { id: 'planner', name: 'Planner', icon: '📋', role: 'Strategic planning & structure' },
-        { id: 'writer', name: 'Writer', icon: '✍️', role: 'Draft creation & prose' },
-        { id: 'editor', name: 'Editor', icon: '📝', role: 'Revision & polish' },
-        { id: 'critic', name: 'Critic', icon: '🎭', role: 'Quality assessment' },
-        { id: 'continuity', name: 'Continuity', icon: '🔗', role: 'Consistency tracking' }
-    ];
-
     function renderWorkbenchView() {
         renderAgentSidebar();
         renderWorkbenchChatPane();
@@ -1308,23 +1310,54 @@
         if (!container) return;
 
         container.innerHTML = '';
+        const agents = state.agents.list || [];
 
-        AGENT_ROLES.forEach(agent => {
+        if (agents.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'agent-empty';
+            empty.textContent = 'No agents available';
+            container.appendChild(empty);
+            return;
+        }
+
+        agents.forEach(agent => {
             const item = document.createElement('div');
             item.className = 'agent-item';
-            item.dataset.agentId = agent.id;
+            item.dataset.agentId = agent.id || '';
 
-            item.innerHTML = `
-                <span class="agent-icon">${agent.icon}</span>
-                <div class="agent-info">
-                    <div class="agent-name">${escapeHtml(agent.name)}</div>
-                    <div class="agent-role">${escapeHtml(agent.role)}</div>
-                </div>
-                <div class="agent-status" title="Offline"></div>
-            `;
+            const icon = document.createElement('span');
+            icon.className = 'agent-icon';
+            const avatar = agent.avatar && agent.avatar.trim()
+                ? agent.avatar.trim()
+                : (agent.name ? agent.name.charAt(0).toUpperCase() : '?');
+            icon.textContent = avatar;
+            if (agent.color) {
+                icon.style.background = agent.color;
+            }
+
+            const info = document.createElement('div');
+            info.className = 'agent-info';
+
+            const name = document.createElement('div');
+            name.className = 'agent-name';
+            name.textContent = agent.name || 'Unnamed Agent';
+
+            const role = document.createElement('div');
+            role.className = 'agent-role';
+            role.textContent = agent.role || 'role';
+
+            info.appendChild(name);
+            info.appendChild(role);
+
+            const status = document.createElement('div');
+            status.className = `agent-status ${agent.enabled === false ? '' : 'online'}`;
+            status.title = agent.enabled === false ? 'Offline' : 'Online';
+
+            item.appendChild(icon);
+            item.appendChild(info);
+            item.appendChild(status);
 
             item.addEventListener('click', () => {
-                // Remove active from all
                 container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 log(`Selected agent: ${agent.name}`, 'info');
@@ -2793,6 +2826,76 @@
         log('Workspace search (Ctrl+Shift+F)', 'info');
     }
 
+    function getStoredAgentId() {
+        return localStorage.getItem('selected-agent-id');
+    }
+
+    function pickDefaultAgentId(agents) {
+        if (!agents || agents.length === 0) return null;
+
+        const stored = getStoredAgentId();
+        if (stored && agents.some(agent => agent.id === stored)) {
+            return stored;
+        }
+
+        const primaryWriter = agents.find(agent => agent.isPrimaryForRole && agent.role === 'writer');
+        if (primaryWriter) return primaryWriter.id;
+
+        const primary = agents.find(agent => agent.isPrimaryForRole);
+        if (primary) return primary.id;
+
+        return agents[0].id;
+    }
+
+    function setSelectedAgentId(agentId) {
+        state.agents.selectedId = agentId || null;
+        localStorage.setItem('selected-agent-id', agentId || '');
+        if (elements.agentSelect) {
+            elements.agentSelect.value = agentId || '';
+        }
+    }
+
+    function renderAgentSelector() {
+        if (!elements.agentSelect) return;
+
+        const agents = state.agents.list || [];
+        elements.agentSelect.innerHTML = '';
+
+        if (agents.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No agents';
+            elements.agentSelect.appendChild(option);
+            elements.agentSelect.disabled = true;
+            return;
+        }
+
+        agents.forEach(agent => {
+            const option = document.createElement('option');
+            option.value = agent.id;
+            option.textContent = `${agent.name} (${agent.role})`;
+            elements.agentSelect.appendChild(option);
+        });
+
+        elements.agentSelect.disabled = false;
+        setSelectedAgentId(pickDefaultAgentId(agents));
+    }
+
+    async function loadAgents() {
+        try {
+            const agents = await agentApi.list();
+            state.agents.list = Array.isArray(agents) ? agents : [];
+            renderAgentSidebar();
+            renderAgentSelector();
+            log(`Loaded ${state.agents.list.length} agent(s)`, 'info');
+        } catch (err) {
+            state.agents.list = [];
+            renderAgentSidebar();
+            renderAgentSelector();
+            log(`Failed to load agents: ${err.message}`, 'error');
+        }
+    }
+
     function getExplorerVisible() {
         return localStorage.getItem('explorer-visible') === '1';
     }
@@ -2832,10 +2935,14 @@
         log(`Chat: User message sent`, 'info');
 
         try {
+            const payload = { message };
+            if (state.agents.selectedId) {
+                payload.agentId = state.agents.selectedId;
+            }
             const response = await api('/api/ai/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify(payload)
             });
 
             addChatMessage('assistant', response.content);
@@ -3100,6 +3207,12 @@
             }
         });
 
+        if (elements.agentSelect) {
+            elements.agentSelect.addEventListener('change', (e) => {
+                setSelectedAgentId(e.target.value);
+            });
+        }
+
         // Global keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -3241,6 +3354,7 @@
         initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         initDevTools(); // Dev/Test buttons
         loadFileTree();
+        loadAgents();
 
         // Set initial view mode (starts in Editor mode)
         setViewMode('editor');
@@ -3249,7 +3363,7 @@
         addChatMessage('assistant', 'Hello! I\'m your AI writing assistant. How can I help you with your creative writing project today?');
 
         log('Control Room ready!', 'success');
-        log('Tip: Click Workbench in the top bar to switch views.', 'info');
+        log('Tip: Use the sidebar toggle to switch Workbench and Editor views.', 'info');
     }
 
     // Start when DOM is ready
