@@ -96,7 +96,9 @@
 
     // DOM Elements
     const elements = {
+        leftSidebar: document.getElementById('left-sidebar'),
         fileTree: document.getElementById('file-tree'),
+        fileTreeArea: document.getElementById('file-tree-area'),
         tabsContainer: document.getElementById('tabs-container'),
         editorPlaceholder: document.getElementById('editor-placeholder'),
         monacoEditor: document.getElementById('monaco-editor'),
@@ -114,6 +116,8 @@
         btnOpenFolder: document.getElementById('btn-open-folder'),
         btnFind: document.getElementById('btn-find'),
         btnSearch: document.getElementById('btn-search'),
+        btnSidebarSearch: document.getElementById('btn-sidebar-search'),
+        btnToggleExplorer: document.getElementById('btn-toggle-explorer'),
         toastStack: document.getElementById('toast-stack'),
         statusBar: document.getElementById('status-bar'),
         statusText: document.getElementById('status-text'),
@@ -134,7 +138,9 @@
         workbenchView: document.getElementById('workbench-view'),
         settingsView: document.getElementById('settings-view'),
         newsfeedList: document.getElementById('newsfeed-list'),
-        agentList: document.getElementById('agent-list')
+        agentList: document.getElementById('agent-list'),
+        btnToggleMode: document.getElementById('btn-toggle-mode'),
+        btnOpenSettings: document.getElementById('btn-open-settings')
     };
 
     // Initialize Split.js
@@ -1221,6 +1227,20 @@
     // VIEW MODE SWITCHING (Workbench / Editor / Settings)
     // ============================================
 
+    function updateModeControls(mode) {
+        if (elements.btnToggleMode) {
+            const isWorkbench = mode === 'workbench';
+            const toggleLabel = mode === 'settings' ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
+            elements.btnToggleMode.classList.toggle('is-active', isWorkbench);
+            elements.btnToggleMode.title = toggleLabel;
+            elements.btnToggleMode.setAttribute('aria-label', toggleLabel);
+        }
+
+        if (elements.btnOpenSettings) {
+            elements.btnOpenSettings.classList.toggle('is-active', mode === 'settings');
+        }
+    }
+
     function setViewMode(mode) {
         const validModes = ['editor', 'workbench', 'settings'];
         if (!validModes.includes(mode)) {
@@ -1231,10 +1251,7 @@
         const previousMode = state.viewMode.current;
         state.viewMode.current = mode;
 
-        // Update top bar tab active states
-        document.querySelectorAll('.top-bar-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.mode === mode);
-        });
+        updateModeControls(mode);
 
         // Update view panels
         document.querySelectorAll('.view-panel').forEach(panel => {
@@ -1647,22 +1664,6 @@
             if (isWorkbenchView()) {
                 renderWorkbenchNewsfeed();
             }
-        });
-    }
-
-    // ============================================
-    // TOP BAR INITIALIZATION
-    // ============================================
-
-    function initTopBar() {
-        const tabs = document.querySelectorAll('.top-bar-tab');
-        tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const mode = tab.dataset.mode;
-                if (mode) {
-                    setViewMode(mode);
-                }
-            });
         });
     }
 
@@ -2144,6 +2145,35 @@
         }
     }
 
+    async function explorePath(path, nodeType) {
+        path = normalizeWorkspacePath(path);
+        if (!path) return;
+
+        const isFolder = nodeType === 'folder';
+        const label = isFolder ? 'folder' : 'file';
+        log(`Exploring ${label}: ${path}`, 'info');
+
+        try {
+            const endpoint = isFolder ? '/api/file/open-folder' : '/api/file/reveal';
+            const result = await api(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            if (result.ok) {
+                if (result.fallback === 'open-folder') {
+                    log(`Reveal failed; opened containing folder instead for ${label}`, 'warning');
+                } else {
+                    log(`Opened ${label} in explorer`, 'success');
+                }
+            } else {
+                log(`Failed to explore ${label}: ${result.error}`, 'error');
+            }
+        } catch (err) {
+            log(`Failed to explore ${label}: ${err.message}`, 'error');
+        }
+    }
+
     // Context Menu
     let contextMenu = null;
 
@@ -2159,11 +2189,13 @@
 
         // Only show "Open in New Tab" for files, not folders
         if (node.type === 'file') {
+            actions.push({ label: 'Explore', action: () => explorePath(node.path, node.type) });
             actions.push({ label: 'Open in New Tab', action: () => openFileInNewTab(node.path) });
         }
 
         // For folders: add "New File Here" and "New Folder Here"
         if (node.type === 'folder') {
+            actions.push({ label: 'Explore', action: () => explorePath(node.path, node.type) });
             actions.push({ label: 'New File Here...', action: () => promptNewFile('file', node.path) });
             actions.push({ label: 'New Folder Here...', action: () => promptNewFile('folder', node.path) });
             actions.push({ divider: true });
@@ -2761,6 +2793,20 @@
         log('Workspace search (Ctrl+Shift+F)', 'info');
     }
 
+    function getExplorerVisible() {
+        return localStorage.getItem('explorer-visible') === '1';
+    }
+
+    function setExplorerVisible(visible) {
+        if (!elements.fileTreeArea || !elements.btnToggleExplorer) return;
+        elements.fileTreeArea.classList.toggle('collapsed', !visible);
+        elements.btnToggleExplorer.classList.toggle('is-active', visible);
+        if (elements.leftSidebar) {
+            elements.leftSidebar.classList.toggle('explorer-collapsed', !visible);
+        }
+        localStorage.setItem('explorer-visible', visible ? '1' : '0');
+    }
+
     // Chat
     function addChatMessage(role, content) {
         const msg = document.createElement('div');
@@ -2883,26 +2929,24 @@
 
     // Sidebar Buttons
     function initSidebarButtons() {
-        document.getElementById('btn-commit').addEventListener('click', () => {
-            log('Saving all files...', 'info');
-            saveAllFiles();
-        });
+        if (elements.btnToggleMode) {
+            elements.btnToggleMode.addEventListener('click', () => {
+                if (state.viewMode.current === 'workbench') {
+                    setViewMode('editor');
+                } else if (state.viewMode.current === 'editor') {
+                    setViewMode('workbench');
+                } else {
+                    setViewMode('editor');
+                }
+            });
+        }
 
-        document.getElementById('btn-scenes').addEventListener('click', () => {
-            // Filter tree to scenes folder
-            log('Showing scenes folder', 'info');
-            openFolder('scenes');
-        });
-
-        document.getElementById('btn-chars').addEventListener('click', () => {
-            log('Showing characters folder', 'info');
-            openFolder('chars');
-        });
-
-        document.getElementById('btn-etc').addEventListener('click', () => {
-            log('Showing notes folder', 'info');
-            openFolder('notes');
-        });
+        if (elements.btnToggleExplorer) {
+            elements.btnToggleExplorer.addEventListener('click', () => {
+                const isVisible = !elements.fileTreeArea.classList.contains('collapsed');
+                setExplorerVisible(!isVisible);
+            });
+        }
 
         document.getElementById('btn-open-workspace').addEventListener('click', async () => {
             log('Opening workspace folder...', 'info');
@@ -2916,6 +2960,17 @@
             } catch (err) {
                 log(`Failed to open workspace folder: ${err.message}`, 'error');
             }
+        });
+
+        if (elements.btnSidebarSearch) {
+            elements.btnSidebarSearch.addEventListener('click', () => {
+                openWorkspaceSearch();
+            });
+        }
+
+        document.getElementById('btn-commit').addEventListener('click', () => {
+            log('Creating a new local version (saving all files)...', 'info');
+            saveAllFiles();
         });
 
         document.getElementById('btn-open-terminal').addEventListener('click', async () => {
@@ -2932,6 +2987,12 @@
             }
         });
 
+        if (elements.btnOpenSettings) {
+            elements.btnOpenSettings.addEventListener('click', () => {
+                setViewMode('settings');
+            });
+        }
+
         elements.btnRevealFile.addEventListener('click', async () => {
             if (!state.activeFile) return;
             log(`Revealing file: ${state.activeFile}`, 'info');
@@ -2942,7 +3003,11 @@
                     body: JSON.stringify({ path: state.activeFile })
                 });
                 if (result.ok) {
-                    log('File revealed in explorer', 'success');
+                    if (result.fallback === 'open-folder') {
+                        log('Reveal failed; opened containing folder instead', 'warning');
+                    } else {
+                        log('File revealed in explorer', 'success');
+                    }
                 } else {
                     log(`Failed to reveal file: ${result.error}`, 'error');
                 }
@@ -2994,6 +3059,8 @@
             log('Refreshing file tree...', 'info');
             loadFileTree();
         });
+
+        setExplorerVisible(getExplorerVisible());
     }
 
     function openFolder(folderName) {
@@ -3171,7 +3238,6 @@
         initSidebarButtons();
         initEventListeners();
         initNotifications();
-        initTopBar(); // Top bar mode switch
         initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         initDevTools(); // Dev/Test buttons
         loadFileTree();

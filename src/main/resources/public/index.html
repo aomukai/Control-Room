@@ -14,66 +14,84 @@
         <div id="left-sidebar">
             <div class="sidebar-header">Control Room</div>
             <div class="sidebar-buttons">
-                <button class="sidebar-btn" id="btn-commit" title="Commit (Save All)">
-                    <span class="btn-icon">💾</span>
-                    <span class="btn-text">Commit (Save)</span>
+                <button class="sidebar-btn" id="btn-toggle-mode" title="Switch to Workbench" aria-label="Switch to Workbench">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/arrows-right-left.svg" alt="">
+                    </span>
+                    <span class="btn-text">Toggle Mode</span>
                 </button>
-                <button class="sidebar-btn" id="btn-scenes" title="Scenes">
-                    <span class="btn-icon">🎬</span>
-                    <span class="btn-text">Scenes</span>
+                <button class="sidebar-btn" id="btn-toggle-explorer" title="Toggle Explorer" aria-label="Toggle Explorer">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="">
+                    </span>
+                    <span class="btn-text">Explorer</span>
                 </button>
-                <button class="sidebar-btn" id="btn-chars" title="Characters">
-                    <span class="btn-icon">👤</span>
-                    <span class="btn-text">Chars</span>
+                <button class="sidebar-btn" id="btn-open-workspace" title="Open File System" aria-label="Open File System">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/folder-open.svg" alt="">
+                    </span>
+                    <span class="btn-text">File System</span>
                 </button>
-                <button class="sidebar-btn" id="btn-etc" title="More">
-                    <span class="btn-icon">📁</span>
-                    <span class="btn-text">Etc</span>
+                <button class="sidebar-btn" id="btn-sidebar-search" title="Search in Workspace" aria-label="Search in Workspace">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/magnifying-glass.svg" alt="">
+                    </span>
+                    <span class="btn-text">Search</span>
                 </button>
-                <button class="sidebar-btn" id="btn-open-workspace" title="Open Workspace Folder">
-                    <span class="btn-icon">📂</span>
-                    <span class="btn-text">Open Workspace Folder</span>
+                <button class="sidebar-btn" id="btn-commit" title="Create a New Local Version" aria-label="Create a New Local Version">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/arrow-path-rounded-square.svg" alt="">
+                    </span>
+                    <span class="btn-text">Versioning</span>
                 </button>
-                <button class="sidebar-btn" id="btn-open-terminal" title="Open Terminal Here">
-                    <span class="btn-icon">💻</span>
-                    <span class="btn-text">Open Terminal Here</span>
+                <button class="sidebar-btn" id="btn-open-terminal" title="Open Terminal Here" aria-label="Open Terminal Here">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/command-line.svg" alt="">
+                    </span>
+                    <span class="btn-text">Terminal</span>
                 </button>
             </div>
-            <div class="sidebar-divider"></div>
-            <div class="file-tree-header">
-                Files
-                <div class="tree-actions">
-                    <button class="tree-action-btn" id="btn-new-file" title="New File">+📄</button>
-                    <button class="tree-action-btn" id="btn-new-folder" title="New Folder">+📁</button>
-                    <button class="tree-action-btn" id="btn-refresh-tree" title="Refresh">🔄</button>
+            <div id="file-tree-area">
+                <div class="sidebar-divider"></div>
+                <div class="file-tree-header">
+                    Files
+                    <div class="tree-actions">
+                        <button class="tree-action-btn" id="btn-new-file" title="New File" aria-label="New File">
+                            <span class="btn-icon">
+                                <img src="assets/icons/heroicons_outline/document-plus.svg" alt="">
+                            </span>
+                        </button>
+                        <button class="tree-action-btn" id="btn-new-folder" title="New Folder" aria-label="New Folder">
+                            <span class="btn-icon">
+                                <img src="assets/icons/heroicons_outline/folder-plus.svg" alt="">
+                            </span>
+                        </button>
+                        <button class="tree-action-btn" id="btn-refresh-tree" title="Refresh" aria-label="Refresh">
+                            <span class="btn-icon">
+                                <img src="assets/icons/heroicons_outline/arrow-path.svg" alt="">
+                            </span>
+                        </button>
+                    </div>
                 </div>
+                <div id="file-tree"></div>
             </div>
-            <div id="file-tree"></div>
+            <div class="sidebar-footer">
+                <button class="sidebar-btn" id="btn-open-settings" title="Settings" aria-label="Settings">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/cog-6-tooth.svg" alt="">
+                    </span>
+                    <span class="btn-text">Settings</span>
+                </button>
+            </div>
         </div>
-
         <!-- Main Container with Top Bar -->
         <div id="main-container">
             <!-- Top Bar Mode Switch -->
             <div id="top-bar">
-                <div id="top-bar-tabs">
-                    <button class="top-bar-tab" id="tab-workbench" data-mode="workbench" type="button">
-                        <span class="tab-icon">🎛️</span>
-                        <span class="tab-label">Workbench</span>
-                    </button>
-                    <button class="top-bar-tab active" id="tab-editor" data-mode="editor" type="button">
-                        <span class="tab-icon">✏️</span>
-                        <span class="tab-label">Editor</span>
-                    </button>
-                    <button class="top-bar-tab" id="tab-settings" data-mode="settings" type="button">
-                        <span class="tab-icon">⚙️</span>
-                        <span class="tab-label">Settings</span>
-                    </button>
-                </div>
                 <div id="top-bar-right">
                     <span id="top-bar-project-name">Control Room</span>
                 </div>
             </div>
-
             <!-- View Container (Editor or Workbench) -->
             <div id="view-container">
                 <!-- Editor View (existing) -->

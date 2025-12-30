@@ -16,6 +16,7 @@ import io.javalin.json.JavalinJackson;
 import io.javalin.http.staticfiles.Location;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -425,7 +426,7 @@ public class Main {
 
             if (os.contains("win")) {
                 // Windows: explorer /select,"<path>"
-                pb = new ProcessBuilder("explorer.exe", "/select," + absPath.toString());
+                pb = new ProcessBuilder("explorer.exe", "/select,", absPath.toString());
             } else if (os.contains("mac")) {
                 // macOS: open -R "<path>"
                 pb = new ProcessBuilder("open", "-R", absPath.toString());
@@ -435,9 +436,30 @@ public class Main {
                 pb = new ProcessBuilder("xdg-open", parentDir.toString());
             }
 
-            pb.start();
-            logger.info("Revealed file in explorer: " + path);
-            ctx.json(Map.of("ok", true));
+            try {
+                pb.start();
+                logger.info("Revealed file in explorer: " + path);
+                ctx.json(Map.of("ok", true));
+            } catch (IOException io) {
+                logger.warn("Reveal failed, opening containing folder: " + io.getMessage());
+                Path parentDir = absPath.getParent();
+                if (parentDir == null) {
+                    parentDir = workspaceService.getWorkspaceRoot();
+                }
+
+                ProcessBuilder fallbackPb;
+                if (os.contains("win")) {
+                    fallbackPb = new ProcessBuilder("explorer.exe", parentDir.toString());
+                } else if (os.contains("mac")) {
+                    fallbackPb = new ProcessBuilder("open", parentDir.toString());
+                } else {
+                    fallbackPb = new ProcessBuilder("xdg-open", parentDir.toString());
+                }
+
+                fallbackPb.start();
+                logger.info("Opened containing folder fallback: " + parentDir.toString());
+                ctx.json(Map.of("ok", true, "fallback", "open-folder"));
+            }
         } catch (SecurityException e) {
             logger.warn("Security violation in reveal: " + e.getMessage());
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
@@ -539,25 +561,25 @@ public class Main {
                 return;
             }
 
-            // Get the parent directory
-            Path parentDir = absPath.getParent();
-            if (parentDir == null) {
-                parentDir = absPath; // If no parent, use the path itself
+            // If a folder is passed, open it directly; otherwise open the parent folder.
+            Path targetDir = Files.isDirectory(absPath) ? absPath : absPath.getParent();
+            if (targetDir == null) {
+                targetDir = workspaceService.getWorkspaceRoot();
             }
 
             String os = System.getProperty("os.name").toLowerCase();
             ProcessBuilder pb;
 
             if (os.contains("win")) {
-                pb = new ProcessBuilder("explorer.exe", parentDir.toString());
+                pb = new ProcessBuilder("explorer.exe", targetDir.toString());
             } else if (os.contains("mac")) {
-                pb = new ProcessBuilder("open", parentDir.toString());
+                pb = new ProcessBuilder("open", targetDir.toString());
             } else {
-                pb = new ProcessBuilder("xdg-open", parentDir.toString());
+                pb = new ProcessBuilder("xdg-open", targetDir.toString());
             }
 
             pb.start();
-            logger.info("Opened containing folder: " + parentDir.toString());
+            logger.info("Opened containing folder: " + targetDir.toString());
             ctx.json(Map.of("ok", true));
         } catch (SecurityException e) {
             logger.warn("Security violation in open folder: " + e.getMessage());
