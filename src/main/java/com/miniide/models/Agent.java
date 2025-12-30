@@ -3,7 +3,9 @@ package com.miniide.models;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Agent {
@@ -18,6 +20,8 @@ public class Agent {
     private List<String> skills = new ArrayList<>();
     private List<String> goals = new ArrayList<>();
     private AgentPersonalityConfig personality;
+    private Map<String, Integer> personalitySliders = new HashMap<>();
+    private String signatureLine;
     private List<AgentToolCapability> tools = new ArrayList<>();
     private List<AgentAutoActionConfig> autoActions = new ArrayList<>();
     private Boolean isPrimaryForRole;
@@ -105,6 +109,22 @@ public class Agent {
 
     public void setPersonality(AgentPersonalityConfig personality) {
         this.personality = personality;
+    }
+
+    public Map<String, Integer> getPersonalitySliders() {
+        return personalitySliders;
+    }
+
+    public void setPersonalitySliders(Map<String, Integer> personalitySliders) {
+        this.personalitySliders = personalitySliders != null ? new HashMap<>(personalitySliders) : new HashMap<>();
+    }
+
+    public String getSignatureLine() {
+        return signatureLine;
+    }
+
+    public void setSignatureLine(String signatureLine) {
+        this.signatureLine = signatureLine;
     }
 
     public List<AgentToolCapability> getTools() {

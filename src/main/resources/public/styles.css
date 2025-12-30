@@ -1571,6 +1571,354 @@ html, body {
     color: var(--error-color);
 }
 
+/* ============================================
+   AGENT PROFILE MODAL
+   ============================================ */
+.agent-profile-modal {
+    min-width: 480px;
+    max-width: 520px;
+}
+
+.agent-profile-header {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+/* Avatar drop zone */
+.agent-avatar-drop {
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: var(--bg-dark);
+    transition: border-color 0.2s, background 0.2s;
+    overflow: hidden;
+    position: relative;
+}
+
+.agent-avatar-drop:hover {
+    border-color: var(--accent-color);
+    background: var(--bg-lighter);
+}
+
+.agent-avatar-drop.drag-over {
+    border-color: var(--accent-color);
+    background: rgba(0, 122, 204, 0.1);
+}
+
+.agent-avatar-drop img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.agent-avatar-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-align: center;
+    padding: 8px;
+}
+
+.agent-avatar-placeholder svg {
+    width: 24px;
+    height: 24px;
+    opacity: 0.6;
+}
+
+.agent-avatar-emoji {
+    font-size: 40px;
+    line-height: 1;
+}
+
+/* Identity fields */
+.agent-identity-fields {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.agent-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.agent-field-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.agent-field-input {
+    padding: 8px 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-bright);
+    font-size: 13px;
+}
+
+.agent-field-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+/* Role input with suggestions */
+.agent-role-wrapper {
+    position: relative;
+}
+
+.agent-role-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    z-index: 10;
+    display: none;
+}
+
+.agent-role-suggestions.visible {
+    display: block;
+}
+
+.agent-role-suggestion {
+    padding: 8px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.agent-role-suggestion:hover {
+    background: var(--bg-lighter);
+    color: var(--text-bright);
+}
+
+.agent-role-suggestion.create-new {
+    border-top: 1px solid var(--border-color);
+    color: var(--accent-color);
+    font-style: italic;
+}
+
+/* Section dividers */
+.agent-profile-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.agent-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Personality sliders */
+.agent-sliders {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.agent-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.agent-slider-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    width: 75px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.agent-slider-label-right {
+    text-align: left;
+}
+
+.agent-slider-input {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--bg-lighter);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.agent-slider-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.agent-slider-input::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.agent-slider-input::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+/* Instructions textarea */
+.agent-instructions-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-bright);
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.agent-instructions-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.agent-instructions-textarea::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+/* Signature line */
+.agent-signature-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.agent-signature-prefix {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.agent-signature-input {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-bright);
+    font-size: 12px;
+    font-style: italic;
+}
+
+.agent-signature-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.agent-signature-input::placeholder {
+    font-style: italic;
+    opacity: 0.5;
+}
+
+/* Presets Section */
+.agent-presets-section {
+    margin-top: 16px;
+    padding-top: 12px;
+}
+
+.agent-presets-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+}
+
+.agent-presets-toggle:hover {
+    color: var(--accent-color);
+}
+
+.presets-arrow {
+    font-size: 10px;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.agent-presets-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    max-height: 200px;
+    overflow: hidden;
+    transition: max-height 0.25s ease, margin-top 0.25s ease, opacity 0.2s ease;
+}
+
+.agent-presets-grid.collapsed {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+}
+
+.agent-preset-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.agent-preset-btn:hover {
+    background: var(--bg-lighter);
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+.agent-preset-btn .preset-emoji {
+    font-size: 12px;
+}
+
+.agent-preset-btn .preset-name {
+    white-space: nowrap;
+}
+
 /* Issue Detail Modal */
 .issue-modal-overlay {
     position: fixed;
@@ -1957,26 +2305,6 @@ html, body {
     color: var(--error-color);
 }
 
-/* Dev Debug Button */
-.dev-debug-btn {
-    position: fixed;
-    bottom: 60px;
-    right: 16px;
-    z-index: 1000;
-    background: var(--bg-lighter);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 6px 10px;
-    font-size: 11px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.dev-debug-btn:hover {
-    background: var(--accent-color);
-    color: var(--text-bright);
-}
-
 /* ============================================
    TOP BAR - Mode Switch (Workbench/Editor/Settings)
    ============================================ */
@@ -2134,6 +2462,28 @@ html, body {
     letter-spacing: 0.5px;
 }
 
+.panel-action-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.panel-action-btn:hover {
+    background: var(--bg-lighter);
+    color: var(--text-bright);
+}
+
 /* Agent List */
 .agent-list {
     flex: 1;
@@ -2173,25 +2523,50 @@ html, body {
 
 .agent-icon {
     font-size: 18px;
-    width: 24px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--bg-lighter);
+    overflow: hidden;
+}
+
+.agent-icon.has-image {
+    background: transparent;
+}
+
+.agent-icon-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .agent-info {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
 }
 
 .agent-name {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .agent-role {
     font-size: 11px;
     color: var(--text-secondary);
     margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .agent-status {

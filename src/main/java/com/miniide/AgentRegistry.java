@@ -42,6 +42,134 @@ public class AgentRegistry {
             .collect(Collectors.toList());
     }
 
+    public List<Agent> listAllAgents() {
+        if (agentsFile == null || agentsFile.getAgents() == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(agentsFile.getAgents());
+    }
+
+    public Agent getAgent(String id) {
+        if (agentsFile == null || agentsFile.getAgents() == null || id == null) {
+            return null;
+        }
+        return agentsFile.getAgents().stream()
+            .filter(a -> id.equals(a.getId()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    public Agent updateAgent(String id, Agent updates) {
+        if (agentsFile == null || agentsFile.getAgents() == null || id == null) {
+            return null;
+        }
+
+        List<Agent> agents = agentsFile.getAgents();
+        for (int i = 0; i < agents.size(); i++) {
+            Agent existing = agents.get(i);
+            if (id.equals(existing.getId())) {
+                // Merge updates into existing agent
+                // Note: Only update non-null AND non-empty values for collections
+                // because Jackson deserializes missing fields as empty collections, not null
+                if (updates.getName() != null && !updates.getName().isEmpty()) {
+                    existing.setName(updates.getName());
+                }
+                if (updates.getRole() != null && !updates.getRole().isEmpty()) {
+                    existing.setRole(updates.getRole());
+                }
+                // Avatar can be empty string (to clear it) or have value
+                if (updates.getAvatar() != null) {
+                    existing.setAvatar(updates.getAvatar());
+                }
+                if (updates.getColor() != null && !updates.getColor().isEmpty()) {
+                    existing.setColor(updates.getColor());
+                }
+                if (updates.getPersonality() != null) {
+                    existing.setPersonality(updates.getPersonality());
+                }
+                // PersonalitySliders: only update if not empty (allows partial updates)
+                if (updates.getPersonalitySliders() != null && !updates.getPersonalitySliders().isEmpty()) {
+                    existing.setPersonalitySliders(updates.getPersonalitySliders());
+                }
+                // SignatureLine can be empty string (to clear it)
+                if (updates.getSignatureLine() != null) {
+                    existing.setSignatureLine(updates.getSignatureLine());
+                }
+                // Skills/Goals: only update if not empty (don't accidentally clear)
+                if (updates.getSkills() != null && !updates.getSkills().isEmpty()) {
+                    existing.setSkills(updates.getSkills());
+                }
+                if (updates.getGoals() != null && !updates.getGoals().isEmpty()) {
+                    existing.setGoals(updates.getGoals());
+                }
+                if (updates.getEndpoint() != null) {
+                    existing.setEndpoint(updates.getEndpoint());
+                }
+                if (updates.getMemoryProfile() != null) {
+                    existing.setMemoryProfile(updates.getMemoryProfile());
+                }
+                if (updates.getIsPrimaryForRole() != null) {
+                    existing.setIsPrimaryForRole(updates.getIsPrimaryForRole());
+                }
+                if (updates.getCanBeTeamLead() != null) {
+                    existing.setCanBeTeamLead(updates.getCanBeTeamLead());
+                }
+
+                existing.setUpdatedAt(System.currentTimeMillis());
+
+                saveToDisk();
+                return existing;
+            }
+        }
+        return null;
+    }
+
+    public Agent importAgent(Agent agent) {
+        if (agentsFile == null) {
+            agentsFile = new AgentsFile();
+            agentsFile.setVersion(1);
+            agentsFile.setAgents(new ArrayList<>());
+        }
+
+        // Generate new ID if importing as new
+        String newId = agent.getId();
+        if (newId == null || getAgent(newId) != null) {
+            newId = generateUniqueId(agent.getName());
+        }
+
+        agent.setId(newId);
+        agent.setCreatedAt(System.currentTimeMillis());
+        agent.setUpdatedAt(System.currentTimeMillis());
+        agent.setEnabled(true);
+
+        agentsFile.getAgents().add(agent);
+        saveToDisk();
+
+        logger.info("Imported agent: " + agent.getName() + " (" + newId + ")");
+        return agent;
+    }
+
+    private String generateUniqueId(String name) {
+        String baseId = name != null
+            ? name.toLowerCase().replaceAll("[^a-z0-9]+", "-")
+            : "agent";
+        String id = baseId;
+        int counter = 1;
+        while (getAgent(id) != null) {
+            id = baseId + "-" + counter++;
+        }
+        return id;
+    }
+
+    private void saveToDisk() {
+        try {
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), agentsFile);
+            logger.info("Saved agent registry to " + registryPath);
+        } catch (IOException e) {
+            logger.error("Failed to save agent registry: " + e.getMessage(), e);
+        }
+    }
+
     private void ensureRegistryExists() {
         if (Files.exists(registryPath)) {
             return;

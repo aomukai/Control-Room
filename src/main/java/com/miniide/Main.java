@@ -2,6 +2,7 @@ package com.miniide;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.miniide.models.Agent;
 import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.models.Notification;
@@ -71,6 +72,8 @@ public class Main {
                 cfg.jsonMapper(new JavalinJackson(objectMapper));
                 cfg.staticFiles.add("/public", Location.CLASSPATH);
                 cfg.http.defaultContentType = "application/json";
+                // Increase max request size for avatar uploads (10MB)
+                cfg.http.maxRequestSize = 10_000_000L;
             });
 
             // Register API routes
@@ -137,6 +140,9 @@ public class Main {
         app.post("/api/file/reveal", Main::revealFile);
         app.post("/api/file/open-folder", Main::openContainingFolder);
         app.get("/api/agents", Main::getAgents);
+        app.get("/api/agents/{id}", Main::getAgent);
+        app.put("/api/agents/{id}", Main::updateAgent);
+        app.post("/api/agents/import", Main::importAgent);
 
         // Notification endpoints
         app.get("/api/notifications", Main::getNotifications);
@@ -391,6 +397,48 @@ public class Main {
             ctx.json(agentRegistry.listEnabledAgents());
         } catch (Exception e) {
             logger.error("Failed to list agents: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getAgent(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            Agent agent = agentRegistry.getAgent(id);
+            if (agent == null) {
+                ctx.status(404).json(Map.of("error", "Agent not found: " + id));
+                return;
+            }
+            ctx.json(agent);
+        } catch (Exception e) {
+            logger.error("Failed to get agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void updateAgent(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            Agent updates = ctx.bodyAsClass(Agent.class);
+            Agent updated = agentRegistry.updateAgent(id, updates);
+            if (updated == null) {
+                ctx.status(404).json(Map.of("error", "Agent not found: " + id));
+                return;
+            }
+            ctx.json(updated);
+        } catch (Exception e) {
+            logger.error("Failed to update agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void importAgent(Context ctx) {
+        try {
+            Agent agent = ctx.bodyAsClass(Agent.class);
+            Agent imported = agentRegistry.importAgent(agent);
+            ctx.status(201).json(imported);
+        } catch (Exception e) {
+            logger.error("Failed to import agent: " + e.getMessage(), e);
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }

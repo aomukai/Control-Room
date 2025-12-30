@@ -11,4 +11,17 @@
   "createdAt" : 1767068647109,
   "updatedAt" : 1767068647109,
   "closedAt" : null
+}, {
+  "id" : 2,
+  "title" : "Test Issue: Sample problem #283",
+  "body" : "This is a test issue created from the dev tools.",
+  "openedBy" : "Planner",
+  "assignedTo" : "Writer",
+  "tags" : [ "test", "dev" ],
+  "priority" : "urgent",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767084182291,
+  "updatedAt" : 1767084182291,
+  "closedAt" : null
 } ]
