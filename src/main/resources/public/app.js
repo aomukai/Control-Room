@@ -1363,6 +1363,11 @@
                 log(`Selected agent: ${agent.name}`, 'info');
             });
 
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showAgentContextMenu(e, agent);
+            });
+
             container.appendChild(item);
         });
     }
@@ -2207,6 +2212,36 @@
         }
     }
 
+    function handleAgentMenuAction(action, agent) {
+        const agentName = agent && agent.name ? agent.name : 'Agent';
+        switch (action) {
+            case 'invite-conference':
+                log(`Invited ${agentName} to conference`, 'info');
+                break;
+            case 'invite-chat':
+                log(`Invited ${agentName} to chat`, 'info');
+                break;
+            case 'open-profile':
+                log(`Open profile for ${agentName}`, 'info');
+                break;
+            case 'open-role-settings':
+                log(`Open role settings for ${agentName}`, 'info');
+                break;
+            case 'open-agent-settings':
+                log(`Open settings for ${agentName}`, 'info');
+                break;
+            case 'change-role':
+                log(`Change role for ${agentName}`, 'info');
+                break;
+            case 'retire':
+                log(`Retire ${agentName}`, 'warning');
+                break;
+            default:
+                log(`Unknown action for ${agentName}`, 'warning');
+                break;
+        }
+    }
+
     // Context Menu
     let contextMenu = null;
 
@@ -2238,6 +2273,46 @@
         actions.push({ label: 'Move...', action: () => promptMove(node.path, node.type) });
         actions.push({ divider: true });
         actions.push({ label: 'Delete', action: () => promptDelete(node.path, node.type) });
+
+        actions.forEach(item => {
+            if (item.divider) {
+                const div = document.createElement('div');
+                div.className = 'context-menu-divider';
+                contextMenu.appendChild(div);
+            } else {
+                const menuItem = document.createElement('div');
+                menuItem.className = 'context-menu-item';
+                menuItem.textContent = item.label;
+                menuItem.addEventListener('click', () => {
+                    hideContextMenu();
+                    item.action();
+                });
+                contextMenu.appendChild(menuItem);
+            }
+        });
+
+        document.body.appendChild(contextMenu);
+    }
+
+    function showAgentContextMenu(e, agent) {
+        hideContextMenu();
+
+        contextMenu = document.createElement('div');
+        contextMenu.className = 'context-menu';
+        contextMenu.style.left = `${e.clientX}px`;
+        contextMenu.style.top = `${e.clientY}px`;
+
+        const actions = [
+            { label: 'Invite to Conference', action: () => handleAgentMenuAction('invite-conference', agent) },
+            { label: 'Invite to Chat', action: () => handleAgentMenuAction('invite-chat', agent) },
+            { divider: true },
+            { label: 'Open Agent Profile', action: () => handleAgentMenuAction('open-profile', agent) },
+            { label: 'Open Role Settings', action: () => handleAgentMenuAction('open-role-settings', agent) },
+            { label: 'Open Agent Settings', action: () => handleAgentMenuAction('open-agent-settings', agent) },
+            { label: 'Change Role...', action: () => handleAgentMenuAction('change-role', agent) },
+            { divider: true },
+            { label: 'Retire Agent', action: () => handleAgentMenuAction('retire', agent) }
+        ];
 
         actions.forEach(item => {
             if (item.divider) {
