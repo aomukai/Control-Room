@@ -150,3 +150,7 @@ Notifications:
 ## License
 
 MIT
+
+## Credits
+
+Uses [Heroicons](https://heroicons.com/) by Tailwind Labs.
