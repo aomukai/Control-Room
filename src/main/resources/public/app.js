@@ -31,6 +31,13 @@
             highlightId: null,
             toastLimit: 4,
             toastTimers: new Map()
+        },
+        issueModal: {
+            isOpen: false,
+            issueId: null,
+            isLoading: false,
+            error: null,
+            issue: null
         }
     };
 
@@ -428,18 +435,18 @@
 
         function issueCreated(issueId, title, author, assignee) {
             const details = `Author: ${author}` + (assignee ? ` | Assignee: ${assignee}` : '');
-            return push('info', 'workbench', `Issue #${issueId} created: ${title}`, details, 'attention', false, 'View Issue',
-                { type: 'open-issue', issueId }, 'issues');
+            return push('info', 'workbench', `Issue #${issueId} created: ${title}`, details, 'attention', false, 'Open issue',
+                { kind: 'openIssue', issueId }, 'issues');
         }
 
         function issueClosed(issueId, title) {
-            return push('success', 'workbench', `Issue #${issueId} closed: ${title}`, '', 'info', false, 'View Issue',
-                { type: 'open-issue', issueId }, 'issues');
+            return push('success', 'workbench', `Issue #${issueId} closed: ${title}`, '', 'info', false, 'View',
+                { kind: 'openIssue', issueId }, 'issues');
         }
 
         function issueCommentAdded(issueId, author) {
-            return push('info', 'workbench', `Comment added to Issue #${issueId}`, `By: ${author}`, 'social', false, 'View Thread',
-                { type: 'open-issue', issueId }, 'issues');
+            return push('info', 'workbench', `New comment from ${author} on Issue #${issueId}`, '', 'social', false, 'Open issue',
+                { kind: 'openIssue', issueId }, 'issues');
         }
 
         function agentPatchProposal(file, patchId) {
@@ -878,13 +885,23 @@
             return;
         }
 
-        switch (payload.type) {
+        // Support both 'kind' (new) and 'type' (legacy) keys
+        const actionKind = payload.kind || payload.type;
+
+        switch (actionKind) {
             case 'open-notification-center':
                 openNotificationCenter(notification.id);
                 break;
+            case 'openIssue':
             case 'open-issue':
-                log(`Open issue requested: ${payload.issueId}`, 'info');
-                openNotificationCenter(notification.id);
+                // Close notification center first for a clean view
+                closeNotificationCenter();
+                // Open the issue modal
+                if (payload.issueId) {
+                    openIssueModal(payload.issueId);
+                } else {
+                    log('Cannot open issue: missing issueId', 'warning');
+                }
                 break;
             case 'open-file':
                 if (payload.filePath) {
@@ -906,6 +923,278 @@
         const date = new Date(timestamp);
         const pad = (value) => String(value).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    // Issue Detail Modal
+    // Opens the issue modal and fetches issue data
+    async function openIssueModal(issueId) {
+        if (!issueId) return;
+
+        state.issueModal.isOpen = true;
+        state.issueModal.issueId = issueId;
+        state.issueModal.isLoading = true;
+        state.issueModal.error = null;
+        state.issueModal.issue = null;
+
+        renderIssueModal();
+
+        try {
+            const issue = await issueApi.get(issueId);
+            state.issueModal.issue = issue;
+            state.issueModal.isLoading = false;
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.isLoading = false;
+            state.issueModal.error = err.message;
+            renderIssueModal();
+        }
+    }
+
+    function closeIssueModal() {
+        state.issueModal.isOpen = false;
+        state.issueModal.issueId = null;
+        state.issueModal.isLoading = false;
+        state.issueModal.error = null;
+        state.issueModal.issue = null;
+
+        const overlay = document.getElementById('issue-modal-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+
+        // Return focus to notification bell if it exists
+        if (elements.notificationBell) {
+            elements.notificationBell.focus();
+        }
+    }
+
+    function formatRelativeTime(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const seconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (days > 0) return `${days}d ago`;
+        if (hours > 0) return `${hours}h ago`;
+        if (minutes > 0) return `${minutes}m ago`;
+        return 'just now';
+    }
+
+    function getStatusClass(status) {
+        switch (status) {
+            case 'open': return 'status-open';
+            case 'closed': return 'status-closed';
+            case 'waiting-on-user': return 'status-waiting';
+            default: return 'status-open';
+        }
+    }
+
+    function getPriorityClass(priority) {
+        switch (priority) {
+            case 'urgent': return 'priority-urgent';
+            case 'high': return 'priority-high';
+            case 'normal': return 'priority-normal';
+            case 'low': return 'priority-low';
+            default: return 'priority-normal';
+        }
+    }
+
+    function renderIssueModal() {
+        // Remove existing overlay if any
+        let overlay = document.getElementById('issue-modal-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+
+        if (!state.issueModal.isOpen) {
+            return;
+        }
+
+        // Create overlay
+        overlay = document.createElement('div');
+        overlay.id = 'issue-modal-overlay';
+        overlay.className = 'issue-modal-overlay';
+
+        // Create modal container
+        const modal = document.createElement('div');
+        modal.className = 'issue-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'issue-modal-title');
+
+        // Loading state
+        if (state.issueModal.isLoading) {
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <h2 id="issue-modal-title" class="issue-modal-title">Loading Issue #${state.issueModal.issueId}...</h2>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+                <div class="issue-modal-body">
+                    <div class="issue-modal-loading">
+                        <div class="issue-loading-spinner"></div>
+                        <span>Loading issue details...</span>
+                    </div>
+                </div>
+            `;
+        }
+        // Error state
+        else if (state.issueModal.error) {
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <h2 id="issue-modal-title" class="issue-modal-title">Issue #${state.issueModal.issueId}</h2>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+                <div class="issue-modal-body">
+                    <div class="issue-modal-error">
+                        <span class="issue-error-icon">&#9888;</span>
+                        <span class="issue-error-message">${escapeHtml(state.issueModal.error)}</span>
+                    </div>
+                </div>
+            `;
+        }
+        // Issue loaded
+        else if (state.issueModal.issue) {
+            const issue = state.issueModal.issue;
+            const statusLabel = issue.status.replace(/-/g, ' ');
+
+            // Build tags HTML
+            const tagsHtml = issue.tags && issue.tags.length > 0
+                ? issue.tags.map(tag => `<span class="issue-tag">${escapeHtml(tag)}</span>`).join('')
+                : '<span class="issue-no-tags">No tags</span>';
+
+            // Build comments HTML
+            let commentsHtml = '';
+            if (issue.comments && issue.comments.length > 0) {
+                commentsHtml = issue.comments.map(comment => {
+                    let actionBadge = '';
+                    if (comment.action && comment.action.type) {
+                        actionBadge = `
+                            <span class="comment-action-badge">
+                                <span class="comment-action-type">${escapeHtml(comment.action.type)}</span>
+                                ${comment.action.details ? `<span class="comment-action-details">${escapeHtml(comment.action.details)}</span>` : ''}
+                            </span>
+                        `;
+                    }
+                    return `
+                        <div class="issue-comment">
+                            <div class="comment-header">
+                                <span class="comment-author">${escapeHtml(comment.author || 'Unknown')}</span>
+                                <span class="comment-timestamp">${formatRelativeTime(comment.timestamp)}</span>
+                                ${actionBadge}
+                            </div>
+                            <div class="comment-body">${escapeHtml(comment.body || '')}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                commentsHtml = '<div class="issue-no-comments">No comments yet</div>';
+            }
+
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <div class="issue-modal-title-row">
+                        <h2 id="issue-modal-title" class="issue-modal-title">Issue #${issue.id}: ${escapeHtml(issue.title)}</h2>
+                        <span class="issue-status-pill ${getStatusClass(issue.status)}">${escapeHtml(statusLabel)}</span>
+                    </div>
+                    <div class="issue-modal-meta-row">
+                        <span class="issue-meta-item">
+                            <span class="issue-meta-label">Author:</span>
+                            <span class="issue-meta-value">${escapeHtml(issue.openedBy || 'Unknown')}</span>
+                        </span>
+                        ${issue.assignedTo ? `
+                            <span class="issue-meta-item">
+                                <span class="issue-meta-label">Assignee:</span>
+                                <span class="issue-meta-value">${escapeHtml(issue.assignedTo)}</span>
+                            </span>
+                        ` : ''}
+                    </div>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+
+                <div class="issue-modal-body">
+                    <div class="issue-meta-section">
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Tags:</span>
+                            <div class="issue-tags-container">${tagsHtml}</div>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Priority:</span>
+                            <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Created:</span>
+                            <span class="issue-meta-value">${formatTimestamp(issue.createdAt)}</span>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Updated:</span>
+                            <span class="issue-meta-value">${formatTimestamp(issue.updatedAt)}</span>
+                        </div>
+                        ${issue.closedAt ? `
+                            <div class="issue-meta-group">
+                                <span class="issue-meta-label">Closed:</span>
+                                <span class="issue-meta-value">${formatTimestamp(issue.closedAt)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="issue-body-section">
+                        <h3 class="issue-section-title">Description</h3>
+                        <div class="issue-body-content">${escapeHtml(issue.body || 'No description provided.')}</div>
+                    </div>
+
+                    <div class="issue-comments-section">
+                        <h3 class="issue-section-title">Comments (${issue.comments ? issue.comments.length : 0})</h3>
+                        <div class="issue-comments-list">${commentsHtml}</div>
+                    </div>
+                </div>
+
+                <div class="issue-modal-footer">
+                    <div class="issue-modal-actions-placeholder">
+                        <!-- Future actions: Add Comment, Close Issue, etc. -->
+                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Add Comment</button>
+                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Close Issue</button>
+                    </div>
+                    <button type="button" class="issue-modal-btn-close">Close</button>
+                </div>
+            `;
+        }
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        // Event listeners
+        const closeBtn = modal.querySelector('.issue-modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeIssueModal);
+        }
+
+        const footerCloseBtn = modal.querySelector('.issue-modal-btn-close');
+        if (footerCloseBtn) {
+            footerCloseBtn.addEventListener('click', closeIssueModal);
+        }
+
+        // Close on overlay click (outside modal)
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeIssueModal();
+            }
+        });
+
+        // Keyboard handling
+        function handleKeydown(e) {
+            if (e.key === 'Escape') {
+                closeIssueModal();
+                document.removeEventListener('keydown', handleKeydown);
+            }
+        }
+        document.addEventListener('keydown', handleKeydown);
+
+        // Focus the close button for accessibility
+        if (closeBtn) {
+            closeBtn.focus();
+        }
     }
 
     // API Functions
@@ -2312,6 +2601,39 @@
         });
     }
 
+    // Initialize Dev/Debug Tools (for testing)
+    function initDevTools() {
+        // Create a small debug button for testing Issue Modal
+        const debugBtn = document.createElement('button');
+        debugBtn.type = 'button';
+        debugBtn.className = 'dev-debug-btn';
+        debugBtn.textContent = 'Test Issue Modal';
+        debugBtn.title = 'Open Issue Modal with ID 1 (Dev/Test)';
+
+        debugBtn.addEventListener('click', () => {
+            // Try to open issue #1 for testing
+            openIssueModal(1);
+            log('Dev: Opening Issue Modal for issue #1', 'info');
+        });
+
+        document.body.appendChild(debugBtn);
+
+        // Also create a button to trigger a test issue notification
+        const notifyBtn = document.createElement('button');
+        notifyBtn.type = 'button';
+        notifyBtn.className = 'dev-debug-btn';
+        notifyBtn.style.bottom = '90px';
+        notifyBtn.textContent = 'Test Issue Notification';
+        notifyBtn.title = 'Create a test issue notification';
+
+        notifyBtn.addEventListener('click', () => {
+            notificationStore.issueCreated(1, 'Test Issue Title', 'TestAuthor', 'TestAssignee');
+            log('Dev: Created test issue notification', 'info');
+        });
+
+        document.body.appendChild(notifyBtn);
+    }
+
     // Initialize
     function init() {
         log('Control Room starting...', 'info');
@@ -2323,6 +2645,7 @@
         initSidebarButtons();
         initEventListeners();
         initNotifications();
+        initDevTools(); // Dev/Test buttons
         loadFileTree();
 
         // Welcome message in chat
