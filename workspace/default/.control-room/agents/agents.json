@@ -1,0 +1,211 @@
+{
+  "version" : 1,
+  "agents" : [ {
+    "id" : "planner",
+    "name" : "Planner",
+    "role" : "planner",
+    "enabled" : true,
+    "avatar" : "",
+    "color" : null,
+    "endpoint" : {
+      "provider" : "anthropic",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "skills" : [ "structure", "beats", "timeline" ],
+    "goals" : [ "maintain story shape", "catch structural issues" ],
+    "personality" : {
+      "tone" : "neutral",
+      "verbosity" : "normal",
+      "voiceTags" : [ "planner" ],
+      "baseInstructions" : "Focus on your role: planner."
+    },
+    "personalitySliders" : { },
+    "signatureLine" : null,
+    "tools" : [ ],
+    "autoActions" : [ ],
+    "isPrimaryForRole" : true,
+    "canBeTeamLead" : null,
+    "memoryProfile" : {
+      "retention" : "strong",
+      "focusTags" : [ "#structure", "#timeline" ],
+      "maxInterestLevel" : 5,
+      "canPinIssues" : true
+    },
+    "clonedFrom" : null,
+    "createdAt" : 1767094073403,
+    "updatedAt" : 1767094073403
+  }, {
+    "id" : "writer",
+    "name" : "Writer",
+    "role" : "writer",
+    "enabled" : true,
+    "avatar" : "",
+    "color" : null,
+    "endpoint" : {
+      "provider" : "anthropic",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "skills" : [ "prose", "voice", "scene flow" ],
+    "goals" : [ "write vivid scenes", "maintain tone" ],
+    "personality" : {
+      "tone" : "neutral",
+      "verbosity" : "normal",
+      "voiceTags" : [ "writer" ],
+      "baseInstructions" : "Focus on your role: writer."
+    },
+    "personalitySliders" : { },
+    "signatureLine" : null,
+    "tools" : [ ],
+    "autoActions" : [ ],
+    "isPrimaryForRole" : true,
+    "canBeTeamLead" : null,
+    "memoryProfile" : {
+      "retention" : "normal",
+      "focusTags" : [ "#voice", "#prose" ],
+      "maxInterestLevel" : 4,
+      "canPinIssues" : false
+    },
+    "clonedFrom" : null,
+    "createdAt" : 1767094073403,
+    "updatedAt" : 1767094073403
+  }, {
+    "id" : "editor",
+    "name" : "Editor",
+    "role" : "editor",
+    "enabled" : true,
+    "avatar" : "",
+    "color" : null,
+    "endpoint" : {
+      "provider" : "anthropic",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "skills" : [ "clarity", "grammar", "pacing" ],
+    "goals" : [ "polish prose", "remove friction" ],
+    "personality" : {
+      "tone" : "neutral",
+      "verbosity" : "normal",
+      "voiceTags" : [ "editor" ],
+      "baseInstructions" : "Focus on your role: editor."
+    },
+    "personalitySliders" : { },
+    "signatureLine" : null,
+    "tools" : [ ],
+    "autoActions" : [ ],
+    "isPrimaryForRole" : true,
+    "canBeTeamLead" : null,
+    "memoryProfile" : {
+      "retention" : "normal",
+      "focusTags" : [ "#editing", "#clarity" ],
+      "maxInterestLevel" : 4,
+      "canPinIssues" : false
+    },
+    "clonedFrom" : null,
+    "createdAt" : 1767094073403,
+    "updatedAt" : 1767094073403
+  }, {
+    "id" : "critic",
+    "name" : "Critic",
+    "role" : "critic",
+    "enabled" : true,
+    "avatar" : "",
+    "color" : null,
+    "endpoint" : {
+      "provider" : "anthropic",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "skills" : [ "feedback", "themes", "logic" ],
+    "goals" : [ "identify weak spots", "stress-test ideas" ],
+    "personality" : {
+      "tone" : "neutral",
+      "verbosity" : "normal",
+      "voiceTags" : [ "critic" ],
+      "baseInstructions" : "Focus on your role: critic."
+    },
+    "personalitySliders" : { },
+    "signatureLine" : null,
+    "tools" : [ ],
+    "autoActions" : [ ],
+    "isPrimaryForRole" : true,
+    "canBeTeamLead" : null,
+    "memoryProfile" : {
+      "retention" : "strong",
+      "focusTags" : [ "#themes", "#logic" ],
+      "maxInterestLevel" : 5,
+      "canPinIssues" : true
+    },
+    "clonedFrom" : null,
+    "createdAt" : 1767094073403,
+    "updatedAt" : 1767094073403
+  }, {
+    "id" : "continuity",
+    "name" : "Continuity",
+    "role" : "continuity",
+    "enabled" : true,
+    "avatar" : "",
+    "color" : null,
+    "endpoint" : {
+      "provider" : "anthropic",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "skills" : [ "lore", "canon", "consistency" ],
+    "goals" : [ "protect canon", "catch conflicts" ],
+    "personality" : {
+      "tone" : "neutral",
+      "verbosity" : "normal",
+      "voiceTags" : [ "continuity" ],
+      "baseInstructions" : "Focus on your role: continuity."
+    },
+    "personalitySliders" : { },
+    "signatureLine" : null,
+    "tools" : [ ],
+    "autoActions" : [ ],
+    "isPrimaryForRole" : true,
+    "canBeTeamLead" : null,
+    "memoryProfile" : {
+      "retention" : "strong",
+      "focusTags" : [ "#lore", "#continuity" ],
+      "maxInterestLevel" : 5,
+      "canPinIssues" : true
+    },
+    "clonedFrom" : null,
+    "createdAt" : 1767094073403,
+    "updatedAt" : 1767094073403
+  } ],
+  "roleSettings" : [ {
+    "role" : "planner",
+    "freedomLevel" : "semi-autonomous",
+    "notifyUserOn" : [ "question", "conflict", "completion" ],
+    "maxActionsPerSession" : null,
+    "requireApprovalFor" : [ ]
+  } ]
+}

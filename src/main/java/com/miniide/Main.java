@@ -12,6 +12,7 @@ import com.miniide.models.Notification.Category;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import io.javalin.Javalin;
+import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
 import io.javalin.json.JavalinJackson;
 import io.javalin.http.staticfiles.Location;
@@ -139,7 +140,10 @@ public class Main {
         app.post("/api/workspace/terminal", Main::openWorkspaceTerminal);
         app.post("/api/file/reveal", Main::revealFile);
         app.post("/api/file/open-folder", Main::openContainingFolder);
+        app.get("/api/workspace/info", Main::getWorkspaceInfo);
+        app.post("/api/workspace/select", Main::selectWorkspace);
         app.get("/api/agents", Main::getAgents);
+        app.post("/api/agents", Main::createAgent);
         app.get("/api/agents/{id}", Main::getAgent);
         app.put("/api/agents/{id}", Main::updateAgent);
         app.post("/api/agents/import", Main::importAgent);
@@ -401,6 +405,21 @@ public class Main {
         }
     }
 
+    private static void createAgent(Context ctx) {
+        try {
+            Agent agent = ctx.bodyAsClass(Agent.class);
+            Agent created = agentRegistry.createAgent(agent);
+            ctx.status(201).json(created);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (BadRequestResponse e) {
+            ctx.status(400).json(Map.of("error", "Invalid agent payload"));
+        } catch (Exception e) {
+            logger.error("Failed to create agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
     private static void getAgent(Context ctx) {
         try {
             String id = ctx.pathParam("id");
@@ -463,6 +482,73 @@ public class Main {
         } catch (Exception e) {
             logger.error("Failed to open workspace folder: " + e.getMessage());
             ctx.json(Map.of("ok", false, "error", e.getMessage()));
+        }
+    }
+
+    private static void getWorkspaceInfo(Context ctx) {
+        try {
+            Path current = workspaceService.getWorkspaceRoot();
+            Path root = current.getParent() != null ? current.getParent() : current;
+            String currentName = current.getFileName() != null ? current.getFileName().toString() : current.toString();
+
+            List<String> names = new ArrayList<>();
+            if (Files.exists(root) && Files.isDirectory(root)) {
+                try (var stream = Files.list(root)) {
+                    stream.filter(Files::isDirectory)
+                        .map(path -> path.getFileName() != null ? path.getFileName().toString() : path.toString())
+                        .sorted()
+                        .forEach(names::add);
+                }
+            }
+
+            ctx.json(Map.of(
+                "currentPath", current.toString(),
+                "rootPath", root.toString(),
+                "currentName", currentName,
+                "available", names
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to get workspace info: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void selectWorkspace(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String name = json.has("name") ? json.get("name").asText() : null;
+
+            if (name == null || name.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Workspace name is required"));
+                return;
+            }
+            String trimmed = name.trim();
+            if (".".equals(trimmed) || "..".equals(trimmed) || trimmed.contains("/") || trimmed.contains("\\")) {
+                ctx.status(400).json(Map.of("error", "Invalid workspace name"));
+                return;
+            }
+
+            Path current = workspaceService.getWorkspaceRoot();
+            Path root = current.getParent() != null ? current.getParent() : current;
+            Path target = root.resolve(trimmed).normalize();
+
+            if (!target.startsWith(root)) {
+                ctx.status(400).json(Map.of("error", "Invalid workspace path"));
+                return;
+            }
+
+            Files.createDirectories(target);
+            AppConfig.persistWorkspaceSelection(root, trimmed);
+
+            logger.info("Workspace selection updated to " + target + " (restart required)");
+            ctx.json(Map.of(
+                "ok", true,
+                "restartRequired", true,
+                "targetPath", target.toString()
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to select workspace: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }
 

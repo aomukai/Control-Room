@@ -54,6 +54,12 @@
         agents: {
             list: [],
             selectedId: null
+        },
+        workspace: {
+            name: '',
+            path: '',
+            root: '',
+            available: []
         }
     };
 
@@ -145,7 +151,9 @@
         newsfeedList: document.getElementById('newsfeed-list'),
         agentList: document.getElementById('agent-list'),
         btnToggleMode: document.getElementById('btn-toggle-mode'),
-        btnOpenSettings: document.getElementById('btn-open-settings')
+        btnOpenSettings: document.getElementById('btn-open-settings'),
+        btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
+        workspaceName: document.getElementById('workspace-name')
     };
 
     // Initialize Split.js
@@ -384,6 +392,131 @@
             });
         }
     };
+
+    const workspaceApi = {
+        async info() {
+            return api('/api/workspace/info');
+        },
+        async select(name) {
+            return api('/api/workspace/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+        }
+    };
+
+    async function loadWorkspaceInfo() {
+        try {
+            const info = await workspaceApi.info();
+            state.workspace.name = info.currentName || 'workspace';
+            state.workspace.path = info.currentPath || '';
+            state.workspace.root = info.rootPath || '';
+            state.workspace.available = Array.isArray(info.available) ? info.available : [];
+            updateWorkspaceButton();
+        } catch (err) {
+            log(`Failed to load workspace info: ${err.message}`, 'error');
+        }
+    }
+
+    function updateWorkspaceButton() {
+        if (!elements.btnWorkspaceSwitch || !elements.workspaceName) return;
+        elements.workspaceName.textContent = state.workspace.name || 'Workspace';
+        if (state.workspace.path) {
+            elements.btnWorkspaceSwitch.title = `Switch workspace (${state.workspace.path})`;
+        }
+    }
+
+    function showWorkspaceSwitcher() {
+        const { overlay, modal, body, confirmBtn, close } = createModalShell(
+            'Switch Workspace',
+            'Set & Restart',
+            'Cancel',
+            { closeOnCancel: true }
+        );
+
+        modal.classList.add('workspace-switch-modal');
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        const rootLabel = state.workspace.root ? `under ${state.workspace.root}` : 'under the workspace root';
+        info.textContent = `Pick an existing workspace or type a new name ${rootLabel}. Restart required.`;
+        body.appendChild(info);
+
+        const error = document.createElement('div');
+        error.className = 'modal-hint';
+        body.appendChild(error);
+
+        const rowSelect = document.createElement('div');
+        rowSelect.className = 'modal-row';
+        const selectLabel = document.createElement('label');
+        selectLabel.className = 'modal-label';
+        selectLabel.textContent = 'Existing';
+        const select = document.createElement('select');
+        select.className = 'modal-select';
+        const available = state.workspace.available || [];
+        if (available.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No workspaces found';
+            select.appendChild(option);
+            select.disabled = true;
+        } else {
+            available.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+            if (state.workspace.name) {
+                select.value = state.workspace.name;
+            }
+        }
+        rowSelect.appendChild(selectLabel);
+        rowSelect.appendChild(select);
+        body.appendChild(rowSelect);
+
+        const rowInput = document.createElement('div');
+        rowInput.className = 'modal-row';
+        const inputLabel = document.createElement('label');
+        inputLabel.className = 'modal-label';
+        inputLabel.textContent = 'New name';
+        const input = document.createElement('input');
+        input.className = 'modal-input';
+        input.type = 'text';
+        input.placeholder = 'e.g., whateverwonderfulprojectnametheuserwillcomeupwith';
+        rowInput.appendChild(inputLabel);
+        rowInput.appendChild(input);
+        body.appendChild(rowInput);
+
+        const selectName = () => input.value.trim() || select.value;
+
+        confirmBtn.addEventListener('click', async () => {
+            const name = selectName();
+            if (!name) {
+                error.textContent = 'Choose or enter a workspace name.';
+                return;
+            }
+            confirmBtn.disabled = true;
+            error.textContent = '';
+            try {
+                const result = await workspaceApi.select(name);
+                const targetPath = result.targetPath || name;
+                notificationStore.success(`Workspace set to ${name}. Restart to apply.`, 'global');
+                log(`Workspace selection saved: ${targetPath}`, 'info');
+                close();
+            } catch (err) {
+                error.textContent = err.message;
+                confirmBtn.disabled = false;
+            }
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                confirmBtn.click();
+            }
+        });
+    }
 
     // Notification Store (frontend)
     function createNotificationStore() {
@@ -3978,6 +4111,12 @@
             });
         }
 
+        if (elements.btnWorkspaceSwitch) {
+            elements.btnWorkspaceSwitch.addEventListener('click', () => {
+                showWorkspaceSwitcher();
+            });
+        }
+
         document.getElementById('btn-open-workspace').addEventListener('click', async () => {
             log('Opening workspace folder...', 'info');
             try {
@@ -4195,6 +4334,7 @@
         initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         loadFileTree();
         loadAgents();
+        loadWorkspaceInfo();
 
         // Set initial view mode (starts in Editor mode)
         setViewMode('editor');

@@ -5,6 +5,7 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Properties;
 
 /**
  * Application configuration handling platform-specific paths and settings.
@@ -12,6 +13,7 @@ import java.nio.file.Paths;
 public class AppConfig {
 
     private static final String APP_NAME = "Control Room";
+    private static final String CONFIG_FILE_NAME = "config.properties";
 
     private final Path workspacePath;
     private final Path logPath;
@@ -42,29 +44,11 @@ public class AppConfig {
     }
 
     /**
-     * Get the default workspace path based on the operating system.
-     * Windows: %USERPROFILE%\Documents\Control-Room\workspace
-     * macOS: ~/Documents/Control-Room/workspace
-     * Linux: ~/Control-Room/workspace
+     * Get the default workspace root path based on the current working directory.
+     * Default: ./workspace
      */
-    public static Path getDefaultWorkspacePath() {
-        String os = System.getProperty("os.name").toLowerCase();
-        String userHome = System.getProperty("user.home");
-
-        if (os.contains("win")) {
-            // Windows: Use Documents folder
-            String documents = System.getenv("USERPROFILE");
-            if (documents == null) {
-                documents = userHome;
-            }
-            return Paths.get(documents, "Documents", APP_NAME, "workspace");
-        } else if (os.contains("mac")) {
-            // macOS: Use Documents folder
-            return Paths.get(userHome, "Documents", APP_NAME, "workspace");
-        } else {
-            // Linux and others: Use home directory
-            return Paths.get(userHome, APP_NAME, "workspace");
-        }
+    public static Path getDefaultWorkspaceRoot() {
+        return Paths.get("").toAbsolutePath().normalize().resolve("workspace");
     }
 
     /**
@@ -87,6 +71,45 @@ public class AppConfig {
             return Paths.get(userHome, "Library", "Logs", APP_NAME);
         } else {
             return Paths.get(userHome, ".local", "share", APP_NAME, "logs");
+        }
+    }
+
+    /**
+     * Get the app config directory path based on the operating system.
+     * Windows: %APPDATA%\Control-Room
+     * macOS: ~/Library/Logs/Control-Room (shared with logs)
+     * Linux: ~/.local/share/Control-Room
+     */
+    public static Path getConfigDirectory() {
+        return getLogDirectory().getParent();
+    }
+
+    /**
+     * Persist workspace selection for next launch.
+     */
+    public static void persistWorkspaceSelection(Path workspaceRoot, String workspaceName) throws IOException {
+        Path configDir = getConfigDirectory();
+        Files.createDirectories(configDir);
+        Path configPath = configDir.resolve(CONFIG_FILE_NAME);
+
+        Properties props = new Properties();
+        if (Files.exists(configPath)) {
+            try (var input = Files.newInputStream(configPath)) {
+                props.load(input);
+            }
+        }
+
+        props.remove("workspace.path");
+
+        if (workspaceRoot != null) {
+            props.setProperty("workspace.root", workspaceRoot.toString());
+        }
+        if (workspaceName != null && !workspaceName.isBlank()) {
+            props.setProperty("workspace.name", workspaceName);
+        }
+
+        try (var output = Files.newOutputStream(configPath)) {
+            props.store(output, "Control Room configuration");
         }
     }
 
@@ -150,12 +173,28 @@ public class AppConfig {
      */
     public static class Builder {
         private Path workspacePath = null;
+        private Path workspaceRoot = null;
+        private String workspaceName = null;
         private int preferredPort = 8080;
         private boolean devMode = false;
 
         public Builder workspacePath(String path) {
             if (path != null && !path.isEmpty()) {
                 this.workspacePath = Paths.get(path).toAbsolutePath().normalize();
+            }
+            return this;
+        }
+
+        public Builder workspaceRoot(String path) {
+            if (path != null && !path.isEmpty()) {
+                this.workspaceRoot = Paths.get(path).toAbsolutePath().normalize();
+            }
+            return this;
+        }
+
+        public Builder workspaceName(String name) {
+            if (name != null && !name.isEmpty()) {
+                this.workspaceName = name.trim();
             }
             return this;
         }
@@ -181,6 +220,20 @@ public class AppConfig {
                     workspacePath(args[++i]);
                 }
 
+                // Handle --workspace-root=value or --workspace-root value
+                else if (arg.startsWith("--workspace-root=")) {
+                    workspaceRoot(arg.substring("--workspace-root=".length()));
+                } else if ("--workspace-root".equals(arg) && i + 1 < args.length) {
+                    workspaceRoot(args[++i]);
+                }
+
+                // Handle --workspace-name=value or --workspace-name value
+                else if (arg.startsWith("--workspace-name=")) {
+                    workspaceName(arg.substring("--workspace-name=".length()));
+                } else if ("--workspace-name".equals(arg) && i + 1 < args.length) {
+                    workspaceName(args[++i]);
+                }
+
                 // Handle --port=value or --port value
                 else if (arg.startsWith("--port=")) {
                     try {
@@ -202,7 +255,7 @@ public class AppConfig {
 
         public AppConfig build() throws IOException {
             // Resolve workspace path
-            Path workspace = workspacePath != null ? workspacePath : getDefaultWorkspacePath();
+            Path workspace = resolveWorkspacePath();
 
             // Find available port
             int port = findAvailablePort(preferredPort);
@@ -211,6 +264,82 @@ public class AppConfig {
             Path logPath = ensureLogDirectory();
 
             return new AppConfig(workspace, logPath, port, devMode);
+        }
+
+        private Path resolveWorkspacePath() throws IOException {
+            if (workspacePath != null) {
+                persistWorkspaceConfig(workspacePath, null, null);
+                return workspacePath;
+            }
+
+            Properties config = loadConfig();
+            String storedPath = config.getProperty("workspace.path");
+            if (storedPath != null && !storedPath.isBlank()) {
+                Path resolved = Paths.get(storedPath).toAbsolutePath().normalize();
+                return resolved;
+            }
+
+            Path root = workspaceRoot;
+            if (root == null) {
+                String storedRoot = config.getProperty("workspace.root");
+                if (storedRoot != null && !storedRoot.isBlank()) {
+                    root = Paths.get(storedRoot).toAbsolutePath().normalize();
+                } else {
+                    root = getDefaultWorkspaceRoot();
+                }
+            }
+
+            String name = workspaceName;
+            if (name == null || name.isBlank()) {
+                String storedName = config.getProperty("workspace.name");
+                name = (storedName == null || storedName.isBlank()) ? "default" : storedName;
+            }
+
+            Path resolved = root.resolve(name).toAbsolutePath().normalize();
+            persistWorkspaceConfig(null, root, name);
+            return resolved;
+        }
+
+        private Properties loadConfig() throws IOException {
+            Properties props = new Properties();
+            Path configDir = getConfigDirectory();
+            Path configPath = configDir.resolve(CONFIG_FILE_NAME);
+            if (Files.exists(configPath)) {
+                try (var input = Files.newInputStream(configPath)) {
+                    props.load(input);
+                }
+            }
+            return props;
+        }
+
+        private void persistWorkspaceConfig(Path path, Path root, String name) throws IOException {
+            Path configDir = getConfigDirectory();
+            Files.createDirectories(configDir);
+            Path configPath = configDir.resolve(CONFIG_FILE_NAME);
+
+            Properties props = new Properties();
+            if (Files.exists(configPath)) {
+                try (var input = Files.newInputStream(configPath)) {
+                    props.load(input);
+                }
+            }
+
+            if (path != null) {
+                props.setProperty("workspace.path", path.toString());
+            } else {
+                props.remove("workspace.path");
+            }
+
+            if (root != null) {
+                props.setProperty("workspace.root", root.toString());
+            }
+            if (name != null && !name.isBlank()) {
+                props.setProperty("workspace.name", name);
+            }
+
+            try (var output = Files.newOutputStream(configPath)) {
+                props.store(output, "Control Room configuration");
+            }
         }
     }
 }

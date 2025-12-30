@@ -124,6 +124,54 @@ public class AgentRegistry {
         return null;
     }
 
+    public Agent createAgent(Agent agent) {
+        if (agent == null) {
+            throw new IllegalArgumentException("Agent payload is required");
+        }
+        if (agent.getName() == null || agent.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("Agent name is required");
+        }
+
+        if (agentsFile == null) {
+            agentsFile = new AgentsFile();
+            agentsFile.setVersion(1);
+            agentsFile.setAgents(new ArrayList<>());
+        }
+
+        if (agent.getRole() == null || agent.getRole().trim().isEmpty()) {
+            agent.setRole("writer");
+        }
+
+        String id = agent.getId();
+        if (id == null || id.trim().isEmpty()) {
+            id = generateUniqueId(agent.getName());
+        } else if (getAgent(id) != null) {
+            id = generateUniqueId(id);
+        }
+
+        agent.setId(id);
+        agent.setEnabled(true);
+
+        long now = System.currentTimeMillis();
+        agent.setCreatedAt(now);
+        agent.setUpdatedAt(now);
+
+        // Normalize collections in case nulls were sent.
+        agent.setSkills(agent.getSkills());
+        agent.setGoals(agent.getGoals());
+        agent.setTools(agent.getTools());
+        agent.setAutoActions(agent.getAutoActions());
+        agent.setPersonalitySliders(agent.getPersonalitySliders());
+
+        agentsFile.getAgents().add(agent);
+        if (!saveToDisk()) {
+            throw new IllegalStateException("Failed to save agent registry");
+        }
+
+        logger.info("Created agent: " + agent.getName() + " (" + id + ")");
+        return agent;
+    }
+
     public Agent importAgent(Agent agent) {
         if (agentsFile == null) {
             agentsFile = new AgentsFile();
@@ -150,9 +198,7 @@ public class AgentRegistry {
     }
 
     private String generateUniqueId(String name) {
-        String baseId = name != null
-            ? name.toLowerCase().replaceAll("[^a-z0-9]+", "-")
-            : "agent";
+        String baseId = slugify(name);
         String id = baseId;
         int counter = 1;
         while (getAgent(id) != null) {
@@ -161,13 +207,24 @@ public class AgentRegistry {
         return id;
     }
 
-    private void saveToDisk() {
+    private boolean saveToDisk() {
         try {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), agentsFile);
             logger.info("Saved agent registry to " + registryPath);
+            return true;
         } catch (IOException e) {
             logger.error("Failed to save agent registry: " + e.getMessage(), e);
+            return false;
         }
+    }
+
+    private String slugify(String value) {
+        if (value == null) {
+            return "agent";
+        }
+        String slug = value.toLowerCase().replaceAll("[^a-z0-9]+", "-");
+        slug = slug.replaceAll("(^-|-$)", "");
+        return slug.isEmpty() ? "agent" : slug;
     }
 
     private void ensureRegistryExists() {

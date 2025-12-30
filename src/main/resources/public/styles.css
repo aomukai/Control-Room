@@ -2363,10 +2363,44 @@ html, body {
     gap: 12px;
 }
 
-#top-bar-project-name {
+.workspace-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
     font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.workspace-switch:hover {
+    background: var(--bg-lighter);
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+.workspace-label {
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.6px;
     color: var(--text-secondary);
-    font-weight: 500;
+}
+
+#workspace-name {
+    font-weight: 600;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-caret {
+    font-size: 9px;
+    color: var(--text-secondary);
 }
 
 /* ============================================
