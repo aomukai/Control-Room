@@ -2222,19 +2222,19 @@
                 log(`Invited ${agentName} to chat`, 'info');
                 break;
             case 'open-profile':
-                log(`Open profile for ${agentName}`, 'info');
+                showAgentProfileModal(agent);
                 break;
             case 'open-role-settings':
-                log(`Open role settings for ${agentName}`, 'info');
+                showRoleSettingsModal(agent);
                 break;
             case 'open-agent-settings':
-                log(`Open settings for ${agentName}`, 'info');
+                showAgentSettingsModal(agent);
                 break;
             case 'change-role':
-                log(`Change role for ${agentName}`, 'info');
+                showChangeRoleModal(agent);
                 break;
             case 'retire':
-                log(`Retire ${agentName}`, 'warning');
+                showConfirmRetireModal(agent);
                 break;
             default:
                 log(`Unknown action for ${agentName}`, 'warning');
@@ -2388,6 +2388,240 @@
 
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) close();
+        });
+    }
+
+    function createModalShell(title, confirmLabel = 'OK', cancelLabel = 'Cancel', options = {}) {
+        const {
+            closeOnCancel = true,
+            closeOnConfirm = false,
+            confirmTitle = '',
+            cancelTitle = ''
+        } = options;
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+
+        const header = document.createElement('div');
+        header.className = 'modal-title';
+        header.textContent = title;
+
+        const body = document.createElement('div');
+        body.className = 'modal-body';
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-buttons';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'modal-btn modal-btn-secondary';
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = cancelLabel;
+        if (cancelTitle) {
+            cancelBtn.title = cancelTitle;
+            cancelBtn.setAttribute('aria-label', cancelTitle);
+        }
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'modal-btn modal-btn-primary';
+        confirmBtn.type = 'button';
+        confirmBtn.textContent = confirmLabel;
+        if (confirmTitle) {
+            confirmBtn.title = confirmTitle;
+            confirmBtn.setAttribute('aria-label', confirmTitle);
+        }
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(confirmBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(body);
+        modal.appendChild(buttons);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+
+        if (closeOnCancel) {
+            cancelBtn.addEventListener('click', close);
+        }
+        if (closeOnConfirm) {
+            confirmBtn.addEventListener('click', close);
+        }
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', handleKeydown);
+            }
+        };
+        document.addEventListener('keydown', handleKeydown);
+
+        return { overlay, modal, body, confirmBtn, cancelBtn, close };
+    }
+
+    function showAgentProfileModal(agent) {
+        const name = agent?.name || 'Agent';
+        const role = agent?.role || 'role';
+        const { body, confirmBtn } = createModalShell(
+            `Agent Profile: ${name}`,
+            'Close',
+            'Apply',
+            {
+                closeOnCancel: true,
+                closeOnConfirm: true,
+                confirmTitle: 'Close without saving',
+                cancelTitle: 'Save and close'
+            }
+        );
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = `${name} (${role}) profile preview.`;
+        body.appendChild(info);
+
+        confirmBtn.addEventListener('click', () => {
+            notificationStore.success(`Saved profile for ${name} (stub)`, 'workbench');
+        });
+    }
+
+    function showRoleSettingsModal(agent) {
+        const role = agent?.role || 'role';
+        const { body, confirmBtn } = createModalShell(
+            `Role Settings: ${role}`,
+            'Close',
+            'Apply',
+            {
+                closeOnCancel: true,
+                closeOnConfirm: true,
+                confirmTitle: 'Close without saving',
+                cancelTitle: 'Save and close'
+            }
+        );
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'Role settings panel coming soon.';
+        body.appendChild(info);
+
+        confirmBtn.addEventListener('click', () => {
+            notificationStore.success(`Saved role settings for ${role} (stub)`, 'workbench');
+        });
+    }
+
+    function showAgentSettingsModal(agent) {
+        const name = agent?.name || 'Agent';
+        const { body, confirmBtn } = createModalShell(
+            `Agent Settings: ${name}`,
+            'Close',
+            'Apply',
+            {
+                closeOnCancel: true,
+                closeOnConfirm: true,
+                confirmTitle: 'Close without saving',
+                cancelTitle: 'Save and close'
+            }
+        );
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'Agent settings panel coming soon.';
+        body.appendChild(info);
+
+        confirmBtn.addEventListener('click', () => {
+            notificationStore.success(`Saved settings for ${name} (stub)`, 'workbench');
+        });
+    }
+
+    function showChangeRoleModal(agent) {
+        const name = agent?.name || 'Agent';
+        const { body, confirmBtn, close } = createModalShell(
+            `Change Role: ${name}`,
+            'Apply',
+            'Close',
+            { closeOnCancel: true }
+        );
+
+        const roles = Array.from(new Set((state.agents.list || []).map(item => item.role).filter(Boolean)));
+
+        const row = document.createElement('div');
+        row.className = 'modal-row';
+
+        const label = document.createElement('label');
+        label.className = 'modal-label';
+        label.textContent = 'Current roles';
+
+        const select = document.createElement('select');
+        select.className = 'modal-select';
+        if (roles.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No roles';
+            select.appendChild(option);
+            select.disabled = true;
+        } else {
+            roles.forEach(role => {
+                const option = document.createElement('option');
+                option.value = role;
+                option.textContent = role;
+                select.appendChild(option);
+            });
+        }
+
+        const newRoleLabel = document.createElement('label');
+        newRoleLabel.className = 'modal-label';
+        newRoleLabel.textContent = 'Or create a new role';
+
+        const input = document.createElement('input');
+        input.className = 'modal-input';
+        input.type = 'text';
+        input.placeholder = 'New role name';
+
+        row.appendChild(label);
+        row.appendChild(select);
+        row.appendChild(newRoleLabel);
+        row.appendChild(input);
+        body.appendChild(row);
+
+        const updateApplyState = () => {
+            const chosen = input.value.trim() || select.value;
+            confirmBtn.disabled = !chosen;
+        };
+
+        if (agent?.role && roles.includes(agent.role)) {
+            select.value = agent.role;
+        }
+
+        updateApplyState();
+
+        input.addEventListener('input', updateApplyState);
+        select.addEventListener('change', updateApplyState);
+
+        confirmBtn.addEventListener('click', () => {
+            const chosen = input.value.trim() || select.value;
+            if (chosen) {
+                log(`Role for ${name} set to ${chosen}`, 'info');
+            }
+            close();
+        });
+    }
+
+    function showConfirmRetireModal(agent) {
+        const name = agent?.name || 'Agent';
+        const { body, confirmBtn, close } = createModalShell(`Retire ${name}?`, 'Retire', 'Cancel');
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'This will disable the agent. You can re-enable later.';
+        body.appendChild(info);
+
+        confirmBtn.addEventListener('click', () => {
+            log(`Retired ${name}`, 'warning');
+            close();
         });
     }
 
