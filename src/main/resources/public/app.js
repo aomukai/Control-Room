@@ -38,6 +38,9 @@
             isLoading: false,
             error: null,
             issue: null
+        },
+        viewMode: {
+            current: 'editor' // 'editor' | 'workbench' | 'settings'
         }
     };
 
@@ -114,7 +117,15 @@
         notificationClearNonErrors: document.getElementById('notification-clear-non-errors'),
         notificationClose: document.getElementById('notification-close'),
         notificationFilterLevels: document.getElementById('notification-filter-levels'),
-        notificationFilterScopes: document.getElementById('notification-filter-scopes')
+        notificationFilterScopes: document.getElementById('notification-filter-scopes'),
+        // View mode elements
+        topBar: document.getElementById('top-bar'),
+        viewContainer: document.getElementById('view-container'),
+        editorView: document.getElementById('editor-view'),
+        workbenchView: document.getElementById('workbench-view'),
+        settingsView: document.getElementById('settings-view'),
+        newsfeedList: document.getElementById('newsfeed-list'),
+        agentList: document.getElementById('agent-list')
     };
 
     // Initialize Split.js
@@ -1195,6 +1206,226 @@
         if (closeBtn) {
             closeBtn.focus();
         }
+    }
+
+    // ============================================
+    // VIEW MODE SWITCHING (Workbench / Editor / Settings)
+    // ============================================
+
+    function setViewMode(mode) {
+        const validModes = ['editor', 'workbench', 'settings'];
+        if (!validModes.includes(mode)) {
+            log(`Invalid view mode: ${mode}`, 'warning');
+            return;
+        }
+
+        const previousMode = state.viewMode.current;
+        state.viewMode.current = mode;
+
+        // Update top bar tab active states
+        document.querySelectorAll('.top-bar-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.mode === mode);
+        });
+
+        // Update view panels
+        document.querySelectorAll('.view-panel').forEach(panel => {
+            panel.classList.remove('active');
+        });
+
+        const targetPanel = document.getElementById(`${mode}-view`);
+        if (targetPanel) {
+            targetPanel.classList.add('active');
+        }
+
+        // Mode-specific initialization
+        if (mode === 'workbench') {
+            renderWorkbenchView();
+        } else if (mode === 'editor') {
+            // Re-layout Monaco editor when switching back
+            if (state.editor) {
+                setTimeout(() => state.editor.layout(), 50);
+            }
+        }
+
+        log(`Switched to ${mode} view`, 'info');
+    }
+
+    function isWorkbenchView() {
+        return state.viewMode.current === 'workbench';
+    }
+
+    function isEditorView() {
+        return state.viewMode.current === 'editor';
+    }
+
+    // ============================================
+    // WORKBENCH VIEW RENDERING
+    // ============================================
+
+    // Static list of agent roles (placeholder)
+    const AGENT_ROLES = [
+        { id: 'planner', name: 'Planner', icon: '📋', role: 'Strategic planning & structure' },
+        { id: 'writer', name: 'Writer', icon: '✍️', role: 'Draft creation & prose' },
+        { id: 'editor', name: 'Editor', icon: '📝', role: 'Revision & polish' },
+        { id: 'critic', name: 'Critic', icon: '🎭', role: 'Quality assessment' },
+        { id: 'continuity', name: 'Continuity', icon: '🔗', role: 'Consistency tracking' }
+    ];
+
+    function renderWorkbenchView() {
+        renderAgentSidebar();
+        renderWorkbenchChatPane();
+        renderWorkbenchNewsfeed();
+    }
+
+    function renderAgentSidebar() {
+        const container = document.getElementById('agent-list');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        AGENT_ROLES.forEach(agent => {
+            const item = document.createElement('div');
+            item.className = 'agent-item';
+            item.dataset.agentId = agent.id;
+
+            item.innerHTML = `
+                <span class="agent-icon">${agent.icon}</span>
+                <div class="agent-info">
+                    <div class="agent-name">${escapeHtml(agent.name)}</div>
+                    <div class="agent-role">${escapeHtml(agent.role)}</div>
+                </div>
+                <div class="agent-status" title="Offline"></div>
+            `;
+
+            item.addEventListener('click', () => {
+                // Remove active from all
+                container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                log(`Selected agent: ${agent.name}`, 'info');
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    function renderWorkbenchChatPane() {
+        const container = document.getElementById('workbench-chat-content');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="workbench-placeholder">
+                <h3>Conference Mode</h3>
+                <p>Multi-agent discussion and collaboration<br>coming soon.</p>
+            </div>
+        `;
+    }
+
+    // ============================================
+    // WORKBENCH NEWSFEED (Notification-backed)
+    // ============================================
+
+    function renderWorkbenchNewsfeed() {
+        const container = document.getElementById('newsfeed-list');
+        if (!container) return;
+
+        // Get all notifications
+        const allNotifications = notificationStore.getAll();
+
+        // Filter to workbench-related and issue-related notifications
+        const filtered = allNotifications.filter(notification => {
+            // Include workbench scope
+            if (notification.scope === 'workbench') return true;
+            // Include issue-related (by source)
+            if (notification.source === 'issues') return true;
+            // Include if actionPayload indicates openIssue
+            if (notification.actionPayload) {
+                const kind = notification.actionPayload.kind || notification.actionPayload.type;
+                if (kind === 'openIssue' || kind === 'open-issue') return true;
+            }
+            return false;
+        });
+
+        // Limit to last 20
+        const limited = filtered.slice(0, 20);
+
+        container.innerHTML = '';
+
+        if (limited.length === 0) {
+            container.innerHTML = '<div class="newsfeed-empty">No recent activity</div>';
+            return;
+        }
+
+        limited.forEach(notification => {
+            const item = document.createElement('div');
+            item.className = 'newsfeed-item';
+            if (!notification.read) {
+                item.classList.add('unread');
+            }
+
+            // Build action link if applicable
+            let actionHtml = '';
+            if (notification.actionLabel && notification.actionPayload) {
+                actionHtml = `<span class="newsfeed-action">${escapeHtml(notification.actionLabel)}</span>`;
+            }
+
+            item.innerHTML = `
+                <div class="newsfeed-item-header">
+                    <span class="newsfeed-level-badge ${notification.level}">${notification.level.toUpperCase()}</span>
+                    <span class="newsfeed-timestamp">${formatRelativeTime(notification.timestamp)}</span>
+                </div>
+                <div class="newsfeed-message">${escapeHtml(notification.message)}</div>
+                ${actionHtml}
+            `;
+
+            item.addEventListener('click', () => {
+                handleNewsfeedItemClick(notification);
+            });
+
+            container.appendChild(item);
+        });
+    }
+
+    function handleNewsfeedItemClick(notification) {
+        // Mark as read
+        notificationStore.markRead(notification.id);
+
+        // Check for actionPayload
+        const payload = notification.actionPayload;
+        if (payload && typeof payload === 'object') {
+            const kind = payload.kind || payload.type;
+            if ((kind === 'openIssue' || kind === 'open-issue') && payload.issueId) {
+                openIssueModal(payload.issueId);
+                return;
+            }
+        }
+
+        // Default: just mark read and re-render
+        renderWorkbenchNewsfeed();
+    }
+
+    // Subscribe to notification changes to update Newsfeed when in Workbench view
+    function initWorkbenchNewsfeedSubscription() {
+        notificationStore.subscribe(() => {
+            if (isWorkbenchView()) {
+                renderWorkbenchNewsfeed();
+            }
+        });
+    }
+
+    // ============================================
+    // TOP BAR INITIALIZATION
+    // ============================================
+
+    function initTopBar() {
+        const tabs = document.querySelectorAll('.top-bar-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const mode = tab.dataset.mode;
+                if (mode) {
+                    setViewMode(mode);
+                }
+            });
+        });
     }
 
     // API Functions
@@ -2632,6 +2863,24 @@
         });
 
         document.body.appendChild(notifyBtn);
+
+        // Button to quickly switch to Workbench view
+        const workbenchBtn = document.createElement('button');
+        workbenchBtn.type = 'button';
+        workbenchBtn.className = 'dev-debug-btn';
+        workbenchBtn.style.bottom = '120px';
+        workbenchBtn.textContent = 'Toggle Workbench';
+        workbenchBtn.title = 'Switch between Editor and Workbench views';
+
+        workbenchBtn.addEventListener('click', () => {
+            if (isWorkbenchView()) {
+                setViewMode('editor');
+            } else {
+                setViewMode('workbench');
+            }
+        });
+
+        document.body.appendChild(workbenchBtn);
     }
 
     // Initialize
@@ -2645,13 +2894,19 @@
         initSidebarButtons();
         initEventListeners();
         initNotifications();
+        initTopBar(); // Top bar mode switch
+        initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         initDevTools(); // Dev/Test buttons
         loadFileTree();
+
+        // Set initial view mode (starts in Editor mode)
+        setViewMode('editor');
 
         // Welcome message in chat
         addChatMessage('assistant', 'Hello! I\'m your AI writing assistant. How can I help you with your creative writing project today?');
 
         log('Control Room ready!', 'success');
+        log('Tip: Click Workbench in the top bar to switch views.', 'info');
     }
 
     // Start when DOM is ready

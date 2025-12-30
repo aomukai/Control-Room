@@ -51,10 +51,35 @@
             <div id="file-tree"></div>
         </div>
 
-        <!-- Main Split Container -->
+        <!-- Main Container with Top Bar -->
         <div id="main-container">
-            <!-- Horizontal Split: Main Area and Chat Panel -->
-            <div id="main-split">
+            <!-- Top Bar Mode Switch -->
+            <div id="top-bar">
+                <div id="top-bar-tabs">
+                    <button class="top-bar-tab" id="tab-workbench" data-mode="workbench" type="button">
+                        <span class="tab-icon">🎛️</span>
+                        <span class="tab-label">Workbench</span>
+                    </button>
+                    <button class="top-bar-tab active" id="tab-editor" data-mode="editor" type="button">
+                        <span class="tab-icon">✏️</span>
+                        <span class="tab-label">Editor</span>
+                    </button>
+                    <button class="top-bar-tab" id="tab-settings" data-mode="settings" type="button">
+                        <span class="tab-icon">⚙️</span>
+                        <span class="tab-label">Settings</span>
+                    </button>
+                </div>
+                <div id="top-bar-right">
+                    <span id="top-bar-project-name">Control Room</span>
+                </div>
+            </div>
+
+            <!-- View Container (Editor or Workbench) -->
+            <div id="view-container">
+                <!-- Editor View (existing) -->
+                <div id="editor-view" class="view-panel active">
+                    <!-- Horizontal Split: Main Area and Chat Panel -->
+                    <div id="main-split">
                 <!-- Center Area (Editor + Bottom Console) -->
                 <div id="center-area">
                     <!-- Top Tab Strip -->
@@ -178,7 +203,59 @@
                         <button id="chat-send">Send</button>
                     </div>
                 </div>
+                    </div>
+                </div>
+                <!-- End Editor View -->
+
+                <!-- Workbench View -->
+                <div id="workbench-view" class="view-panel">
+                    <div id="workbench-layout">
+                        <!-- Agent Sidebar -->
+                        <div id="workbench-agent-sidebar">
+                            <div class="workbench-panel-header">
+                                <span class="panel-title">Agents</span>
+                            </div>
+                            <div id="agent-list" class="agent-list">
+                                <!-- Will be populated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Chat / Discussion Pane -->
+                        <div id="workbench-chat-pane">
+                            <div class="workbench-panel-header">
+                                <span class="panel-title">Discussion</span>
+                            </div>
+                            <div id="workbench-chat-content">
+                                <!-- Placeholder content -->
+                            </div>
+                        </div>
+
+                        <!-- Newsfeed Panel -->
+                        <div id="workbench-newsfeed">
+                            <div class="workbench-panel-header">
+                                <span class="panel-title">Newsfeed</span>
+                            </div>
+                            <div id="newsfeed-list">
+                                <!-- Will be populated by JS from NotificationStore -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- End Workbench View -->
+
+                <!-- Settings View (placeholder) -->
+                <div id="settings-view" class="view-panel">
+                    <div id="settings-content">
+                        <div class="settings-placeholder">
+                            <h2>Settings</h2>
+                            <p>Settings panel coming soon.</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- End Settings View -->
+
             </div>
+            <!-- End View Container -->
         </div>
     </div>
 
