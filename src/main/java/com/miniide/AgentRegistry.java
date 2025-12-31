@@ -197,6 +197,78 @@ public class AgentRegistry {
         return agent;
     }
 
+    // =============== Role Settings CRUD ===============
+
+    public List<RoleFreedomSettings> listRoleSettings() {
+        if (agentsFile == null || agentsFile.getRoleSettings() == null) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>(agentsFile.getRoleSettings());
+    }
+
+    public RoleFreedomSettings getRoleSettings(String role) {
+        if (agentsFile == null || agentsFile.getRoleSettings() == null || role == null) {
+            return null;
+        }
+        return agentsFile.getRoleSettings().stream()
+            .filter(rs -> role.equalsIgnoreCase(rs.getRole()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    public RoleFreedomSettings saveRoleSettings(RoleFreedomSettings settings) {
+        if (settings == null || settings.getRole() == null || settings.getRole().trim().isEmpty()) {
+            throw new IllegalArgumentException("Role settings and role name are required");
+        }
+
+        if (agentsFile == null) {
+            agentsFile = new AgentsFile();
+            agentsFile.setVersion(1);
+            agentsFile.setAgents(new ArrayList<>());
+            agentsFile.setRoleSettings(new ArrayList<>());
+        }
+
+        List<RoleFreedomSettings> roleSettings = agentsFile.getRoleSettings();
+        if (roleSettings == null) {
+            roleSettings = new ArrayList<>();
+            agentsFile.setRoleSettings(roleSettings);
+        }
+
+        // Find existing or add new (upsert)
+        boolean found = false;
+        for (int i = 0; i < roleSettings.size(); i++) {
+            if (settings.getRole().equalsIgnoreCase(roleSettings.get(i).getRole())) {
+                roleSettings.set(i, settings);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            roleSettings.add(settings);
+        }
+
+        if (!saveToDisk()) {
+            throw new IllegalStateException("Failed to save role settings");
+        }
+
+        logger.info("Saved role settings for: " + settings.getRole());
+        return settings;
+    }
+
+    public boolean deleteRoleSettings(String role) {
+        if (agentsFile == null || agentsFile.getRoleSettings() == null || role == null) {
+            return false;
+        }
+        boolean removed = agentsFile.getRoleSettings().removeIf(
+            rs -> role.equalsIgnoreCase(rs.getRole())
+        );
+        if (removed) {
+            saveToDisk();
+            logger.info("Deleted role settings for: " + role);
+        }
+        return removed;
+    }
+
     private String generateUniqueId(String name) {
         String baseId = slugify(name);
         String id = baseId;

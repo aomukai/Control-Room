@@ -305,9 +305,23 @@
   } ],
   "roleSettings" : [ {
     "role" : "planner",
+    "template" : null,
     "freedomLevel" : "semi-autonomous",
     "notifyUserOn" : [ "question", "conflict", "completion" ],
     "maxActionsPerSession" : null,
-    "requireApprovalFor" : [ ]
+    "requireApprovalFor" : [ ],
+    "roleCharter" : null,
+    "collaborationGuidance" : null,
+    "toolAndSafetyNotes" : null
+  }, {
+    "role" : "Critic",
+    "template" : "balanced",
+    "freedomLevel" : "semi-autonomous",
+    "notifyUserOn" : [ "question", "conflict", "completion", "error" ],
+    "maxActionsPerSession" : 10,
+    "requireApprovalFor" : [ ],
+    "roleCharter" : "Assist with the creative process according to your specialized role. Collaborate with other agents and escalate to the user when needed.",
+    "collaborationGuidance" : "Think through problems yourself first. For medium-to-large decisions, consult relevant agents or the user. When you are unsure, look at the roster and pick agents best suited to help based on their role and skills. Summarize progress at milestones.",
+    "toolAndSafetyNotes" : "Standard tool access. Confirm with the user before bulk operations, deletions, or changes that significantly alter the author's voice."
   } ]
 }

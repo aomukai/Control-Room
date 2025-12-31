@@ -63,6 +63,54 @@
         }
     };
 
+    // =============== Role Settings Templates ===============
+
+    const ROLE_TEMPLATES = {
+        autonomous: {
+            label: 'Autonomous',
+            description: 'Minimal oversight, high independence',
+            freedomLevel: 'autonomous',
+            notifyOn: { start: false, question: false, conflict: true, completion: true, error: true },
+            maxActionsPerSession: null,
+            collaborationGuidance: 'Work independently and make decisions within your domain. Only escalate to the user or other agents when you encounter a genuine blocker, or when a decision has significant cross-domain impact. Trust your expertise and batch updates when possible to minimize interruptions.',
+            toolAndSafetyNotes: 'Full access to all tools. Use discretion for destructive or large-scale operations. Prefer minimal, reversible changes.'
+        },
+        balanced: {
+            label: 'Balanced',
+            description: 'Moderate oversight, shared decisions',
+            freedomLevel: 'semi-autonomous',
+            notifyOn: { start: false, question: true, conflict: true, completion: true, error: true },
+            maxActionsPerSession: 10,
+            collaborationGuidance: 'Think through problems yourself first. For medium-to-large decisions, consult relevant agents or the user. When you are unsure, look at the roster and pick agents best suited to help based on their role and skills. Summarize progress at milestones.',
+            toolAndSafetyNotes: 'Standard tool access. Confirm with the user before bulk operations, deletions, or changes that significantly alter the author\'s voice.'
+        },
+        verbose: {
+            label: 'Verbose',
+            description: 'High oversight, detailed reporting',
+            freedomLevel: 'supervised',
+            notifyOn: { start: true, question: true, conflict: true, completion: true, error: true },
+            maxActionsPerSession: 5,
+            collaborationGuidance: 'Report frequently and check in before making changes. When in doubt, ask the user. Document your reasoning for each decision. Prefer to propose rather than act unilaterally.',
+            toolAndSafetyNotes: 'Request explicit approval for any file modifications, external calls, or changes beyond minor edits.'
+        },
+        custom: {
+            label: 'Custom',
+            description: 'User-defined settings'
+        }
+    };
+
+    const DEFAULT_ROLE_CHARTERS = {
+        planner: 'Responsible for story structure, pacing, and narrative arc. Coordinates with other agents on high-level direction and helps resolve structural conflicts.',
+        writer: 'Creates prose, dialogue, and scene descriptions. Focuses on voice, emotional impact, and bringing the story to life on the page.',
+        editor: 'Refines language, fixes errors, and improves clarity. Ensures consistency in style and removes friction for the reader.',
+        critic: 'Provides honest feedback and identifies weaknesses. Challenges assumptions constructively and stress-tests ideas before they ship.',
+        continuity: 'Tracks canon, timeline, and world details. Flags contradictions and maintains consistency across the entire project.',
+        'sensitivity-reader': 'Reviews content for harmful stereotypes, slurs, or problematic representation. Focuses on intent, impact, and potential harm to real people.',
+        'beta-reader': 'Reads from a general audience perspective. Identifies confusing passages, pacing issues, and moments where engagement drops.',
+        'lore-keeper': 'Maintains the world bible and answers questions about established lore. Helps other agents stay consistent with world rules.',
+        default: 'Assist with the creative process according to your specialized role. Collaborate with other agents and escalate to the user when needed.'
+    };
+
     // Generate unique tab ID
     function generateTabId() {
         return `tab-${++state.tabCounter}`;
@@ -396,6 +444,22 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
+            });
+        }
+    };
+
+    const roleSettingsApi = {
+        async list() {
+            return api('/api/agents/role-settings');
+        },
+        async get(role) {
+            return api(`/api/agents/role-settings/${encodeURIComponent(role)}`);
+        },
+        async save(role, settings) {
+            return api(`/api/agents/role-settings/${encodeURIComponent(role)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
             });
         }
     };
@@ -3789,27 +3853,365 @@
         });
     }
 
-    function showRoleSettingsModal(agent) {
+    async function showRoleSettingsModal(agent) {
         const role = agent?.role || 'role';
-        const { body, confirmBtn } = createModalShell(
+
+        // Fetch existing settings or use defaults
+        let existingSettings = null;
+        try {
+            existingSettings = await roleSettingsApi.get(role);
+        } catch (err) {
+            log(`Failed to fetch role settings: ${err.message}`, 'warning');
+        }
+
+        // Initialize local state from existing settings or defaults
+        const defaultTemplate = ROLE_TEMPLATES.balanced;
+        const localState = {
+            template: existingSettings?.template || 'balanced',
+            freedomLevel: existingSettings?.freedomLevel || defaultTemplate.freedomLevel,
+            notifyOn: {
+                start: existingSettings?.notifyUserOn?.includes('start') ?? defaultTemplate.notifyOn.start,
+                question: existingSettings?.notifyUserOn?.includes('question') ?? defaultTemplate.notifyOn.question,
+                conflict: existingSettings?.notifyUserOn?.includes('conflict') ?? defaultTemplate.notifyOn.conflict,
+                completion: existingSettings?.notifyUserOn?.includes('completion') ?? defaultTemplate.notifyOn.completion,
+                error: existingSettings?.notifyUserOn?.includes('error') ?? defaultTemplate.notifyOn.error
+            },
+            maxActionsPerSession: existingSettings?.maxActionsPerSession ?? defaultTemplate.maxActionsPerSession,
+            roleCharter: existingSettings?.roleCharter || DEFAULT_ROLE_CHARTERS[role] || DEFAULT_ROLE_CHARTERS.default,
+            collaborationGuidance: existingSettings?.collaborationGuidance || defaultTemplate.collaborationGuidance,
+            toolAndSafetyNotes: existingSettings?.toolAndSafetyNotes || defaultTemplate.toolAndSafetyNotes
+        };
+
+        // Clone for dirty detection
+        const originalState = JSON.stringify(localState);
+
+        const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             `Role Settings: ${role}`,
-            'Close',
-            'Apply',
-            {
-                closeOnCancel: true,
-                closeOnConfirm: true,
-                confirmTitle: 'Close without saving',
-                cancelTitle: 'Save and close'
-            }
+            'Save',
+            'Cancel',
+            { closeOnCancel: false, closeOnConfirm: false }
         );
 
-        const info = document.createElement('div');
-        info.className = 'modal-text';
-        info.textContent = 'Role settings panel coming soon.';
-        body.appendChild(info);
+        modal.classList.add('role-settings-modal');
 
-        confirmBtn.addEventListener('click', () => {
-            notificationStore.success(`Saved role settings for ${role} (stub)`, 'workbench');
+        // =============== TEMPLATE SELECTOR ===============
+        const templateSection = document.createElement('div');
+        templateSection.className = 'modal-section';
+
+        const templateLabel = document.createElement('label');
+        templateLabel.className = 'modal-label';
+        templateLabel.textContent = 'Behavior Template';
+        templateSection.appendChild(templateLabel);
+
+        const templateGrid = document.createElement('div');
+        templateGrid.className = 'role-template-grid';
+
+        const templateButtons = {};
+        ['autonomous', 'balanced', 'verbose', 'custom'].forEach(templateKey => {
+            const tmpl = ROLE_TEMPLATES[templateKey];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'role-template-btn';
+            btn.dataset.template = templateKey;
+            btn.innerHTML = `
+                <span class="template-name">${tmpl.label}</span>
+                <span class="template-desc">${tmpl.description || ''}</span>
+            `;
+            if (localState.template === templateKey) {
+                btn.classList.add('selected');
+            }
+            btn.addEventListener('click', () => applyTemplate(templateKey));
+            templateGrid.appendChild(btn);
+            templateButtons[templateKey] = btn;
+        });
+        templateSection.appendChild(templateGrid);
+        body.appendChild(templateSection);
+
+        // =============== FREEDOM LEVEL ===============
+        const freedomSection = document.createElement('div');
+        freedomSection.className = 'modal-section';
+
+        const freedomLabel = document.createElement('label');
+        freedomLabel.className = 'modal-label';
+        freedomLabel.textContent = 'Freedom Level';
+        freedomSection.appendChild(freedomLabel);
+
+        const freedomSelect = document.createElement('select');
+        freedomSelect.className = 'modal-select';
+        freedomSelect.innerHTML = `
+            <option value="supervised">Supervised - Requires approval for most actions</option>
+            <option value="semi-autonomous">Semi-Autonomous - Independent within guidelines</option>
+            <option value="autonomous">Autonomous - Full independence, minimal check-ins</option>
+        `;
+        freedomSelect.value = localState.freedomLevel;
+        freedomSelect.addEventListener('change', () => {
+            localState.freedomLevel = freedomSelect.value;
+            markCustom();
+        });
+        freedomSection.appendChild(freedomSelect);
+        body.appendChild(freedomSection);
+
+        // =============== NOTIFICATIONS ===============
+        const notifySection = document.createElement('div');
+        notifySection.className = 'modal-section';
+
+        const notifyLabel = document.createElement('label');
+        notifyLabel.className = 'modal-label';
+        notifyLabel.textContent = 'Notify User On';
+        notifySection.appendChild(notifyLabel);
+
+        const notifyGrid = document.createElement('div');
+        notifyGrid.className = 'notify-checkbox-grid';
+
+        const notifyCheckboxes = {};
+        const notifyOptions = [
+            { key: 'start', label: 'Task Start' },
+            { key: 'question', label: 'Questions' },
+            { key: 'conflict', label: 'Conflicts' },
+            { key: 'completion', label: 'Completion' },
+            { key: 'error', label: 'Errors' }
+        ];
+
+        notifyOptions.forEach(opt => {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'modal-checkbox-row';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = localState.notifyOn[opt.key];
+            checkbox.addEventListener('change', () => {
+                localState.notifyOn[opt.key] = checkbox.checked;
+                markCustom();
+            });
+
+            const text = document.createElement('span');
+            text.textContent = opt.label;
+
+            wrapper.appendChild(checkbox);
+            wrapper.appendChild(text);
+            notifyGrid.appendChild(wrapper);
+            notifyCheckboxes[opt.key] = checkbox;
+        });
+        notifySection.appendChild(notifyGrid);
+        body.appendChild(notifySection);
+
+        // =============== MAX ACTIONS ===============
+        const actionsSection = document.createElement('div');
+        actionsSection.className = 'modal-section';
+
+        const actionsLabel = document.createElement('label');
+        actionsLabel.className = 'modal-label';
+        actionsLabel.textContent = 'Max Actions Per Session';
+        actionsSection.appendChild(actionsLabel);
+
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'actions-input-row';
+
+        const actionsInput = document.createElement('input');
+        actionsInput.type = 'number';
+        actionsInput.className = 'modal-input actions-input';
+        actionsInput.min = '1';
+        actionsInput.max = '100';
+        actionsInput.value = localState.maxActionsPerSession ?? '';
+        actionsInput.placeholder = 'Unlimited';
+        actionsInput.addEventListener('input', () => {
+            const val = actionsInput.value.trim();
+            localState.maxActionsPerSession = val ? parseInt(val, 10) : null;
+            markCustom();
+        });
+
+        const unlimitedBtn = document.createElement('button');
+        unlimitedBtn.type = 'button';
+        unlimitedBtn.className = 'modal-btn modal-btn-secondary';
+        unlimitedBtn.textContent = 'Unlimited';
+        unlimitedBtn.addEventListener('click', () => {
+            actionsInput.value = '';
+            localState.maxActionsPerSession = null;
+            markCustom();
+        });
+
+        actionsRow.appendChild(actionsInput);
+        actionsRow.appendChild(unlimitedBtn);
+        actionsSection.appendChild(actionsRow);
+        body.appendChild(actionsSection);
+
+        // =============== ROLE CHARTER ===============
+        const charterSection = document.createElement('div');
+        charterSection.className = 'modal-section';
+
+        const charterLabel = document.createElement('label');
+        charterLabel.className = 'modal-label';
+        charterLabel.textContent = 'Role Charter (Job Description)';
+        charterSection.appendChild(charterLabel);
+
+        const charterTextarea = document.createElement('textarea');
+        charterTextarea.className = 'modal-textarea';
+        charterTextarea.rows = 3;
+        charterTextarea.placeholder = 'Describe this role\'s purpose and responsibilities...';
+        charterTextarea.value = localState.roleCharter;
+        charterTextarea.addEventListener('input', () => {
+            localState.roleCharter = charterTextarea.value;
+            markCustom();
+        });
+        charterSection.appendChild(charterTextarea);
+        body.appendChild(charterSection);
+
+        // =============== COLLABORATION GUIDANCE ===============
+        const collabSection = document.createElement('div');
+        collabSection.className = 'modal-section';
+
+        const collabLabel = document.createElement('label');
+        collabLabel.className = 'modal-label';
+        collabLabel.textContent = 'Collaboration Guidance';
+        collabSection.appendChild(collabLabel);
+
+        const collabTextarea = document.createElement('textarea');
+        collabTextarea.className = 'modal-textarea';
+        collabTextarea.rows = 3;
+        collabTextarea.placeholder = 'How should this role collaborate with others and escalate issues...';
+        collabTextarea.value = localState.collaborationGuidance;
+        collabTextarea.addEventListener('input', () => {
+            localState.collaborationGuidance = collabTextarea.value;
+            markCustom();
+        });
+        collabSection.appendChild(collabTextarea);
+        body.appendChild(collabSection);
+
+        // =============== TOOL & SAFETY NOTES ===============
+        const safetySection = document.createElement('div');
+        safetySection.className = 'modal-section';
+
+        const safetyLabel = document.createElement('label');
+        safetyLabel.className = 'modal-label';
+        safetyLabel.textContent = 'Tool & Safety Notes';
+        safetySection.appendChild(safetyLabel);
+
+        const safetyTextarea = document.createElement('textarea');
+        safetyTextarea.className = 'modal-textarea';
+        safetyTextarea.rows = 2;
+        safetyTextarea.placeholder = 'Tool preferences and safety constraints...';
+        safetyTextarea.value = localState.toolAndSafetyNotes;
+        safetyTextarea.addEventListener('input', () => {
+            localState.toolAndSafetyNotes = safetyTextarea.value;
+            markCustom();
+        });
+        safetySection.appendChild(safetyTextarea);
+        body.appendChild(safetySection);
+
+        // =============== ERROR HINT ===============
+        const errorHint = document.createElement('div');
+        errorHint.className = 'modal-hint modal-error-hint';
+        errorHint.style.display = 'none';
+        body.appendChild(errorHint);
+
+        // =============== HELPER FUNCTIONS ===============
+        function markCustom() {
+            if (localState.template !== 'custom') {
+                localState.template = 'custom';
+                updateTemplateSelection();
+            }
+        }
+
+        function updateTemplateSelection() {
+            Object.entries(templateButtons).forEach(([key, btn]) => {
+                btn.classList.toggle('selected', key === localState.template);
+            });
+        }
+
+        function applyTemplate(templateKey) {
+            localState.template = templateKey;
+            updateTemplateSelection();
+
+            if (templateKey === 'custom') return;
+
+            const tmpl = ROLE_TEMPLATES[templateKey];
+            if (!tmpl) return;
+
+            // Apply template values to form
+            localState.freedomLevel = tmpl.freedomLevel;
+            freedomSelect.value = tmpl.freedomLevel;
+
+            if (tmpl.notifyOn) {
+                Object.entries(tmpl.notifyOn).forEach(([key, val]) => {
+                    localState.notifyOn[key] = val;
+                    if (notifyCheckboxes[key]) {
+                        notifyCheckboxes[key].checked = val;
+                    }
+                });
+            }
+
+            localState.maxActionsPerSession = tmpl.maxActionsPerSession;
+            actionsInput.value = tmpl.maxActionsPerSession ?? '';
+
+            if (tmpl.collaborationGuidance) {
+                localState.collaborationGuidance = tmpl.collaborationGuidance;
+                collabTextarea.value = tmpl.collaborationGuidance;
+            }
+
+            if (tmpl.toolAndSafetyNotes) {
+                localState.toolAndSafetyNotes = tmpl.toolAndSafetyNotes;
+                safetyTextarea.value = tmpl.toolAndSafetyNotes;
+            }
+        }
+
+        function isDirty() {
+            return JSON.stringify(localState) !== originalState;
+        }
+
+        // =============== CANCEL HANDLER ===============
+        cancelBtn.addEventListener('click', () => {
+            if (isDirty()) {
+                if (confirm('Discard unsaved changes?')) {
+                    close();
+                }
+            } else {
+                close();
+            }
+        });
+
+        // =============== SAVE HANDLER ===============
+        confirmBtn.addEventListener('click', async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Saving...';
+            errorHint.style.display = 'none';
+
+            // Validate maxActionsPerSession
+            if (localState.maxActionsPerSession !== null &&
+                (isNaN(localState.maxActionsPerSession) || localState.maxActionsPerSession < 1)) {
+                errorHint.textContent = 'Max actions must be a positive number or unlimited.';
+                errorHint.style.display = 'block';
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Save';
+                return;
+            }
+
+            // Build notifyUserOn array from checkboxes
+            const notifyUserOn = Object.entries(localState.notifyOn)
+                .filter(([_, checked]) => checked)
+                .map(([key]) => key);
+
+            const payload = {
+                role,
+                template: localState.template,
+                freedomLevel: localState.freedomLevel,
+                notifyUserOn,
+                maxActionsPerSession: localState.maxActionsPerSession,
+                requireApprovalFor: [],
+                roleCharter: localState.roleCharter,
+                collaborationGuidance: localState.collaborationGuidance,
+                toolAndSafetyNotes: localState.toolAndSafetyNotes
+            };
+
+            try {
+                await roleSettingsApi.save(role, payload);
+                notificationStore.success(`Role settings saved for "${role}"`, 'workbench');
+                close();
+            } catch (err) {
+                errorHint.textContent = err.message || 'Failed to save role settings.';
+                errorHint.style.display = 'block';
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Save';
+            }
         });
     }
 

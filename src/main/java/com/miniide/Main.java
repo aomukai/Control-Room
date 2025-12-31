@@ -6,6 +6,7 @@ import com.miniide.models.Agent;
 import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.models.Notification;
+import com.miniide.models.RoleFreedomSettings;
 import com.miniide.models.Notification.Level;
 import com.miniide.models.Notification.Scope;
 import com.miniide.models.Notification.Category;
@@ -147,6 +148,11 @@ public class Main {
         app.get("/api/agents/{id}", Main::getAgent);
         app.put("/api/agents/{id}", Main::updateAgent);
         app.post("/api/agents/import", Main::importAgent);
+
+        // Role Settings endpoints
+        app.get("/api/agents/role-settings", Main::getRoleSettings);
+        app.get("/api/agents/role-settings/{role}", Main::getRoleSettingsByRole);
+        app.put("/api/agents/role-settings/{role}", Main::saveRoleSettings);
 
         // Notification endpoints
         app.get("/api/notifications", Main::getNotifications);
@@ -458,6 +464,57 @@ public class Main {
             ctx.status(201).json(imported);
         } catch (Exception e) {
             logger.error("Failed to import agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // =============== Role Settings Endpoints ===============
+
+    private static void getRoleSettings(Context ctx) {
+        try {
+            ctx.json(agentRegistry.listRoleSettings());
+        } catch (Exception e) {
+            logger.error("Failed to list role settings: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getRoleSettingsByRole(Context ctx) {
+        try {
+            String role = ctx.pathParam("role");
+            RoleFreedomSettings settings = agentRegistry.getRoleSettings(role);
+            if (settings == null) {
+                // Return default settings for new/unknown role
+                RoleFreedomSettings defaults = new RoleFreedomSettings();
+                defaults.setRole(role);
+                defaults.setTemplate("balanced");
+                defaults.setFreedomLevel("semi-autonomous");
+                defaults.setNotifyUserOn(List.of("question", "conflict", "completion", "error"));
+                defaults.setMaxActionsPerSession(10);
+                defaults.setRoleCharter("");
+                defaults.setCollaborationGuidance("");
+                defaults.setToolAndSafetyNotes("");
+                ctx.json(defaults);
+                return;
+            }
+            ctx.json(settings);
+        } catch (Exception e) {
+            logger.error("Failed to get role settings: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void saveRoleSettings(Context ctx) {
+        try {
+            String role = ctx.pathParam("role");
+            RoleFreedomSettings settings = ctx.bodyAsClass(RoleFreedomSettings.class);
+            settings.setRole(role); // Ensure role matches path
+            RoleFreedomSettings saved = agentRegistry.saveRoleSettings(settings);
+            ctx.json(saved);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to save role settings: " + e.getMessage(), e);
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }

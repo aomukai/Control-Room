@@ -9,10 +9,14 @@ import java.util.List;
 public class RoleFreedomSettings {
 
     private String role;
+    private String template;                  // "autonomous" | "balanced" | "verbose" | "custom"
     private String freedomLevel;
     private List<String> notifyUserOn = new ArrayList<>();
     private Integer maxActionsPerSession;
     private List<String> requireApprovalFor = new ArrayList<>();
+    private String roleCharter;               // Job description text
+    private String collaborationGuidance;     // How to collaborate/escalate
+    private String toolAndSafetyNotes;        // Tool preferences, safety constraints
 
     public RoleFreedomSettings() {
     }
@@ -64,5 +68,37 @@ public class RoleFreedomSettings {
 
     public void setRequireApprovalFor(List<String> requireApprovalFor) {
         this.requireApprovalFor = requireApprovalFor != null ? new ArrayList<>(requireApprovalFor) : new ArrayList<>();
+    }
+
+    public String getTemplate() {
+        return template;
+    }
+
+    public void setTemplate(String template) {
+        this.template = template;
+    }
+
+    public String getRoleCharter() {
+        return roleCharter;
+    }
+
+    public void setRoleCharter(String roleCharter) {
+        this.roleCharter = roleCharter;
+    }
+
+    public String getCollaborationGuidance() {
+        return collaborationGuidance;
+    }
+
+    public void setCollaborationGuidance(String collaborationGuidance) {
+        this.collaborationGuidance = collaborationGuidance;
+    }
+
+    public String getToolAndSafetyNotes() {
+        return toolAndSafetyNotes;
+    }
+
+    public void setToolAndSafetyNotes(String toolAndSafetyNotes) {
+        this.toolAndSafetyNotes = toolAndSafetyNotes;
     }
 }
