@@ -374,6 +374,13 @@
         async list() {
             return api('/api/agents');
         },
+        async create(data) {
+            return api('/api/agents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        },
         async get(id) {
             return api(`/api/agents/${encodeURIComponent(id)}`);
         },
@@ -1050,6 +1057,12 @@
             }
 
             item.addEventListener('click', () => {
+                const payload = notification.actionPayload;
+                const actionKind = payload && typeof payload === 'object' ? (payload.kind || payload.type) : '';
+                if (actionKind === 'open-greeting-scan') {
+                    handleNotificationAction(notification);
+                    return;
+                }
                 item.classList.toggle('expanded');
                 notificationStore.markRead(notification.id);
                 state.notifications.highlightId = notification.id;
@@ -1088,6 +1101,14 @@
                     openIssueModal(payload.issueId);
                 } else {
                     log('Cannot open issue: missing issueId', 'warning');
+                }
+                break;
+            case 'open-greeting-scan':
+                closeNotificationCenter();
+                if (payload.agentId) {
+                    showGreetingScanModal(payload.agentId);
+                } else {
+                    log('Cannot open greeting scan: missing agentId', 'warning');
                 }
                 break;
             case 'open-file':
@@ -1852,11 +1873,8 @@
         // Check for actionPayload
         const payload = notification.actionPayload;
         if (payload && typeof payload === 'object') {
-            const kind = payload.kind || payload.type;
-            if ((kind === 'openIssue' || kind === 'open-issue') && payload.issueId) {
-                openIssueModal(payload.issueId);
-                return;
-            }
+            dispatchNotificationAction(notification);
+            return;
         }
 
         // Default: just mark read and re-render
@@ -2383,7 +2401,7 @@
         const agentName = agent && agent.name ? agent.name : 'Agent';
         switch (action) {
             case 'invite-conference':
-                log(`Invited ${agentName} to conference`, 'info');
+                showConferenceInviteModal(agent);
                 break;
             case 'invite-chat':
                 log(`Invited ${agentName} to chat`, 'info');
@@ -2498,6 +2516,523 @@
 
         document.body.appendChild(input);
         input.click();
+    }
+
+    function showAddAgentWizard(resume = {}) {
+        const { state: resumeState, stepIndex: resumeStepIndex } = resume;
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Add Agent',
+            'Next',
+            'Cancel',
+            { closeOnCancel: false }
+        );
+
+        modal.classList.add('agent-create-modal');
+
+        const templates = [
+            {
+                id: 'creative',
+                label: 'Creative Voice',
+                role: 'writer',
+                description: 'Drafts prose, scene flow, and voice.',
+                skills: ['prose', 'voice', 'scene flow'],
+                goals: ['write vivid scenes', 'maintain tone'],
+                instructions: 'Focus on prose, voice, and scene flow.'
+            },
+            {
+                id: 'editor',
+                label: 'Editor',
+                role: 'editor',
+                description: 'Clarity, grammar, and pacing.',
+                skills: ['clarity', 'grammar', 'pacing'],
+                goals: ['polish prose', 'remove friction'],
+                instructions: 'Focus on clarity, grammar, and pacing.'
+            },
+            {
+                id: 'critic',
+                label: 'Critic',
+                role: 'critic',
+                description: 'Feedback, themes, and logic.',
+                skills: ['feedback', 'themes', 'logic'],
+                goals: ['identify weak spots', 'stress-test ideas'],
+                instructions: 'Focus on feedback, themes, and logic.'
+            },
+            {
+                id: 'lore',
+                label: 'Lore Keeper',
+                role: 'continuity',
+                description: 'Canon, worldbuilding, and consistency.',
+                skills: ['lore', 'canon', 'consistency'],
+                goals: ['protect canon', 'catch conflicts'],
+                instructions: 'Focus on lore consistency and canon.'
+            },
+            {
+                id: 'beta',
+                label: 'Beta Reader',
+                role: 'beta-reader',
+                description: 'Reader reaction and pacing feedback.',
+                skills: ['reader empathy', 'pacing', 'engagement'],
+                goals: ['surface confusion', 'flag slow sections'],
+                instructions: 'Provide reader reactions and pacing notes.'
+            },
+            {
+                id: 'custom',
+                label: 'Custom',
+                role: '',
+                description: 'Start from a blank template.',
+                skills: [],
+                goals: [],
+                instructions: ''
+            }
+        ];
+
+        const providers = ['openai', 'anthropic', 'lmstudio', 'ollama', 'openrouter', 'custom-http'];
+
+        const initialTemplate = templates[0];
+        const formState = resumeState || {
+            templateId: initialTemplate.id,
+            name: '',
+            role: initialTemplate.role,
+            skills: [...initialTemplate.skills],
+            goals: [...initialTemplate.goals],
+            instructions: initialTemplate.instructions,
+            provider: 'anthropic',
+            model: 'claude-sonnet-4',
+            temperature: '',
+            maxOutputTokens: '',
+            configurePersonality: false,
+            personalityConfigured: false,
+            personalityInstructions: '',
+            personalitySliders: {},
+            signatureLine: '',
+            avatar: ''
+        };
+
+        let stepIndex = Number.isInteger(resumeStepIndex) ? resumeStepIndex : 0;
+        const lastStep = 4;
+
+        const updateButtons = () => {
+            cancelBtn.textContent = stepIndex === 0 ? 'Cancel' : 'Back';
+            confirmBtn.textContent = stepIndex === lastStep ? 'Create Agent' : 'Next';
+        };
+
+        const setNextEnabled = (enabled) => {
+            confirmBtn.disabled = !enabled;
+        };
+
+        const generateAgentName = (role) => {
+            const base = (role || 'agent').trim() || 'agent';
+            const existing = (state.agents.list || []).map(item => (item.name || '').toLowerCase());
+            let candidate = base;
+            let counter = 2;
+            while (existing.includes(candidate.toLowerCase())) {
+                candidate = `${base}${counter++}`;
+            }
+            return candidate;
+        };
+
+        const renderPurposeStep = () => {
+            const row = document.createElement('div');
+            row.className = 'modal-row';
+
+            const label = document.createElement('label');
+            label.className = 'modal-label';
+            label.textContent = 'Purpose';
+            label.title = 'Pick a starting template. You can change name and role next.';
+
+            const select = document.createElement('select');
+            select.className = 'modal-select';
+            select.title = 'Starting template for role, skills, and instructions.';
+            templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.label;
+                select.appendChild(option);
+            });
+            select.value = formState.templateId;
+
+            const description = document.createElement('div');
+            description.className = 'modal-text';
+            const activeTemplate = templates.find(template => template.id === formState.templateId);
+            description.textContent = activeTemplate?.description || '';
+
+            select.addEventListener('change', () => {
+                const chosen = templates.find(template => template.id === select.value);
+                if (!chosen) return;
+                formState.templateId = chosen.id;
+                formState.role = chosen.role;
+                formState.skills = [...chosen.skills];
+                formState.goals = [...chosen.goals];
+                formState.instructions = chosen.instructions;
+                description.textContent = chosen.description;
+            });
+
+            row.appendChild(label);
+            row.appendChild(select);
+            row.appendChild(description);
+            body.appendChild(row);
+
+            setNextEnabled(true);
+        };
+
+        const renderIdentityStep = () => {
+            const hint = document.createElement('div');
+            hint.className = 'modal-text';
+            hint.textContent = 'Name is optional. Leave it blank to use the role name (or role2, role3...).';
+            body.appendChild(hint);
+
+            const nameRow = document.createElement('div');
+            nameRow.className = 'modal-row';
+            const nameLabel = document.createElement('label');
+            nameLabel.className = 'modal-label';
+            nameLabel.textContent = 'Name';
+            nameLabel.title = 'Display name for the agent.';
+            const nameInput = document.createElement('input');
+            nameInput.className = 'modal-input';
+            nameInput.type = 'text';
+            nameInput.placeholder = 'e.g., Beta Reader A';
+            nameInput.title = 'Optional. Defaults to the role name if empty.';
+            nameInput.value = formState.name;
+            nameRow.appendChild(nameLabel);
+            nameRow.appendChild(nameInput);
+            body.appendChild(nameRow);
+
+            const roleRow = document.createElement('div');
+            roleRow.className = 'modal-row';
+            const roleLabel = document.createElement('label');
+            roleLabel.className = 'modal-label';
+            roleLabel.textContent = 'Role';
+            roleLabel.title = 'Functional role used for filters and routing.';
+            const roleInput = document.createElement('input');
+            roleInput.className = 'modal-input';
+            roleInput.type = 'text';
+            roleInput.placeholder = 'e.g., writer, critic, sensitivity reader';
+            roleInput.title = 'Required. Short, lowercase roles work best.';
+            roleInput.value = formState.role;
+            roleRow.appendChild(roleLabel);
+            roleRow.appendChild(roleInput);
+            body.appendChild(roleRow);
+
+            const updateIdentityState = () => {
+                formState.name = nameInput.value;
+                formState.role = roleInput.value.trim();
+                setNextEnabled(Boolean(formState.role));
+            };
+
+            nameInput.addEventListener('input', updateIdentityState);
+            roleInput.addEventListener('input', updateIdentityState);
+
+            updateIdentityState();
+        };
+
+        const renderEndpointStep = () => {
+            const providerRow = document.createElement('div');
+            providerRow.className = 'modal-row';
+            const providerLabel = document.createElement('label');
+            providerLabel.className = 'modal-label';
+            providerLabel.textContent = 'Provider';
+            providerLabel.title = 'Which LLM provider this agent uses.';
+            const providerSelect = document.createElement('select');
+            providerSelect.className = 'modal-select';
+            providerSelect.title = 'Select the provider for this agent.';
+            providers.forEach(provider => {
+                const option = document.createElement('option');
+                option.value = provider;
+                option.textContent = provider;
+                providerSelect.appendChild(option);
+            });
+            providerSelect.value = formState.provider;
+            providerRow.appendChild(providerLabel);
+            providerRow.appendChild(providerSelect);
+            body.appendChild(providerRow);
+
+            const modelRow = document.createElement('div');
+            modelRow.className = 'modal-row';
+            const modelLabel = document.createElement('label');
+            modelLabel.className = 'modal-label';
+            modelLabel.textContent = 'Model';
+            modelLabel.title = 'Model name or id for the provider.';
+            const modelInput = document.createElement('input');
+            modelInput.className = 'modal-input';
+            modelInput.type = 'text';
+            modelInput.placeholder = 'e.g., claude-sonnet-4';
+            modelInput.title = 'Exact model id (provider-specific).';
+            modelInput.value = formState.model;
+            modelRow.appendChild(modelLabel);
+            modelRow.appendChild(modelInput);
+            body.appendChild(modelRow);
+
+            const tempRow = document.createElement('div');
+            tempRow.className = 'modal-row';
+            const tempLabel = document.createElement('label');
+            tempLabel.className = 'modal-label';
+            tempLabel.textContent = 'Temperature (optional)';
+            tempLabel.title = 'Higher = more creative, lower = more precise.';
+            const tempInput = document.createElement('input');
+            tempInput.className = 'modal-input';
+            tempInput.type = 'number';
+            tempInput.step = '0.1';
+            tempInput.min = '0';
+            tempInput.max = '2';
+            tempInput.placeholder = 'Leave blank for model defaults';
+            tempInput.title = 'Leave blank to use model defaults.';
+            tempInput.value = formState.temperature;
+            tempRow.appendChild(tempLabel);
+            tempRow.appendChild(tempInput);
+            body.appendChild(tempRow);
+
+            const tokenRow = document.createElement('div');
+            tokenRow.className = 'modal-row';
+            const tokenLabel = document.createElement('label');
+            tokenLabel.className = 'modal-label';
+            tokenLabel.textContent = 'Max output tokens (optional)';
+            tokenLabel.title = 'Caps response length; leave blank for defaults.';
+            const tokenInput = document.createElement('input');
+            tokenInput.className = 'modal-input';
+            tokenInput.type = 'number';
+            tokenInput.min = '1';
+            tokenInput.placeholder = 'Leave blank for model defaults';
+            tokenInput.title = 'Leave blank to use model defaults.';
+            tokenInput.value = formState.maxOutputTokens;
+            tokenRow.appendChild(tokenLabel);
+            tokenRow.appendChild(tokenInput);
+            body.appendChild(tokenRow);
+
+            const updateEndpointState = () => {
+                formState.provider = providerSelect.value;
+                formState.model = modelInput.value.trim();
+                formState.temperature = tempInput.value;
+                formState.maxOutputTokens = tokenInput.value;
+                setNextEnabled(Boolean(formState.provider) && Boolean(formState.model));
+            };
+
+            providerSelect.addEventListener('change', updateEndpointState);
+            modelInput.addEventListener('input', updateEndpointState);
+            tempInput.addEventListener('input', updateEndpointState);
+            tokenInput.addEventListener('input', updateEndpointState);
+
+            updateEndpointState();
+        };
+
+        const renderPersonalityStep = () => {
+            const info = document.createElement('div');
+            info.className = 'modal-text';
+            info.textContent = 'Would you like to configure this agent\'s personality now? You can also do it later.';
+            body.appendChild(info);
+
+            const yesInput = document.createElement('input');
+            yesInput.type = 'radio';
+            yesInput.name = 'personality-choice';
+            yesInput.value = 'yes';
+            yesInput.checked = formState.configurePersonality;
+            const noInput = document.createElement('input');
+            noInput.type = 'radio';
+            noInput.name = 'personality-choice';
+            noInput.value = 'no';
+            noInput.checked = !formState.configurePersonality;
+            const yesRow = document.createElement('label');
+            yesRow.className = 'modal-choice-row';
+            yesRow.title = 'Open the Agent Profile to tweak sliders and instructions.';
+            const yesText = document.createElement('span');
+            yesText.textContent = 'Yes, configure personality now';
+            yesRow.appendChild(yesInput);
+            yesRow.appendChild(yesText);
+
+            const noRow = document.createElement('label');
+            noRow.className = 'modal-choice-row';
+            noRow.title = 'Skip for now and use defaults.';
+            const noText = document.createElement('span');
+            noText.textContent = 'Skip for now';
+            noRow.appendChild(noInput);
+            noRow.appendChild(noText);
+
+            body.appendChild(yesRow);
+            body.appendChild(noRow);
+
+            const updateChoice = () => {
+                formState.configurePersonality = yesInput.checked;
+                setNextEnabled(true);
+            };
+
+            yesInput.addEventListener('change', updateChoice);
+            noInput.addEventListener('change', updateChoice);
+
+            updateChoice();
+        };
+
+        const renderConfirmStep = () => {
+            const name = formState.name.trim() || generateAgentName(formState.role);
+            const personalityStatus = formState.personalityConfigured ? 'Configured' : 'Default';
+            const summary = document.createElement('div');
+            summary.className = 'modal-text';
+            summary.innerHTML = `
+                <div><strong>Name:</strong> ${escapeHtml(name)}</div>
+                <div><strong>Role:</strong> ${escapeHtml(formState.role)}</div>
+                <div><strong>Provider:</strong> ${escapeHtml(formState.provider)}</div>
+                <div><strong>Model:</strong> ${escapeHtml(formState.model)}</div>
+                <div><strong>Personality:</strong> ${escapeHtml(personalityStatus)}</div>
+            `;
+            body.appendChild(summary);
+
+            const note = document.createElement('div');
+            note.className = 'modal-text';
+            note.textContent = 'You can customize this agent later in Agent Settings.';
+            body.appendChild(note);
+
+            setNextEnabled(true);
+        };
+
+        const openPersonalityConfigurator = () => {
+            const role = formState.role.trim() || 'agent';
+            const name = formState.name.trim() || generateAgentName(role);
+            const baseInstructions = formState.personalityInstructions ||
+                formState.instructions ||
+                `Focus on your role: ${role}.`;
+
+            const draftAgent = {
+                id: 'draft',
+                name,
+                role,
+                avatar: formState.avatar || '',
+                personality: {
+                    tone: 'neutral',
+                    verbosity: 'normal',
+                    voiceTags: [role],
+                    baseInstructions
+                },
+                personalitySliders: formState.personalitySliders || {},
+                signatureLine: formState.signatureLine || ''
+            };
+
+            let profileSaved = false;
+            close();
+
+            showAgentProfileModal(draftAgent, {
+                onSave: async (updatedAgent) => {
+                    profileSaved = true;
+                    formState.name = updatedAgent.name || formState.name;
+                    formState.role = updatedAgent.role || formState.role;
+                    formState.avatar = updatedAgent.avatar || formState.avatar;
+                    formState.personalityInstructions = updatedAgent.personality?.baseInstructions || '';
+                    formState.personalitySliders = updatedAgent.personalitySliders || {};
+                    formState.signatureLine = updatedAgent.signatureLine || '';
+                    formState.personalityConfigured = true;
+                },
+                onClose: () => {
+                    const resumeStep = profileSaved ? Math.min(stepIndex + 1, lastStep) : stepIndex;
+                    showAddAgentWizard({ state: formState, stepIndex: resumeStep });
+                }
+            });
+        };
+
+        const renderStep = () => {
+            body.innerHTML = '';
+            updateButtons();
+
+            if (stepIndex === 0) {
+                renderPurposeStep();
+            } else if (stepIndex === 1) {
+                renderIdentityStep();
+            } else if (stepIndex === 2) {
+                renderEndpointStep();
+            } else if (stepIndex === 3) {
+                renderPersonalityStep();
+            } else {
+                renderConfirmStep();
+            }
+        };
+
+        cancelBtn.addEventListener('click', () => {
+            if (stepIndex === 0) {
+                close();
+                return;
+            }
+            stepIndex = Math.max(0, stepIndex - 1);
+            renderStep();
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            if (stepIndex < lastStep) {
+                if (stepIndex === 3 && formState.configurePersonality && !formState.personalityConfigured) {
+                    openPersonalityConfigurator();
+                    return;
+                }
+                stepIndex += 1;
+                renderStep();
+                return;
+            }
+
+            const role = formState.role.trim();
+            if (!role) {
+                setNextEnabled(false);
+                return;
+            }
+
+            const name = formState.name.trim() || generateAgentName(role);
+            const payload = {
+                name,
+                role,
+                avatar: formState.avatar || '',
+                skills: formState.skills,
+                goals: formState.goals,
+                endpoint: {
+                    provider: formState.provider,
+                    model: formState.model
+                },
+                personality: {
+                    tone: 'neutral',
+                    verbosity: 'normal',
+                    voiceTags: [role],
+                    baseInstructions: formState.personalityInstructions ||
+                        formState.instructions ||
+                        `Focus on your role: ${role}.`
+                }
+            };
+
+            if (formState.personalityConfigured && formState.personalitySliders) {
+                payload.personalitySliders = formState.personalitySliders;
+            }
+            if (formState.signatureLine) {
+                payload.signatureLine = formState.signatureLine;
+            }
+
+            const temperature = parseFloat(formState.temperature);
+            if (!Number.isNaN(temperature)) {
+                payload.endpoint.temperature = temperature;
+            }
+
+            const maxTokens = parseInt(formState.maxOutputTokens, 10);
+            if (!Number.isNaN(maxTokens)) {
+                payload.endpoint.maxOutputTokens = maxTokens;
+            }
+
+            try {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Creating...';
+                const created = await agentApi.create(payload);
+                log(`Created agent: ${created.name}`, 'success');
+                notificationStore.push(
+                    'success',
+                    'workbench',
+                    `Created ${created.name}.`,
+                    `Role: ${created.role || role}`,
+                    'social',
+                    false,
+                    'Run Greeting Scan',
+                    { kind: 'open-greeting-scan', agentId: created.id },
+                    'agents'
+                );
+                await loadAgents();
+                close();
+            } catch (err) {
+                log(`Failed to create agent: ${err.message}`, 'error');
+                notificationStore.error(`Failed to create agent: ${err.message}`, 'workbench');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Create Agent';
+            }
+        });
+
+        renderStep();
     }
 
     // Context Menu
@@ -2657,7 +3192,8 @@
             closeOnCancel = true,
             closeOnConfirm = false,
             confirmTitle = '',
-            cancelTitle = ''
+            cancelTitle = '',
+            onClose = null
         } = options;
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -2702,7 +3238,15 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
-        const close = () => overlay.remove();
+        let isClosed = false;
+        const close = () => {
+            if (isClosed) return;
+            isClosed = true;
+            overlay.remove();
+            if (typeof onClose === 'function') {
+                onClose();
+            }
+        };
 
         if (closeOnCancel) {
             cancelBtn.addEventListener('click', close);
@@ -2725,7 +3269,7 @@
         return { overlay, modal, body, confirmBtn, cancelBtn, close };
     }
 
-    function showAgentProfileModal(agent) {
+    function showAgentProfileModal(agent, options = {}) {
         const agentName = agent?.name || 'Agent';
         const agentRole = agent?.role || '';
         const agentAvatar = agent?.avatar || '';
@@ -2845,7 +3389,7 @@
             'Agent Profile',
             'Save',
             'Cancel',
-            { closeOnCancel: true }
+            { closeOnCancel: true, onClose: options.onClose }
         );
 
         modal.classList.add('agent-profile-modal');
@@ -3219,17 +3763,26 @@
                 confirmBtn.disabled = true;
                 confirmBtn.textContent = 'Saving...';
 
-                const saved = await agentApi.update(agent.id, updatedAgent);
-                log(`Profile saved for ${saved.name}`, 'success');
-                notificationStore.success(`Saved profile for ${saved.name}`, 'workbench');
+                if (typeof options.onSave === 'function') {
+                    await options.onSave(updatedAgent);
+                    close();
+                } else {
+                    const saved = await agentApi.update(agent.id, updatedAgent);
+                    log(`Profile saved for ${saved.name}`, 'success');
+                    notificationStore.success(`Saved profile for ${saved.name}`, 'workbench');
 
-                // Refresh agent list to show updated data
-                await loadAgents();
+                    // Refresh agent list to show updated data
+                    await loadAgents();
 
-                close();
+                    close();
+                }
             } catch (err) {
                 log(`Failed to save profile: ${err.message}`, 'error');
-                notificationStore.error(`Failed to save: ${err.message}`, 'workbench');
+                if (options.onSave) {
+                    notificationStore.error(`Failed to save profile: ${err.message}`, 'workbench');
+                } else {
+                    notificationStore.error(`Failed to save: ${err.message}`, 'workbench');
+                }
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = 'Save';
             }
@@ -3281,6 +3834,231 @@
 
         confirmBtn.addEventListener('click', () => {
             notificationStore.success(`Saved settings for ${name} (stub)`, 'workbench');
+        });
+    }
+
+    function buildGreetingPrompt(agent) {
+        const name = agent?.name || 'Agent';
+        const role = agent?.role || 'role';
+        const instructions = agent?.personality?.baseInstructions || '';
+        const sliders = agent?.personalitySliders || {};
+        const signatureLine = agent?.signatureLine || '';
+
+        const lines = [
+            `You are ${name}, role: ${role}.`,
+            'Please provide:',
+            '1) A 2-4 sentence self introduction.',
+            '2) 3-5 bullet first impressions of the project.',
+            '3) 2-4 bullet suggested next actions.'
+        ];
+
+        if (instructions) {
+            lines.unshift(`Personality instructions: ${instructions}`);
+        }
+
+        const sliderEntries = Object.entries(sliders);
+        if (sliderEntries.length > 0) {
+            const sliderText = sliderEntries
+                .map(([key, value]) => `${key}=${value}`)
+                .join(', ');
+            lines.unshift(`Personality sliders: ${sliderText}`);
+        }
+        if (signatureLine) {
+            lines.unshift(`Signature line: ${signatureLine}`);
+        }
+
+        return lines.join('\n');
+    }
+
+    async function showGreetingScanModal(agentId) {
+        const { modal, body } = createModalShell(
+            'Greeting Scan',
+            'Close',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        modal.classList.add('agent-greeting-modal');
+
+        const status = document.createElement('div');
+        status.className = 'modal-text';
+        status.textContent = 'Greeting scan started. Waiting for agent response.';
+        body.appendChild(status);
+
+        let agent = null;
+        try {
+            agent = await agentApi.get(agentId);
+        } catch (err) {
+            const error = document.createElement('div');
+            error.className = 'modal-hint';
+            error.textContent = `Failed to load agent data: ${err.message}`;
+            body.appendChild(error);
+            return;
+        }
+
+        // Store the prompt for future wiring without rendering it yet.
+        modal.dataset.greetingPrompt = buildGreetingPrompt(agent);
+
+        const responseTitle = document.createElement('div');
+        responseTitle.className = 'modal-label';
+        responseTitle.textContent = 'Response';
+        body.appendChild(responseTitle);
+
+        const responseBox = document.createElement('div');
+        responseBox.className = 'greeting-response';
+        responseBox.textContent = 'Awaiting agent response...';
+        body.appendChild(responseBox);
+    }
+
+    function showConferenceInviteModal(seedAgent) {
+        const agents = (state.agents.list || []).filter(agent => agent.enabled !== false);
+        const seedId = seedAgent?.id || '';
+        const { modal, body, confirmBtn, close } = createModalShell(
+            'Invite to Conference',
+            'Start Conference',
+            'Cancel',
+            { closeOnCancel: true }
+        );
+
+        modal.classList.add('conference-invite-modal');
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'Pick invitees and select a moderator for the conference.';
+        body.appendChild(info);
+
+        const agendaRow = document.createElement('div');
+        agendaRow.className = 'modal-row';
+        const agendaLabel = document.createElement('label');
+        agendaLabel.className = 'modal-label';
+        agendaLabel.textContent = 'Agenda';
+        const agendaInput = document.createElement('textarea');
+        agendaInput.className = 'conference-agenda-input';
+        agendaInput.placeholder = 'Topics, goals, or questions...';
+        agendaInput.rows = 3;
+        agendaRow.appendChild(agendaLabel);
+        agendaRow.appendChild(agendaInput);
+        body.appendChild(agendaRow);
+
+        if (agents.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'conference-agent-empty';
+            empty.textContent = 'No agents available to invite.';
+            body.appendChild(empty);
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'conference-agent-list';
+
+        const header = document.createElement('div');
+        header.className = 'conference-agent-row conference-agent-header';
+        const headerName = document.createElement('div');
+        headerName.className = 'conference-agent-name';
+        headerName.textContent = 'Agent';
+        const headerRole = document.createElement('div');
+        headerRole.className = 'conference-agent-role';
+        headerRole.textContent = 'Role';
+        const headerInvite = document.createElement('div');
+        headerInvite.className = 'conference-agent-flag';
+        headerInvite.textContent = 'Invited';
+        const headerLead = document.createElement('div');
+        headerLead.className = 'conference-agent-flag';
+        headerLead.textContent = 'Moderator';
+        header.appendChild(headerName);
+        header.appendChild(headerRole);
+        header.appendChild(headerInvite);
+        header.appendChild(headerLead);
+        list.appendChild(header);
+
+        const selections = new Map();
+
+        agents.forEach(agent => {
+            const row = document.createElement('div');
+            row.className = 'conference-agent-row';
+
+            const name = document.createElement('div');
+            name.className = 'conference-agent-name';
+            name.textContent = agent.name || 'Unnamed Agent';
+            name.title = agent.name || 'Unnamed Agent';
+
+            const role = document.createElement('div');
+            role.className = 'conference-agent-role';
+            role.textContent = agent.role || 'role';
+
+            const invitedCell = document.createElement('label');
+            invitedCell.className = 'conference-agent-toggle';
+            const invitedCheckbox = document.createElement('input');
+            invitedCheckbox.type = 'checkbox';
+            invitedCheckbox.className = 'conference-agent-checkbox';
+            invitedCheckbox.checked = Boolean(agent.id && agent.id === seedId);
+            invitedCell.appendChild(invitedCheckbox);
+
+            const leadCell = document.createElement('label');
+            leadCell.className = 'conference-agent-toggle';
+            const leadCheckbox = document.createElement('input');
+            leadCheckbox.type = 'checkbox';
+            leadCheckbox.className = 'conference-agent-checkbox';
+            leadCell.appendChild(leadCheckbox);
+
+            invitedCheckbox.addEventListener('change', () => {
+                // Moderator must be invited, so re-check if user tries to uninvite.
+                if (!invitedCheckbox.checked && leadCheckbox.checked) {
+                    invitedCheckbox.checked = true;
+                }
+                updateStartState();
+            });
+
+            leadCheckbox.addEventListener('change', () => {
+                if (leadCheckbox.checked) {
+                    // Single moderator: uncheck all other lead boxes.
+                    selections.forEach((item) => {
+                        if (item.agent.id !== agent.id) {
+                            item.lead.checked = false;
+                        }
+                    });
+                    invitedCheckbox.checked = true;
+                }
+                updateStartState();
+            });
+
+            selections.set(agent.id, { invited: invitedCheckbox, lead: leadCheckbox, agent });
+
+            row.appendChild(name);
+            row.appendChild(role);
+            row.appendChild(invitedCell);
+            row.appendChild(leadCell);
+            list.appendChild(row);
+        });
+
+        body.appendChild(list);
+
+        const updateStartState = () => {
+            const invitedCount = Array.from(selections.values()).filter(item => item.invited.checked).length;
+            confirmBtn.disabled = invitedCount === 0;
+        };
+
+        updateStartState();
+
+        confirmBtn.addEventListener('click', () => {
+            const invited = [];
+            const leaders = [];
+            selections.forEach((item) => {
+                if (item.invited.checked) invited.push(item.agent);
+                if (item.lead.checked) leaders.push(item.agent);
+            });
+
+            const agenda = agendaInput.value.trim();
+            const invitedNames = invited.map(agent => agent.name).join(', ') || 'none';
+            const leaderNames = leaders.map(agent => agent.name).join(', ') || 'none';
+
+            log(`Conference started. Invited: ${invitedNames}. Moderators: ${leaderNames}.`, 'info');
+            if (agenda) {
+                log(`Conference agenda: ${agenda}`, 'info');
+            }
+            notificationStore.success(`Conference started with ${invited.length} agent(s).`, 'workbench');
+            close();
         });
     }
 
@@ -4230,6 +5008,13 @@
         });
 
         // Import agent button (in workbench sidebar)
+        const btnAddAgent = document.getElementById('btn-add-agent');
+        if (btnAddAgent) {
+            btnAddAgent.addEventListener('click', () => {
+                showAddAgentWizard();
+            });
+        }
+
         const btnImportAgent = document.getElementById('btn-import-agent');
         if (btnImportAgent) {
             btnImportAgent.addEventListener('click', () => {
