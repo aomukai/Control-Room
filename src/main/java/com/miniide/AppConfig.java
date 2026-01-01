@@ -85,6 +85,16 @@ public class AppConfig {
     }
 
     /**
+     * Get the app settings directory path.
+     * Windows: %APPDATA%\Control-Room\settings
+     * macOS: ~/Library/Logs/Control-Room/settings
+     * Linux: ~/.local/share/Control-Room/settings
+     */
+    public static Path getSettingsDirectory() {
+        return getConfigDirectory().resolve("settings");
+    }
+
+    /**
      * Persist workspace selection for next launch.
      */
     public static void persistWorkspaceSelection(Path workspaceRoot, String workspaceName) throws IOException {

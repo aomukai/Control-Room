@@ -448,6 +448,72 @@
         }
     };
 
+    const agentEndpointsApi = {
+        async list() {
+            return api('/api/agent-endpoints');
+        },
+        async get(id) {
+            return api(`/api/agent-endpoints/${encodeURIComponent(id)}`);
+        },
+        async save(id, data) {
+            return api(`/api/agent-endpoints/${encodeURIComponent(id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        }
+    };
+
+    const settingsApi = {
+        async getSecurity() {
+            return api('/api/settings/security');
+        },
+        async updateSecurity(mode, password) {
+            return api('/api/settings/security', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keysSecurityMode: mode, password })
+            });
+        },
+        async unlockVault(password) {
+            return api('/api/settings/security/unlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+        },
+        async lockVault() {
+            return api('/api/settings/security/lock', { method: 'POST' });
+        },
+        async listKeys() {
+            return api('/api/settings/keys');
+        },
+        async addKey(payload) {
+            return api('/api/settings/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async deleteKey(provider, id, password) {
+            return api(`/api/settings/keys/${encodeURIComponent(provider)}/${encodeURIComponent(id)}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(password ? { password } : {})
+            });
+        }
+    };
+
+    const providerApi = {
+        async listModels(provider, baseUrl, keyRef) {
+            const params = new URLSearchParams();
+            params.set('provider', provider);
+            if (baseUrl) params.set('baseUrl', baseUrl);
+            if (keyRef) params.set('keyRef', keyRef);
+            return api(`/api/providers/models?${params.toString()}`);
+        }
+    };
+
     const roleSettingsApi = {
         async list() {
             return api('/api/agents/role-settings');
@@ -4217,26 +4283,776 @@
 
     function showAgentSettingsModal(agent) {
         const name = agent?.name || 'Agent';
-        const { body, confirmBtn } = createModalShell(
+        const agentId = agent?.id;
+        const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             `Agent Settings: ${name}`,
-            'Close',
-            'Apply',
-            {
-                closeOnCancel: true,
-                closeOnConfirm: true,
-                confirmTitle: 'Close without saving',
-                cancelTitle: 'Save and close'
-            }
+            'Save',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: false }
         );
 
-        const info = document.createElement('div');
-        info.className = 'modal-text';
-        info.textContent = 'Agent settings panel coming soon.';
-        body.appendChild(info);
+        modal.classList.add('agent-settings-modal');
 
-        confirmBtn.addEventListener('click', () => {
-            notificationStore.success(`Saved settings for ${name} (stub)`, 'workbench');
+        const providerOptions = [
+            'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
+            'lmstudio', 'ollama', 'jan', 'koboldcpp', 'custom'
+        ];
+
+        const requiresKey = new Set([
+            'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai'
+        ]);
+
+        const localProviders = new Set(['lmstudio', 'ollama', 'jan', 'koboldcpp']);
+
+        const defaultBaseUrls = {
+            openai: 'https://api.openai.com',
+            anthropic: 'https://api.anthropic.com',
+            gemini: 'https://generativelanguage.googleapis.com',
+            grok: 'https://api.x.ai/v1',
+            openrouter: 'https://openrouter.ai',
+            nanogpt: 'https://nano-gpt.com/api/v1',
+            togetherai: 'https://api.together.xyz',
+            lmstudio: 'http://localhost:1234',
+            ollama: 'http://localhost:11434',
+            jan: 'http://localhost:1234',
+            koboldcpp: 'http://localhost:1234',
+            custom: ''
+        };
+
+        const formState = {
+            provider: 'anthropic',
+            model: '',
+            keyRef: '',
+            baseUrl: '',
+            temperature: '',
+            maxOutputTokens: '',
+            timeoutMs: '',
+            maxRetries: '',
+            nanoGptLegacy: false
+        };
+
+        let security = { keysSecurityMode: 'plaintext', vaultUnlocked: true };
+        let keyMetadata = { providers: {} };
+        let modelList = [];
+        let isLoadingModels = false;
+        let baseUrlTouched = false;
+
+        const errorHint = document.createElement('div');
+        errorHint.className = 'modal-hint modal-error-hint';
+        errorHint.style.display = 'none';
+        const modelHint = document.createElement('div');
+        modelHint.className = 'modal-hint';
+        modelHint.style.display = 'none';
+        const localActions = document.createElement('div');
+        localActions.className = 'agent-settings-inline';
+        localActions.style.display = 'none';
+        const localHelp = document.createElement('button');
+        localHelp.type = 'button';
+        localHelp.className = 'modal-btn modal-btn-secondary';
+        localHelp.textContent = 'Local provider not running?';
+        const localRetry = document.createElement('button');
+        localRetry.type = 'button';
+        localRetry.className = 'modal-btn modal-btn-secondary';
+        localRetry.textContent = 'Retry';
+        localActions.appendChild(localHelp);
+        localActions.appendChild(localRetry);
+
+        const content = document.createElement('div');
+        content.className = 'agent-settings-body';
+        body.appendChild(content);
+        body.appendChild(modelHint);
+        body.appendChild(localActions);
+        body.appendChild(errorHint);
+
+        const vaultSection = document.createElement('div');
+        vaultSection.className = 'agent-settings-vault';
+
+        const vaultLabel = document.createElement('div');
+        vaultLabel.className = 'modal-text';
+        vaultLabel.textContent = 'Key vault locked. Enter password to unlock stored keys.';
+        const vaultRow = document.createElement('div');
+        vaultRow.className = 'agent-settings-inline';
+        const vaultInput = document.createElement('input');
+        vaultInput.type = 'password';
+        vaultInput.className = 'modal-input';
+        vaultInput.placeholder = 'Vault password';
+        const vaultBtn = document.createElement('button');
+        vaultBtn.type = 'button';
+        vaultBtn.className = 'modal-btn modal-btn-secondary';
+        vaultBtn.textContent = 'Unlock';
+        vaultRow.appendChild(vaultInput);
+        vaultRow.appendChild(vaultBtn);
+        vaultSection.appendChild(vaultLabel);
+        vaultSection.appendChild(vaultRow);
+
+        const providerRow = document.createElement('div');
+        providerRow.className = 'modal-row';
+        const providerLabel = document.createElement('label');
+        providerLabel.className = 'modal-label';
+        providerLabel.textContent = 'Provider';
+        const providerSelect = document.createElement('select');
+        providerSelect.className = 'modal-select';
+        providerOptions.forEach(provider => {
+            const option = document.createElement('option');
+            option.value = provider;
+            option.textContent = provider;
+            providerSelect.appendChild(option);
         });
+        providerRow.appendChild(providerLabel);
+        providerRow.appendChild(providerSelect);
+
+        const keyRow = document.createElement('div');
+        keyRow.className = 'modal-row';
+        const keyLabel = document.createElement('label');
+        keyLabel.className = 'modal-label';
+        keyLabel.textContent = 'API Key';
+        const keyInline = document.createElement('div');
+        keyInline.className = 'agent-settings-inline';
+        const keySelect = document.createElement('select');
+        keySelect.className = 'modal-select';
+        const keyAddBtn = document.createElement('button');
+        keyAddBtn.type = 'button';
+        keyAddBtn.className = 'modal-btn modal-btn-secondary';
+        keyAddBtn.textContent = 'Add';
+        keyInline.appendChild(keySelect);
+        keyInline.appendChild(keyAddBtn);
+        keyRow.appendChild(keyLabel);
+        keyRow.appendChild(keyInline);
+
+        const addKeySection = document.createElement('div');
+        addKeySection.className = 'agent-settings-add-key';
+        addKeySection.style.display = 'none';
+        const addKeyLabel = document.createElement('label');
+        addKeyLabel.className = 'modal-label';
+        addKeyLabel.textContent = 'New Key';
+        const addKeyNameRow = document.createElement('div');
+        addKeyNameRow.className = 'agent-settings-inline';
+        const addKeyNameInput = document.createElement('input');
+        addKeyNameInput.type = 'text';
+        addKeyNameInput.className = 'modal-input';
+        addKeyNameInput.placeholder = 'Label (optional)';
+        const addKeyValueInput = document.createElement('input');
+        addKeyValueInput.type = 'password';
+        addKeyValueInput.className = 'modal-input';
+        addKeyValueInput.placeholder = 'Paste API key';
+        addKeyNameRow.appendChild(addKeyNameInput);
+        addKeyNameRow.appendChild(addKeyValueInput);
+
+        const addKeyActions = document.createElement('div');
+        addKeyActions.className = 'agent-settings-inline';
+        const addKeySaveBtn = document.createElement('button');
+        addKeySaveBtn.type = 'button';
+        addKeySaveBtn.className = 'modal-btn modal-btn-primary';
+        addKeySaveBtn.textContent = 'Save Key';
+        const addKeyCancelBtn = document.createElement('button');
+        addKeyCancelBtn.type = 'button';
+        addKeyCancelBtn.className = 'modal-btn modal-btn-secondary';
+        addKeyCancelBtn.textContent = 'Cancel';
+        addKeyActions.appendChild(addKeyCancelBtn);
+        addKeyActions.appendChild(addKeySaveBtn);
+
+        addKeySection.appendChild(addKeyLabel);
+        addKeySection.appendChild(addKeyNameRow);
+        addKeySection.appendChild(addKeyActions);
+
+        const modelRow = document.createElement('div');
+        modelRow.className = 'modal-row';
+        const modelLabel = document.createElement('label');
+        modelLabel.className = 'modal-label';
+        modelLabel.textContent = 'Model';
+        const modelSearch = document.createElement('input');
+        modelSearch.type = 'text';
+        modelSearch.className = 'modal-input';
+        modelSearch.placeholder = 'Search models...';
+        const modelListRow = document.createElement('div');
+        modelListRow.className = 'agent-settings-inline';
+        const modelSelect = document.createElement('select');
+        modelSelect.className = 'modal-select';
+        const modelRefreshBtn = document.createElement('button');
+        modelRefreshBtn.type = 'button';
+        modelRefreshBtn.className = 'modal-btn modal-btn-secondary';
+        modelRefreshBtn.textContent = 'Refresh';
+        modelListRow.appendChild(modelSelect);
+        modelListRow.appendChild(modelRefreshBtn);
+        modelRow.appendChild(modelLabel);
+        modelRow.appendChild(modelSearch);
+        modelRow.appendChild(modelListRow);
+
+        const baseRow = document.createElement('div');
+        baseRow.className = 'modal-row';
+        const baseLabel = document.createElement('label');
+        baseLabel.className = 'modal-label';
+        baseLabel.textContent = 'Base URL';
+        const baseInput = document.createElement('input');
+        baseInput.type = 'text';
+        baseInput.className = 'modal-input';
+        baseInput.placeholder = 'Leave blank to use provider default';
+        baseRow.appendChild(baseLabel);
+        baseRow.appendChild(baseInput);
+
+        const nanoLegacyRow = document.createElement('label');
+        nanoLegacyRow.className = 'modal-checkbox-row';
+        const nanoLegacyToggle = document.createElement('input');
+        nanoLegacyToggle.type = 'checkbox';
+        const nanoLegacyText = document.createElement('span');
+        nanoLegacyText.textContent = 'Use NanoGPT legacy API path (/api/v1legacy)';
+        nanoLegacyRow.appendChild(nanoLegacyToggle);
+        nanoLegacyRow.appendChild(nanoLegacyText);
+
+        const tempRow = document.createElement('div');
+        tempRow.className = 'modal-row';
+        const tempLabel = document.createElement('label');
+        tempLabel.className = 'modal-label';
+        tempLabel.textContent = 'Temperature';
+        const tempInput = document.createElement('input');
+        tempInput.type = 'number';
+        tempInput.step = '0.1';
+        tempInput.min = '0';
+        tempInput.max = '2';
+        tempInput.className = 'modal-input';
+        tempInput.placeholder = 'Leave blank for provider default';
+        tempRow.appendChild(tempLabel);
+        tempRow.appendChild(tempInput);
+
+        const tokenRow = document.createElement('div');
+        tokenRow.className = 'modal-row';
+        const tokenLabel = document.createElement('label');
+        tokenLabel.className = 'modal-label';
+        tokenLabel.textContent = 'Max Output Tokens';
+        const tokenInput = document.createElement('input');
+        tokenInput.type = 'number';
+        tokenInput.min = '1';
+        tokenInput.className = 'modal-input';
+        tokenInput.placeholder = 'Leave blank for provider default';
+        tokenRow.appendChild(tokenLabel);
+        tokenRow.appendChild(tokenInput);
+
+        const timeoutRow = document.createElement('div');
+        timeoutRow.className = 'modal-row';
+        const timeoutLabel = document.createElement('label');
+        timeoutLabel.className = 'modal-label';
+        timeoutLabel.textContent = 'Timeout (ms)';
+        const timeoutInput = document.createElement('input');
+        timeoutInput.type = 'number';
+        timeoutInput.min = '1000';
+        timeoutInput.className = 'modal-input';
+        timeoutInput.placeholder = 'Leave blank for default';
+        timeoutRow.appendChild(timeoutLabel);
+        timeoutRow.appendChild(timeoutInput);
+
+        const retryRow = document.createElement('div');
+        retryRow.className = 'modal-row';
+        const retryLabel = document.createElement('label');
+        retryLabel.className = 'modal-label';
+        retryLabel.textContent = 'Max Retries';
+        const retryInput = document.createElement('input');
+        retryInput.type = 'number';
+        retryInput.min = '0';
+        retryInput.className = 'modal-input';
+        retryInput.placeholder = 'Leave blank for default';
+        retryRow.appendChild(retryLabel);
+        retryRow.appendChild(retryInput);
+
+        content.appendChild(providerRow);
+        content.appendChild(keyRow);
+        content.appendChild(addKeySection);
+        content.appendChild(modelRow);
+
+        const advancedSection = document.createElement('div');
+        advancedSection.className = 'agent-settings-advanced';
+        const advancedToggle = document.createElement('button');
+        advancedToggle.type = 'button';
+        advancedToggle.className = 'agent-settings-advanced-toggle';
+        advancedToggle.textContent = 'Advanced settings';
+        const advancedBody = document.createElement('div');
+        advancedBody.className = 'agent-settings-advanced-body';
+        advancedBody.style.display = 'none';
+        advancedBody.appendChild(baseRow);
+        advancedBody.appendChild(nanoLegacyRow);
+        advancedBody.appendChild(tempRow);
+        advancedBody.appendChild(tokenRow);
+        advancedBody.appendChild(timeoutRow);
+        advancedBody.appendChild(retryRow);
+        advancedSection.appendChild(advancedToggle);
+        advancedSection.appendChild(advancedBody);
+        content.appendChild(advancedSection);
+
+        const renderNanoLegacy = () => {
+            const isNano = formState.provider === 'nanogpt';
+            nanoLegacyRow.style.display = isNano ? 'flex' : 'none';
+        };
+
+        const updateLocalActions = () => {
+            const isLocal = localProviders.has(formState.provider);
+            localActions.style.display = isLocal ? 'flex' : 'none';
+        };
+
+        const updateLocalHint = (message = '') => {
+            const isLocal = localProviders.has(formState.provider);
+            if (!isLocal) {
+                modelHint.style.display = 'none';
+                return;
+            }
+            if (message) {
+                modelHint.textContent = message;
+                modelHint.style.display = 'block';
+                return;
+            }
+            const base = (formState.baseUrl || defaultBaseUrls[formState.provider] || '').replace(/\/+$/, '');
+            const path = formState.provider === 'ollama' ? '/api/tags' : '/v1/models';
+            if (base) {
+                modelHint.textContent = `Local provider will be queried at ${base}${path}.`;
+                modelHint.style.display = 'block';
+            } else {
+                modelHint.textContent = 'Set a Base URL in Advanced to reach your local provider.';
+                modelHint.style.display = 'block';
+            }
+        };
+
+        const updateVaultSection = () => {
+            if (security.keysSecurityMode === 'encrypted' && !security.vaultUnlocked) {
+                if (!vaultSection.parentNode) {
+                    content.insertBefore(vaultSection, content.firstChild);
+                }
+            } else if (vaultSection.parentNode) {
+                vaultSection.remove();
+            }
+        };
+
+        const updateKeySelect = () => {
+            keySelect.innerHTML = '';
+            const provider = formState.provider;
+            const keys = (keyMetadata.providers && keyMetadata.providers[provider]) || [];
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = keys.length ? 'Select a key' : 'No saved keys';
+            keySelect.appendChild(emptyOption);
+
+            keys.forEach(entry => {
+                const option = document.createElement('option');
+                option.value = `${provider}:${entry.id}`;
+                option.textContent = entry.label || entry.id;
+                keySelect.appendChild(option);
+            });
+            keySelect.value = formState.keyRef || '';
+        };
+
+        const updateModelSelect = () => {
+            modelSelect.innerHTML = '';
+            if (isLoadingModels) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Loading models...';
+                modelSelect.appendChild(option);
+                modelSelect.disabled = true;
+                return;
+            }
+            if (!modelList.length) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No models loaded';
+                modelSelect.appendChild(option);
+                modelSelect.disabled = true;
+                return;
+            }
+            modelSelect.disabled = false;
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = 'Select a model';
+            modelSelect.appendChild(blank);
+            const query = modelSearch.value.trim().toLowerCase();
+            modelList.forEach(model => {
+                const name = (model.name || model.id || '').toLowerCase();
+                if (query && !name.includes(query) && !String(model.id || '').toLowerCase().includes(query)) {
+                    return;
+                }
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name || model.id;
+                if (model.recommended) {
+                    option.textContent += ' ★';
+                }
+                modelSelect.appendChild(option);
+            });
+            modelSelect.value = modelList.find(item => item.id === formState.model) ? formState.model : '';
+        };
+
+        const updateBaseUrlPlaceholder = () => {
+            const provider = formState.provider;
+            baseInput.placeholder = defaultBaseUrls[provider] || 'Leave blank to use provider default';
+        };
+
+        const updateKeyVisibility = () => {
+            const provider = formState.provider;
+            if (localProviders.has(provider)) {
+                keyRow.style.display = 'none';
+                addKeySection.style.display = 'none';
+                formState.keyRef = '';
+            } else {
+                keyRow.style.display = 'flex';
+            }
+        };
+
+        const computeNanoBase = (legacy) => legacy
+            ? 'https://nano-gpt.com/api/v1legacy'
+            : 'https://nano-gpt.com/api/v1';
+
+        const applyNanoLegacy = (enabled) => {
+            formState.nanoGptLegacy = enabled;
+            nanoLegacyToggle.checked = enabled;
+            const current = (formState.baseUrl || '').trim();
+            if (!current || current.startsWith('https://nano-gpt.com/api/v1')) {
+                const next = computeNanoBase(enabled);
+                formState.baseUrl = next;
+                baseInput.value = next;
+                baseUrlTouched = true;
+            }
+        };
+
+        const refreshModels = async () => {
+            if (!formState.provider) return;
+            isLoadingModels = true;
+            updateModelSelect();
+            errorHint.style.display = 'none';
+            updateLocalHint();
+            try {
+                const baseUrl = baseUrlTouched ? formState.baseUrl : '';
+                const models = await providerApi.listModels(formState.provider, baseUrl, formState.keyRef);
+                modelList = Array.isArray(models) ? models : [];
+                if (localProviders.has(formState.provider)) {
+                    updateLocalHint();
+                } else {
+                    modelHint.style.display = 'none';
+                }
+            } catch (err) {
+                const message = err.message || 'Failed to fetch models.';
+                const isLocal = localProviders.has(formState.provider);
+                if (String(message).toLowerCase().includes('vault')) {
+                    security.vaultUnlocked = false;
+                    updateVaultSection();
+                }
+                if (isLocal) {
+                    updateLocalHint(message);
+                } else {
+                    errorHint.textContent = message;
+                    errorHint.style.display = 'block';
+                }
+                modelList = [];
+            } finally {
+                isLoadingModels = false;
+                updateModelSelect();
+            }
+        };
+
+        const loadInitialData = async () => {
+            try {
+                security = await settingsApi.getSecurity();
+            } catch (err) {
+                log(`Failed to load security settings: ${err.message}`, 'warning');
+            }
+
+            try {
+                const keysResponse = await settingsApi.listKeys();
+                if (keysResponse && keysResponse.providers) {
+                    keyMetadata = keysResponse;
+                }
+            } catch (err) {
+                log(`Failed to load API keys: ${err.message}`, 'warning');
+            }
+
+            if (agentId) {
+                try {
+                    const endpoint = await agentEndpointsApi.get(agentId);
+                    if (endpoint) {
+                        formState.provider = endpoint.provider || formState.provider;
+                        formState.model = endpoint.model || '';
+                        formState.keyRef = endpoint.apiKeyRef || '';
+                        formState.baseUrl = endpoint.baseUrl || '';
+                        formState.temperature = endpoint.temperature ?? '';
+                        formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
+                        formState.timeoutMs = endpoint.timeoutMs ?? '';
+                        formState.maxRetries = endpoint.maxRetries ?? '';
+                    }
+                } catch (_) {
+                    if (agent?.endpoint) {
+                        formState.provider = agent.endpoint.provider || formState.provider;
+                        formState.model = agent.endpoint.model || '';
+                        formState.baseUrl = agent.endpoint.baseUrl || '';
+                        formState.temperature = agent.endpoint.temperature ?? '';
+                        formState.maxOutputTokens = agent.endpoint.maxOutputTokens ?? '';
+                    }
+                }
+            }
+
+            if (formState.provider === 'nanogpt') {
+                formState.nanoGptLegacy = (formState.baseUrl || '').includes('/api/v1legacy');
+                if (!formState.baseUrl) {
+                    formState.baseUrl = computeNanoBase(formState.nanoGptLegacy);
+                }
+            }
+            if (formState.baseUrl) {
+                baseUrlTouched = true;
+            }
+
+            providerSelect.value = formState.provider;
+            modelSearch.value = '';
+            baseInput.value = formState.baseUrl;
+            tempInput.value = formState.temperature;
+            tokenInput.value = formState.maxOutputTokens;
+            timeoutInput.value = formState.timeoutMs;
+            retryInput.value = formState.maxRetries;
+            nanoLegacyToggle.checked = formState.nanoGptLegacy;
+            const advancedPref = localStorage.getItem('control-room:agent-settings-advanced');
+            if (advancedPref === 'open') {
+                advancedBody.style.display = 'flex';
+                advancedToggle.textContent = 'Hide advanced';
+            }
+
+            updateVaultSection();
+            updateKeySelect();
+            updateKeyVisibility();
+            updateBaseUrlPlaceholder();
+            renderNanoLegacy();
+            updateLocalActions();
+            await refreshModels();
+        };
+
+        const normalizeBaseUrl = (value) => (value || '').trim().replace(/\/+$/, '').toLowerCase();
+        const looksLikeProviderDefault = (value, provider) => {
+            const candidate = normalizeBaseUrl(value);
+            const fallback = normalizeBaseUrl(defaultBaseUrls[provider]);
+            if (!candidate || !fallback) return false;
+            if (candidate === fallback) return true;
+            const variants = [
+                `${fallback}/v1`,
+                `${fallback}/api/v1`,
+                `${fallback}/api/v1/models`,
+                `${fallback}/api/v1legacy`
+            ];
+            return variants.includes(candidate);
+        };
+
+        providerSelect.addEventListener('change', () => {
+            const previousProvider = formState.provider;
+            formState.provider = providerSelect.value;
+            if (formState.baseUrl && looksLikeProviderDefault(formState.baseUrl, previousProvider)) {
+                formState.baseUrl = '';
+                baseInput.value = '';
+                baseUrlTouched = false;
+            } else if (formState.baseUrl) {
+                const isKnownDefault = Object.keys(defaultBaseUrls)
+                    .some(provider => looksLikeProviderDefault(formState.baseUrl, provider));
+                if (isKnownDefault) {
+                    formState.baseUrl = '';
+                    baseInput.value = '';
+                    baseUrlTouched = false;
+                }
+            }
+            updateKeyVisibility();
+            if (formState.provider === 'nanogpt') {
+                applyNanoLegacy(formState.nanoGptLegacy);
+            }
+            updateKeySelect();
+            updateBaseUrlPlaceholder();
+            renderNanoLegacy();
+            updateLocalActions();
+            updateLocalHint();
+            refreshModels();
+        });
+
+        keySelect.addEventListener('change', () => {
+            formState.keyRef = keySelect.value;
+            refreshModels();
+        });
+
+        keyAddBtn.addEventListener('click', () => {
+            addKeySection.style.display = 'flex';
+            addKeySection.classList.add('visible');
+            addKeyNameInput.value = '';
+            addKeyValueInput.value = '';
+        });
+
+        addKeyCancelBtn.addEventListener('click', () => {
+            addKeySection.style.display = 'none';
+        });
+
+        addKeySaveBtn.addEventListener('click', async () => {
+            errorHint.style.display = 'none';
+            try {
+                if (security.keysSecurityMode === 'encrypted' && !security.vaultUnlocked) {
+                    errorHint.textContent = 'Unlock the key vault before adding a key.';
+                    errorHint.style.display = 'block';
+                    return;
+                }
+                const payload = {
+                    provider: formState.provider,
+                    label: addKeyNameInput.value.trim(),
+                    key: addKeyValueInput.value.trim()
+                };
+                const result = await settingsApi.addKey(payload);
+                if (result && result.keyRef) {
+                    formState.keyRef = result.keyRef;
+                }
+                const keysResponse = await settingsApi.listKeys();
+                if (keysResponse && keysResponse.providers) {
+                    keyMetadata = keysResponse;
+                }
+                updateKeySelect();
+                addKeySection.style.display = 'none';
+                await refreshModels();
+            } catch (err) {
+                errorHint.textContent = err.message || 'Failed to save key.';
+                errorHint.style.display = 'block';
+            }
+        });
+
+        modelSelect.addEventListener('change', () => {
+            if (modelSelect.value) {
+                formState.model = modelSelect.value;
+            }
+        });
+
+        modelSearch.addEventListener('input', updateModelSelect);
+
+        modelRefreshBtn.addEventListener('click', () => {
+            refreshModels();
+        });
+
+        baseInput.addEventListener('input', () => {
+            formState.baseUrl = baseInput.value.trim();
+            baseUrlTouched = true;
+            updateLocalHint();
+        });
+
+        nanoLegacyToggle.addEventListener('change', () => {
+            applyNanoLegacy(nanoLegacyToggle.checked);
+            refreshModels();
+        });
+
+        tempInput.addEventListener('input', () => {
+            formState.temperature = tempInput.value;
+        });
+
+        tokenInput.addEventListener('input', () => {
+            formState.maxOutputTokens = tokenInput.value;
+        });
+
+        timeoutInput.addEventListener('input', () => {
+            formState.timeoutMs = timeoutInput.value;
+        });
+
+        retryInput.addEventListener('input', () => {
+            formState.maxRetries = retryInput.value;
+        });
+
+        vaultBtn.addEventListener('click', async () => {
+            if (!vaultInput.value) return;
+            errorHint.style.display = 'none';
+            try {
+                await settingsApi.unlockVault(vaultInput.value);
+                security.vaultUnlocked = true;
+                updateVaultSection();
+                await refreshModels();
+            } catch (err) {
+                errorHint.textContent = err.message || 'Failed to unlock vault.';
+                errorHint.style.display = 'block';
+            } finally {
+                vaultInput.value = '';
+            }
+        });
+
+        localRetry.addEventListener('click', () => {
+            refreshModels();
+        });
+
+        localHelp.addEventListener('click', () => {
+            const provider = formState.provider;
+            let message = 'Make sure your local provider is running and reachable.\n\n';
+            if (provider === 'lmstudio') {
+                message += 'Open LM Studio, load a model, and keep it running.\n';
+                message += 'Default URL: http://localhost:1234';
+            } else if (provider === 'ollama') {
+                message += 'Start the Ollama service and pull a model.\n';
+                message += 'Default URL: http://localhost:11434';
+            } else if (provider === 'jan') {
+                message += 'Start Jan, load a model, and enable the API server.\n';
+                message += 'Default URL: http://localhost:1234';
+            } else if (provider === 'koboldcpp') {
+                message += 'Start KoboldCPP with the API server enabled.\n';
+                message += 'Default URL: http://localhost:1234';
+            } else {
+                message += 'Check that your local server is running and that the Base URL is correct.';
+            }
+            alert(message);
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            errorHint.style.display = 'none';
+            if (!formState.provider || !formState.model) {
+                errorHint.textContent = 'Provider and model are required.';
+                errorHint.style.display = 'block';
+                return;
+            }
+            if (requiresKey.has(formState.provider) && !formState.keyRef) {
+                errorHint.textContent = 'API key is required for this provider.';
+                errorHint.style.display = 'block';
+                return;
+            }
+
+            const payload = {
+                provider: formState.provider,
+                model: formState.model,
+                apiKeyRef: formState.keyRef || null,
+                baseUrl: formState.baseUrl || null
+            };
+
+            const temperature = parseFloat(formState.temperature);
+            if (!Number.isNaN(temperature)) {
+                payload.temperature = temperature;
+            }
+            const maxTokens = parseInt(formState.maxOutputTokens, 10);
+            if (!Number.isNaN(maxTokens)) {
+                payload.maxOutputTokens = maxTokens;
+            }
+            const timeoutMs = parseInt(formState.timeoutMs, 10);
+            if (!Number.isNaN(timeoutMs)) {
+                payload.timeoutMs = timeoutMs;
+            }
+            const maxRetries = parseInt(formState.maxRetries, 10);
+            if (!Number.isNaN(maxRetries)) {
+                payload.maxRetries = maxRetries;
+            }
+
+            try {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Saving...';
+                await agentEndpointsApi.save(agentId, payload);
+                notificationStore.success(`Saved settings for ${name}`, 'workbench');
+                close();
+            } catch (err) {
+                errorHint.textContent = err.message || 'Failed to save agent settings.';
+                errorHint.style.display = 'block';
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Save';
+            }
+        });
+
+        cancelBtn.addEventListener('click', close);
+
+        advancedToggle.addEventListener('click', () => {
+            const isOpen = advancedBody.style.display !== 'none';
+            const nextOpen = !isOpen;
+            advancedBody.style.display = nextOpen ? 'flex' : 'none';
+            advancedToggle.textContent = nextOpen ? 'Hide advanced' : 'Advanced settings';
+            localStorage.setItem('control-room:agent-settings-advanced', nextOpen ? 'open' : 'closed');
+        });
+
+        if (!agentId) {
+            errorHint.textContent = 'Agent id missing.';
+            errorHint.style.display = 'block';
+        } else {
+            loadInitialData();
+        }
     }
 
     function buildGreetingPrompt(agent) {

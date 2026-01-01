@@ -1,0 +1,35 @@
+{
+  "version" : 1,
+  "agents" : {
+    "planner" : {
+      "provider" : "openrouter",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : "https://api.openai.com",
+      "apiKeyRef" : "openrouter:openrouter-a56348",
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "writer" : {
+      "provider" : "lmstudio",
+      "model" : "claude-sonnet-4",
+      "baseUrl" : null,
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "waldorf" : {
+      "provider" : "lmstudio",
+      "model" : "qwen/qwen3-4b-thinking-2507",
+      "baseUrl" : "http://192.168.1.16:1234",
+      "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    }
+  }
+}

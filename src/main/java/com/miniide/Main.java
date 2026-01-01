@@ -12,6 +12,10 @@ import com.miniide.models.Notification.Scope;
 import com.miniide.models.Notification.Category;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
+import com.miniide.providers.ProviderModelsService;
+import com.miniide.settings.AgentKeysMetadataFile;
+import com.miniide.settings.SecuritySettings;
+import com.miniide.settings.SettingsService;
 import io.javalin.Javalin;
 import io.javalin.http.BadRequestResponse;
 import io.javalin.http.Context;
@@ -35,9 +39,12 @@ public class Main {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static WorkspaceService workspaceService;
     private static AgentRegistry agentRegistry;
+    private static AgentEndpointRegistry agentEndpointRegistry;
     private static NotificationStore notificationStore;
     private static IssueMemoryService issueService;
     private static AppLogger logger;
+    private static SettingsService settingsService;
+    private static ProviderModelsService providerModelsService;
 
     public static void main(String[] args) {
         try {
@@ -64,10 +71,18 @@ public class Main {
             agentRegistry = new AgentRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
             logger.info("Agent registry initialized");
 
+            agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
+            logger.info("Agent endpoint registry initialized");
+
             // Initialize notification and issue services
             notificationStore = new NotificationStore();
             issueService = new IssueMemoryService();
             logger.info("Notification and Issue services initialized");
+
+            // Initialize settings and provider services
+            settingsService = new SettingsService(AppConfig.getSettingsDirectory(), objectMapper);
+            providerModelsService = new ProviderModelsService(objectMapper);
+            logger.info("Settings services initialized");
 
             // Create and configure Javalin
             Javalin app = Javalin.create(cfg -> {
@@ -148,11 +163,26 @@ public class Main {
         app.get("/api/agents/{id}", Main::getAgent);
         app.put("/api/agents/{id}", Main::updateAgent);
         app.post("/api/agents/import", Main::importAgent);
+        app.get("/api/agent-endpoints", Main::listAgentEndpoints);
+        app.get("/api/agent-endpoints/{id}", Main::getAgentEndpoint);
+        app.put("/api/agent-endpoints/{id}", Main::updateAgentEndpoint);
 
         // Role Settings endpoints
         app.get("/api/agents/role-settings", Main::getRoleSettings);
         app.get("/api/agents/role-settings/{role}", Main::getRoleSettingsByRole);
         app.put("/api/agents/role-settings/{role}", Main::saveRoleSettings);
+
+        // Global Settings endpoints
+        app.get("/api/settings/security", Main::getSecuritySettings);
+        app.put("/api/settings/security", Main::updateSecuritySettings);
+        app.post("/api/settings/security/unlock", Main::unlockSecurityVault);
+        app.post("/api/settings/security/lock", Main::lockSecurityVault);
+        app.get("/api/settings/keys", Main::listApiKeys);
+        app.post("/api/settings/keys", Main::addApiKey);
+        app.delete("/api/settings/keys/{provider}/{id}", Main::deleteApiKey);
+
+        // Provider models
+        app.get("/api/providers/models", Main::getProviderModels);
 
         // Notification endpoints
         app.get("/api/notifications", Main::getNotifications);
@@ -415,6 +445,9 @@ public class Main {
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
             Agent created = agentRegistry.createAgent(agent);
+            if (created.getEndpoint() != null) {
+                agentEndpointRegistry.upsertEndpoint(created.getId(), created.getEndpoint());
+            }
             ctx.status(201).json(created);
         } catch (IllegalArgumentException e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
@@ -450,6 +483,9 @@ public class Main {
                 ctx.status(404).json(Map.of("error", "Agent not found: " + id));
                 return;
             }
+            if (updates.getEndpoint() != null) {
+                agentEndpointRegistry.upsertEndpoint(id, updates.getEndpoint());
+            }
             ctx.json(updated);
         } catch (Exception e) {
             logger.error("Failed to update agent: " + e.getMessage(), e);
@@ -464,6 +500,148 @@ public class Main {
             ctx.status(201).json(imported);
         } catch (Exception e) {
             logger.error("Failed to import agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void listAgentEndpoints(Context ctx) {
+        ctx.json(agentEndpointRegistry.listEndpoints());
+    }
+
+    private static void getAgentEndpoint(Context ctx) {
+        String id = ctx.pathParam("id");
+        var endpoint = agentEndpointRegistry.getEndpoint(id);
+        if (endpoint == null) {
+            ctx.status(404).json(Map.of("error", "Endpoint not found for agent: " + id));
+            return;
+        }
+        ctx.json(endpoint);
+    }
+
+    private static void updateAgentEndpoint(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            var config = ctx.bodyAsClass(com.miniide.models.AgentEndpointConfig.class);
+            var saved = agentEndpointRegistry.upsertEndpoint(id, config);
+            if (saved == null) {
+                ctx.status(400).json(Map.of("error", "Invalid agent endpoint payload"));
+                return;
+            }
+            ctx.json(saved);
+        } catch (Exception e) {
+            logger.error("Failed to update agent endpoint: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ===== Settings Endpoints =====
+
+    private static void getSecuritySettings(Context ctx) {
+        SecuritySettings settings = settingsService.getSecuritySettings();
+        ctx.json(Map.of(
+            "keysSecurityMode", settings.getKeysSecurityMode(),
+            "vaultUnlocked", settingsService.isVaultUnlocked()
+        ));
+    }
+
+    private static void updateSecuritySettings(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String mode = json.has("keysSecurityMode") ? json.get("keysSecurityMode").asText() : null;
+            String password = json.has("password") ? json.get("password").asText() : null;
+            SecuritySettings updated = settingsService.updateSecurityMode(mode, password);
+            ctx.json(Map.of("keysSecurityMode", updated.getKeysSecurityMode()));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to update security settings: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void unlockSecurityVault(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String password = json.has("password") ? json.get("password").asText() : null;
+            if (password == null || password.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Password is required"));
+                return;
+            }
+            settingsService.unlockVault(password);
+            ctx.json(Map.of("ok", true));
+        } catch (Exception e) {
+            logger.error("Failed to unlock key vault: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void lockSecurityVault(Context ctx) {
+        settingsService.lockVault();
+        ctx.json(Map.of("ok", true));
+    }
+
+    private static void listApiKeys(Context ctx) {
+        try {
+            AgentKeysMetadataFile metadata = settingsService.listKeyMetadata();
+            ctx.json(metadata);
+        } catch (Exception e) {
+            logger.error("Failed to list API keys: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void addApiKey(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String provider = json.has("provider") ? json.get("provider").asText() : null;
+            String label = json.has("label") ? json.get("label").asText() : null;
+            String key = json.has("key") ? json.get("key").asText() : null;
+            String id = json.has("id") ? json.get("id").asText() : null;
+            String password = json.has("password") ? json.get("password").asText() : null;
+            String keyRef = settingsService.addKey(provider, label, key, id, password);
+            ctx.json(Map.of("keyRef", keyRef));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to add API key: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void deleteApiKey(Context ctx) {
+        try {
+            String provider = ctx.pathParam("provider");
+            String id = ctx.pathParam("id");
+            JsonNode json = ctx.body().isBlank() ? null : objectMapper.readTree(ctx.body());
+            String password = json != null && json.has("password") ? json.get("password").asText() : null;
+            settingsService.deleteKey(provider, id, password);
+            ctx.json(Map.of("ok", true));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to delete API key: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void getProviderModels(Context ctx) {
+        try {
+            String provider = ctx.queryParam("provider");
+            String baseUrl = ctx.queryParam("baseUrl");
+            String keyRef = ctx.queryParam("keyRef");
+            String apiKey = null;
+            if (keyRef != null && !keyRef.isBlank()) {
+                apiKey = settingsService.resolveKey(keyRef);
+            }
+            if (provider == null || provider.isBlank()) {
+                ctx.status(400).json(Map.of("error", "provider is required"));
+                return;
+            }
+            ctx.json(providerModelsService.fetchModels(provider, apiKey, baseUrl));
+        } catch (IllegalStateException e) {
+            ctx.status(401).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Failed to fetch provider models: " + e.getMessage(), e);
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }

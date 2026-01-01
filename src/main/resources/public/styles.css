@@ -1683,6 +1683,72 @@ html, body {
     max-width: 520px;
 }
 
+.agent-settings-modal {
+    min-width: 520px;
+    max-width: 720px;
+}
+
+.agent-settings-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.agent-settings-inline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.agent-settings-inline .modal-input,
+.agent-settings-inline .modal-select {
+    flex: 1;
+}
+
+.agent-settings-add-key {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-dark);
+}
+
+.agent-settings-vault {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-dark);
+}
+
+.agent-settings-advanced {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.agent-settings-advanced-toggle {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    align-self: flex-start;
+}
+
+.agent-settings-advanced-toggle:hover {
+    background: var(--bg-lighter);
+}
+
+.agent-settings-advanced-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .agent-greeting-modal {
     min-width: 520px;
     max-width: 700px;
