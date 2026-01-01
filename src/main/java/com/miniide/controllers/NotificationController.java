@@ -82,7 +82,7 @@ public class NotificationController implements Controller {
             ctx.json(notifications);
         } catch (Exception e) {
             logger.error("Error getting notifications: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -101,7 +101,7 @@ public class NotificationController implements Controller {
             }
         } catch (Exception e) {
             logger.error("Error getting notification: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -124,7 +124,7 @@ public class NotificationController implements Controller {
             ctx.json(Map.of("unreadCount", count));
         } catch (Exception e) {
             logger.error("Error getting unread count: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -169,7 +169,7 @@ public class NotificationController implements Controller {
             ctx.status(201).json(notification);
         } catch (Exception e) {
             logger.error("Error creating notification: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -187,7 +187,7 @@ public class NotificationController implements Controller {
             }
         } catch (Exception e) {
             logger.error("Error updating notification: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -204,7 +204,7 @@ public class NotificationController implements Controller {
             }
         } catch (Exception e) {
             logger.error("Error deleting notification: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -215,7 +215,7 @@ public class NotificationController implements Controller {
             ctx.json(Map.of("success", true, "message", "All notifications marked as read"));
         } catch (Exception e) {
             logger.error("Error marking all notifications read: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -235,7 +235,7 @@ public class NotificationController implements Controller {
             }
         } catch (Exception e) {
             logger.error("Error clearing notifications: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }

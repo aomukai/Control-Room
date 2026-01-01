@@ -63,7 +63,7 @@ public class AgentController implements Controller {
             ctx.json(agentRegistry.listEnabledAgents());
         } catch (Exception e) {
             logger.error("Failed to list agents: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -72,7 +72,7 @@ public class AgentController implements Controller {
             ctx.json(agentRegistry.listAllAgents());
         } catch (Exception e) {
             logger.error("Failed to list agents: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -85,12 +85,12 @@ public class AgentController implements Controller {
             }
             ctx.status(201).json(created);
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (BadRequestResponse e) {
             ctx.status(400).json(Map.of("error", "Invalid agent payload"));
         } catch (Exception e) {
             logger.error("Failed to create agent: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -105,7 +105,7 @@ public class AgentController implements Controller {
             ctx.json(agent);
         } catch (Exception e) {
             logger.error("Failed to get agent: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -124,7 +124,7 @@ public class AgentController implements Controller {
             ctx.json(updated);
         } catch (Exception e) {
             logger.error("Failed to update agent: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -141,7 +141,7 @@ public class AgentController implements Controller {
             ctx.json(updated);
         } catch (Exception e) {
             logger.error("Failed to update agent status: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -158,7 +158,7 @@ public class AgentController implements Controller {
             ctx.json(Map.of("ok", true));
         } catch (Exception e) {
             logger.error("Failed to reorder agents: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -169,7 +169,7 @@ public class AgentController implements Controller {
             ctx.status(201).json(imported);
         } catch (Exception e) {
             logger.error("Failed to import agent: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -199,7 +199,7 @@ public class AgentController implements Controller {
             ctx.json(saved);
         } catch (Exception e) {
             logger.error("Failed to update agent endpoint: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -208,7 +208,7 @@ public class AgentController implements Controller {
             ctx.json(agentRegistry.listRoleSettings());
         } catch (Exception e) {
             logger.error("Failed to list role settings: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -232,7 +232,7 @@ public class AgentController implements Controller {
             ctx.json(settings);
         } catch (Exception e) {
             logger.error("Failed to get role settings: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -244,10 +244,10 @@ public class AgentController implements Controller {
             RoleFreedomSettings saved = agentRegistry.saveRoleSettings(settings);
             ctx.json(saved);
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to save role settings: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }

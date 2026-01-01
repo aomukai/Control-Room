@@ -58,10 +58,10 @@ public class SettingsController implements Controller {
             SecuritySettings updated = settingsService.updateSecurityMode(mode, password);
             ctx.json(Map.of("keysSecurityMode", updated.getKeysSecurityMode()));
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to update security settings: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -77,7 +77,7 @@ public class SettingsController implements Controller {
             ctx.json(Map.of("ok", true));
         } catch (Exception e) {
             logger.error("Failed to unlock key vault: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -92,7 +92,7 @@ public class SettingsController implements Controller {
             ctx.json(metadata);
         } catch (Exception e) {
             logger.error("Failed to list API keys: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -107,10 +107,10 @@ public class SettingsController implements Controller {
             String keyRef = settingsService.addKey(provider, label, key, id, password);
             ctx.json(Map.of("keyRef", keyRef));
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to add API key: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -123,10 +123,10 @@ public class SettingsController implements Controller {
             settingsService.deleteKey(provider, id, password);
             ctx.json(Map.of("ok", true));
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to delete API key: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -145,10 +145,10 @@ public class SettingsController implements Controller {
             }
             ctx.json(providerModelsService.fetchModels(provider, apiKey, baseUrl));
         } catch (IllegalStateException e) {
-            ctx.status(401).json(Map.of("error", e.getMessage()));
+            ctx.status(401).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to fetch provider models: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }

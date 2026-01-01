@@ -52,7 +52,7 @@ public class FileController implements Controller {
             ctx.json(workspaceService.getTree(""));
         } catch (Exception e) {
             logger.error("Error getting tree: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -66,9 +66,9 @@ public class FileController implements Controller {
             String content = workspaceService.readFile(path);
             ctx.contentType("text/plain; charset=utf-8").result(content);
         } catch (FileNotFoundException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -84,7 +84,7 @@ public class FileController implements Controller {
             logger.info("File saved: " + path);
             ctx.json(Map.of("success", true, "message", "File saved: " + path));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -108,7 +108,7 @@ public class FileController implements Controller {
             logger.info("Created " + type + ": " + path);
             ctx.json(Map.of("success", true, "message", "Created: " + path));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -123,9 +123,9 @@ public class FileController implements Controller {
             logger.info("Deleted: " + path);
             ctx.json(Map.of("success", true, "message", "Deleted: " + path));
         } catch (FileNotFoundException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -144,9 +144,9 @@ public class FileController implements Controller {
             logger.info("Renamed: " + from + " -> " + to);
             ctx.json(Map.of("success", true, "message", "Renamed: " + from + " -> " + to));
         } catch (FileNotFoundException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -164,9 +164,9 @@ public class FileController implements Controller {
             logger.info("Duplicated: " + path + " -> " + newPath);
             ctx.json(Map.of("success", true, "message", "Duplicated: " + path, "newPath", newPath));
         } catch (FileNotFoundException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -177,7 +177,7 @@ public class FileController implements Controller {
             List<SearchResult> results = workspaceService.search(query, pattern);
             ctx.json(results);
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -191,9 +191,9 @@ public class FileController implements Controller {
             List<SceneSegment> segments = workspaceService.getSceneSegments(path);
             ctx.json(segments);
         } catch (FileNotFoundException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 

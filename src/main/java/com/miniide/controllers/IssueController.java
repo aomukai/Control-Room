@@ -68,7 +68,7 @@ public class IssueController implements Controller {
             ctx.json(issues);
         } catch (Exception e) {
             logger.error("Error getting issues: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -86,7 +86,7 @@ public class IssueController implements Controller {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (Exception e) {
             logger.error("Error getting issue: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -117,7 +117,7 @@ public class IssueController implements Controller {
             ctx.status(201).json(issue);
         } catch (Exception e) {
             logger.error("Error creating issue: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -166,10 +166,10 @@ public class IssueController implements Controller {
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (IllegalArgumentException e) {
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Error updating issue: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -188,7 +188,7 @@ public class IssueController implements Controller {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (Exception e) {
             logger.error("Error deleting issue: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -221,10 +221,10 @@ public class IssueController implements Controller {
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (IllegalArgumentException e) {
-            ctx.status(404).json(Map.of("error", e.getMessage()));
+            ctx.status(404).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Error adding comment: " + e.getMessage());
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }

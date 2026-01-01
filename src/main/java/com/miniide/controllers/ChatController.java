@@ -93,7 +93,7 @@ public class ChatController implements Controller {
                 "content", response
             ));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 

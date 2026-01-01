@@ -154,7 +154,7 @@ public class WorkspaceController implements Controller {
             ));
         } catch (Exception e) {
             logger.error("Failed to get workspace info: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
@@ -193,7 +193,7 @@ public class WorkspaceController implements Controller {
             ));
         } catch (Exception e) {
             logger.error("Failed to select workspace: " + e.getMessage(), e);
-            ctx.status(500).json(Map.of("error", e.getMessage()));
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }
