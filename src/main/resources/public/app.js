@@ -53,7 +53,8 @@
         },
         agents: {
             list: [],
-            selectedId: null
+            selectedId: null,
+            statusById: {}
         },
         workspace: {
             name: '',
@@ -422,6 +423,9 @@
         async list() {
             return api('/api/agents');
         },
+        async listAll() {
+            return api('/api/agents/all');
+        },
         async create(data) {
             return api('/api/agents', {
                 method: 'POST',
@@ -437,6 +441,20 @@
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
+            });
+        },
+        async setStatus(id, enabled) {
+            return api(`/api/agents/${encodeURIComponent(id)}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+        },
+        async reorder(order) {
+            return api('/api/agents/order', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order })
             });
         },
         async import(data) {
@@ -1625,6 +1643,7 @@
             const item = document.createElement('div');
             item.className = 'agent-item';
             item.dataset.agentId = agent.id || '';
+            item.draggable = true;
 
             const icon = document.createElement('span');
             icon.className = 'agent-icon';
@@ -1668,8 +1687,9 @@
             info.appendChild(role);
 
             const status = document.createElement('div');
-            status.className = `agent-status ${agent.enabled === false ? '' : 'online'}`;
-            status.title = agent.enabled === false ? 'Offline' : 'Online';
+            const statusInfo = getAgentStatusInfo(agent);
+            status.className = `agent-status ${statusInfo.className}`;
+            status.title = statusInfo.title;
 
             item.appendChild(icon);
             item.appendChild(info);
@@ -1686,8 +1706,74 @@
                 showAgentContextMenu(e, agent);
             });
 
+            item.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', agent.id || '');
+                e.dataTransfer.effectAllowed = 'move';
+                item.classList.add('dragging');
+            });
+
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+            });
+
             container.appendChild(item);
         });
+
+        container.querySelectorAll('.agent-item').forEach(item => {
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const dragging = container.querySelector('.agent-item.dragging');
+                if (!dragging || dragging === item) return;
+                const rect = item.getBoundingClientRect();
+                const shouldInsertAfter = e.clientY > rect.top + rect.height / 2;
+                if (shouldInsertAfter) {
+                    item.after(dragging);
+                } else {
+                    item.before(dragging);
+                }
+            });
+
+            item.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                const orderedIds = Array.from(container.querySelectorAll('.agent-item'))
+                    .map(el => el.dataset.agentId)
+                    .filter(Boolean);
+                state.agents.list = orderedIds
+                    .map(id => agents.find(agent => agent.id === id))
+                    .filter(Boolean);
+                try {
+                    await agentApi.reorder(orderedIds);
+                } catch (err) {
+                    log(`Failed to save agent order: ${err.message}`, 'warning');
+                }
+            });
+        });
+    }
+
+    const PROVIDERS_REQUIRE_KEY = new Set([
+        'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai'
+    ]);
+    const LOCAL_PROVIDERS = new Set(['lmstudio', 'ollama', 'jan', 'koboldcpp']);
+
+    function getAgentStatusInfo(agent) {
+        if (agent.enabled === false) {
+            return { className: 'offline', title: 'Offline' };
+        }
+        const status = state.agents.statusById[agent.id] || 'unknown';
+        switch (status) {
+            case 'ready':
+                return { className: 'ready', title: 'Ready' };
+            case 'unreachable':
+                return { className: 'unreachable', title: 'Endpoint not reachable' };
+            case 'unconfigured':
+                return { className: 'unconfigured', title: 'No endpoint configured' };
+            case 'incomplete':
+                return { className: 'unreachable', title: 'Endpoint incomplete (missing model)' };
+            case 'checking':
+                return { className: 'checking', title: 'Checking endpoint...' };
+            default:
+                return { className: 'unknown', title: 'Status unknown' };
+        }
     }
 
     function renderWorkbenchChatPane() {
@@ -4634,6 +4720,10 @@
                 option.textContent = entry.label || entry.id;
                 keySelect.appendChild(option);
             });
+            const expectedPrefix = `${provider}:`;
+            if (formState.keyRef && !formState.keyRef.startsWith(expectedPrefix)) {
+                formState.keyRef = '';
+            }
             keySelect.value = formState.keyRef || '';
         };
 
@@ -4849,6 +4939,9 @@
                 }
             }
             updateKeyVisibility();
+            if (formState.keyRef && !formState.keyRef.startsWith(`${formState.provider}:`)) {
+                formState.keyRef = '';
+            }
             if (formState.provider === 'nanogpt') {
                 applyNanoLegacy(formState.nanoGptLegacy);
             }
@@ -5362,9 +5455,92 @@
         info.textContent = 'This will disable the agent. You can re-enable later.';
         body.appendChild(info);
 
-        confirmBtn.addEventListener('click', () => {
-            log(`Retired ${name}`, 'warning');
-            close();
+        confirmBtn.addEventListener('click', async () => {
+            try {
+                await agentApi.setStatus(agent.id, false);
+                log(`Retired ${name}`, 'warning');
+                await loadAgents();
+            } catch (err) {
+                log(`Failed to retire ${name}: ${err.message}`, 'error');
+            } finally {
+                close();
+            }
+        });
+    }
+
+    async function showRetiredAgentsModal() {
+        const { modal, body, confirmBtn, close } = createModalShell(
+            'Retired Agents',
+            'Close',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        modal.classList.add('retired-agent-modal');
+        confirmBtn.style.display = 'none';
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'Retired agents are hidden from the active roster.';
+        body.appendChild(info);
+
+        const list = document.createElement('div');
+        list.className = 'retired-agent-list';
+        body.appendChild(list);
+
+        try {
+            const agents = await agentApi.listAll();
+            const retired = (agents || []).filter(agent => agent.enabled === false);
+            if (retired.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'agent-empty';
+                empty.textContent = 'No retired agents.';
+                list.appendChild(empty);
+                return;
+            }
+
+            retired.forEach(agent => {
+                const row = document.createElement('div');
+                row.className = 'retired-agent-row';
+
+                const name = document.createElement('div');
+                name.className = 'retired-agent-name';
+                name.textContent = agent.name || 'Unnamed Agent';
+
+                const role = document.createElement('div');
+                role.className = 'retired-agent-role';
+                role.textContent = agent.role || 'role';
+
+                const reactivate = document.createElement('button');
+                reactivate.type = 'button';
+                reactivate.className = 'modal-btn modal-btn-secondary';
+                reactivate.textContent = 'Reactivate';
+                reactivate.addEventListener('click', async () => {
+                    reactivate.disabled = true;
+                    try {
+                        await agentApi.setStatus(agent.id, true);
+                        await loadAgents();
+                        row.remove();
+                    } catch (err) {
+                        log(`Failed to reactivate ${agent.name}: ${err.message}`, 'error');
+                        reactivate.disabled = false;
+                    }
+                });
+
+                row.appendChild(name);
+                row.appendChild(role);
+                row.appendChild(reactivate);
+                list.appendChild(row);
+            });
+        } catch (err) {
+            const error = document.createElement('div');
+            error.className = 'modal-hint';
+            error.textContent = `Failed to load retired agents: ${err.message}`;
+            body.appendChild(error);
+        }
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) close();
         });
     }
 
@@ -5937,15 +6113,79 @@
         try {
             const agents = await agentApi.list();
             state.agents.list = Array.isArray(agents) ? agents : [];
+            state.agents.statusById = {};
             renderAgentSidebar();
             renderAgentSelector();
+            await loadAgentStatuses();
             log(`Loaded ${state.agents.list.length} agent(s)`, 'info');
         } catch (err) {
             state.agents.list = [];
+            state.agents.statusById = {};
             renderAgentSidebar();
             renderAgentSelector();
             log(`Failed to load agents: ${err.message}`, 'error');
         }
+    }
+
+    async function loadAgentStatuses() {
+        const agents = state.agents.list || [];
+        if (agents.length === 0) return;
+
+        let endpoints = {};
+        try {
+            endpoints = await agentEndpointsApi.list();
+        } catch (err) {
+            log(`Failed to load agent endpoints: ${err.message}`, 'warning');
+        }
+
+        const statusById = { ...state.agents.statusById };
+        const reachabilityCache = new Map();
+
+        const resolveEndpoint = (agent) => endpoints?.[agent.id] || agent.endpoint || null;
+        const endpointConfigured = (endpoint) => {
+            if (!endpoint || !endpoint.provider) return false;
+            if (PROVIDERS_REQUIRE_KEY.has(endpoint.provider) && !endpoint.apiKeyRef) return false;
+            return true;
+        };
+
+        const checkReachability = async (endpoint) => {
+            const key = [
+                endpoint.provider,
+                endpoint.baseUrl || '',
+                endpoint.apiKeyRef || ''
+            ].join('|');
+            if (reachabilityCache.has(key)) {
+                return reachabilityCache.get(key);
+            }
+            const promise = providerApi.listModels(endpoint.provider, endpoint.baseUrl, endpoint.apiKeyRef)
+                .then(() => true)
+                .catch(() => false);
+            reachabilityCache.set(key, promise);
+            return promise;
+        };
+
+        agents.forEach(agent => {
+            const endpoint = resolveEndpoint(agent);
+            if (!endpointConfigured(endpoint)) {
+                statusById[agent.id] = 'unconfigured';
+            } else if (!endpoint.model) {
+                statusById[agent.id] = 'incomplete';
+            } else {
+                statusById[agent.id] = 'checking';
+            }
+        });
+        state.agents.statusById = statusById;
+        renderAgentSidebar();
+
+        for (const agent of agents) {
+            const endpoint = resolveEndpoint(agent);
+            if (!endpointConfigured(endpoint) || !endpoint?.model) continue;
+            const reachable = await checkReachability(endpoint);
+            statusById[agent.id] = reachable ? 'ready' : 'unreachable';
+        }
+
+        state.agents.statusById = statusById;
+        renderAgentSidebar();
     }
 
     function getExplorerVisible() {
@@ -6237,6 +6477,13 @@
         if (btnImportAgent) {
             btnImportAgent.addEventListener('click', () => {
                 showImportAgentDialog();
+            });
+        }
+
+        const btnRetiredAgents = document.getElementById('btn-retired-agents');
+        if (btnRetiredAgents) {
+            btnRetiredAgents.addEventListener('click', () => {
+                showRetiredAgentsModal();
             });
         }
 

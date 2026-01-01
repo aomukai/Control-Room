@@ -159,9 +159,12 @@ public class Main {
         app.get("/api/workspace/info", Main::getWorkspaceInfo);
         app.post("/api/workspace/select", Main::selectWorkspace);
         app.get("/api/agents", Main::getAgents);
+        app.get("/api/agents/all", Main::getAllAgents);
         app.post("/api/agents", Main::createAgent);
         app.get("/api/agents/{id}", Main::getAgent);
         app.put("/api/agents/{id}", Main::updateAgent);
+        app.put("/api/agents/{id}/status", Main::setAgentStatus);
+        app.put("/api/agents/order", Main::reorderAgents);
         app.post("/api/agents/import", Main::importAgent);
         app.get("/api/agent-endpoints", Main::listAgentEndpoints);
         app.get("/api/agent-endpoints/{id}", Main::getAgentEndpoint);
@@ -441,6 +444,15 @@ public class Main {
         }
     }
 
+    private static void getAllAgents(Context ctx) {
+        try {
+            ctx.json(agentRegistry.listAllAgents());
+        } catch (Exception e) {
+            logger.error("Failed to list agents: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
     private static void createAgent(Context ctx) {
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
@@ -489,6 +501,40 @@ public class Main {
             ctx.json(updated);
         } catch (Exception e) {
             logger.error("Failed to update agent: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void setAgentStatus(Context ctx) {
+        try {
+            String id = ctx.pathParam("id");
+            JsonNode json = objectMapper.readTree(ctx.body());
+            boolean enabled = json.has("enabled") && json.get("enabled").asBoolean();
+            Agent updated = agentRegistry.setEnabled(id, enabled);
+            if (updated == null) {
+                ctx.status(404).json(Map.of("error", "Agent not found: " + id));
+                return;
+            }
+            ctx.json(updated);
+        } catch (Exception e) {
+            logger.error("Failed to update agent status: " + e.getMessage(), e);
+            ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static void reorderAgents(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            if (!json.has("order") || !json.get("order").isArray()) {
+                ctx.status(400).json(Map.of("error", "order array required"));
+                return;
+            }
+            List<String> order = new ArrayList<>();
+            json.get("order").forEach(node -> order.add(node.asText()));
+            agentRegistry.reorderAgents(order);
+            ctx.json(Map.of("ok", true));
+        } catch (Exception e) {
+            logger.error("Failed to reorder agents: " + e.getMessage(), e);
             ctx.status(500).json(Map.of("error", e.getMessage()));
         }
     }

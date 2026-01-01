@@ -124,6 +124,53 @@ public class AgentRegistry {
         return null;
     }
 
+    public Agent setEnabled(String id, boolean enabled) {
+        if (agentsFile == null || agentsFile.getAgents() == null || id == null) {
+            return null;
+        }
+        for (Agent existing : agentsFile.getAgents()) {
+            if (id.equals(existing.getId())) {
+                existing.setEnabled(enabled);
+                existing.setUpdatedAt(System.currentTimeMillis());
+                saveToDisk();
+                return existing;
+            }
+        }
+        return null;
+    }
+
+    public void reorderAgents(List<String> orderedIds) {
+        if (agentsFile == null || agentsFile.getAgents() == null || orderedIds == null) {
+            return;
+        }
+        List<Agent> current = agentsFile.getAgents();
+        List<Agent> reordered = new ArrayList<>();
+        for (String id : orderedIds) {
+            if (id == null) continue;
+            for (Agent agent : current) {
+                if (id.equals(agent.getId())) {
+                    reordered.add(agent);
+                    break;
+                }
+            }
+        }
+        for (Agent agent : current) {
+            if (agent == null || agent.getId() == null) continue;
+            boolean included = false;
+            for (String id : orderedIds) {
+                if (agent.getId().equals(id)) {
+                    included = true;
+                    break;
+                }
+            }
+            if (!included) {
+                reordered.add(agent);
+            }
+        }
+        agentsFile.setAgents(reordered);
+        saveToDisk();
+    }
+
     public Agent createAgent(Agent agent) {
         if (agent == null) {
             throw new IllegalArgumentException("Agent payload is required");

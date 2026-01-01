@@ -3,8 +3,8 @@
   "agents" : {
     "planner" : {
       "provider" : "openrouter",
-      "model" : "claude-sonnet-4",
-      "baseUrl" : "https://api.openai.com",
+      "model" : "google/gemma-3-4b-it:free",
+      "baseUrl" : null,
       "apiKeyRef" : "openrouter:openrouter-a56348",
       "temperature" : null,
       "maxOutputTokens" : null,
@@ -13,7 +13,7 @@
     },
     "writer" : {
       "provider" : "lmstudio",
-      "model" : "claude-sonnet-4",
+      "model" : "qwen/qwen3-4b-thinking-2507",
       "baseUrl" : null,
       "apiKeyRef" : null,
       "temperature" : null,
