@@ -466,6 +466,18 @@
         }
     };
 
+    const PROVIDERS_REQUIRE_KEY = new Set([
+        'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai'
+    ]);
+    const LOCAL_PROVIDERS = new Set(['lmstudio', 'ollama', 'jan', 'koboldcpp']);
+
+    function isEndpointWired(endpoint) {
+        if (!endpoint || !endpoint.provider || !endpoint.model) return false;
+        const keyRef = endpoint.keyRef || endpoint.apiKeyRef || '';
+        if (PROVIDERS_REQUIRE_KEY.has(endpoint.provider) && !keyRef) return false;
+        return true;
+    }
+
     const agentEndpointsApi = {
         async list() {
             return api('/api/agent-endpoints');
@@ -1750,11 +1762,6 @@
         });
     }
 
-    const PROVIDERS_REQUIRE_KEY = new Set([
-        'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai'
-    ]);
-    const LOCAL_PROVIDERS = new Set(['lmstudio', 'ollama', 'jan', 'koboldcpp']);
-
     function getAgentStatusInfo(agent) {
         if (agent.enabled === false) {
             return { className: 'offline', title: 'Offline' };
@@ -2802,7 +2809,10 @@
             }
         ];
 
-        const providers = ['openai', 'anthropic', 'lmstudio', 'ollama', 'openrouter', 'custom-http'];
+        const providers = [
+            'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
+            'lmstudio', 'ollama', 'jan', 'koboldcpp', 'custom'
+        ];
 
         const initialTemplate = templates[0];
         const formState = resumeState || {
@@ -2812,10 +2822,14 @@
             skills: [...initialTemplate.skills],
             goals: [...initialTemplate.goals],
             instructions: initialTemplate.instructions,
-            provider: 'anthropic',
-            model: 'claude-sonnet-4',
+            provider: 'openai',
+            model: '',
+            keyRef: '',
+            baseUrl: '',
             temperature: '',
             maxOutputTokens: '',
+            timeoutMs: '',
+            maxRetries: '',
             configurePersonality: false,
             personalityConfigured: false,
             personalityInstructions: '',
@@ -2942,92 +2956,80 @@
         };
 
         const renderEndpointStep = () => {
-            const providerRow = document.createElement('div');
-            providerRow.className = 'modal-row';
-            const providerLabel = document.createElement('label');
-            providerLabel.className = 'modal-label';
-            providerLabel.textContent = 'Provider';
-            providerLabel.title = 'Which LLM provider this agent uses.';
-            const providerSelect = document.createElement('select');
-            providerSelect.className = 'modal-select';
-            providerSelect.title = 'Select the provider for this agent.';
-            providers.forEach(provider => {
-                const option = document.createElement('option');
-                option.value = provider;
-                option.textContent = provider;
-                providerSelect.appendChild(option);
+            const info = document.createElement('div');
+            info.className = 'modal-text';
+            info.textContent = 'Configure the endpoint this agent will use.';
+            body.appendChild(info);
+
+            const summary = document.createElement('div');
+            summary.className = 'modal-text';
+            const providerLabel = formState.provider ? escapeHtml(formState.provider) : 'Not set';
+            const modelLabel = formState.model ? escapeHtml(formState.model) : 'Not set';
+            summary.innerHTML = `
+                <div><strong>Provider:</strong> ${providerLabel}</div>
+                <div><strong>Model:</strong> ${modelLabel}</div>
+            `;
+            body.appendChild(summary);
+
+            const hint = document.createElement('div');
+            hint.className = 'modal-hint';
+            const wired = isEndpointWired({
+                provider: formState.provider,
+                model: formState.model,
+                keyRef: formState.keyRef
             });
-            providerSelect.value = formState.provider;
-            providerRow.appendChild(providerLabel);
-            providerRow.appendChild(providerSelect);
-            body.appendChild(providerRow);
+            hint.textContent = wired
+                ? 'Endpoint configured. You can adjust settings anytime.'
+                : 'Endpoint not wired yet. Configure provider, model, and API key if required.';
+            body.appendChild(hint);
 
-            const modelRow = document.createElement('div');
-            modelRow.className = 'modal-row';
-            const modelLabel = document.createElement('label');
-            modelLabel.className = 'modal-label';
-            modelLabel.textContent = 'Model';
-            modelLabel.title = 'Model name or id for the provider.';
-            const modelInput = document.createElement('input');
-            modelInput.className = 'modal-input';
-            modelInput.type = 'text';
-            modelInput.placeholder = 'e.g., claude-sonnet-4';
-            modelInput.title = 'Exact model id (provider-specific).';
-            modelInput.value = formState.model;
-            modelRow.appendChild(modelLabel);
-            modelRow.appendChild(modelInput);
-            body.appendChild(modelRow);
+            const actions = document.createElement('div');
+            actions.className = 'modal-buttons';
+            const configureBtn = document.createElement('button');
+            configureBtn.type = 'button';
+            configureBtn.className = 'modal-btn modal-btn-primary';
+            configureBtn.textContent = 'Configure Endpoint';
+            actions.appendChild(configureBtn);
+            body.appendChild(actions);
 
-            const tempRow = document.createElement('div');
-            tempRow.className = 'modal-row';
-            const tempLabel = document.createElement('label');
-            tempLabel.className = 'modal-label';
-            tempLabel.textContent = 'Temperature (optional)';
-            tempLabel.title = 'Higher = more creative, lower = more precise.';
-            const tempInput = document.createElement('input');
-            tempInput.className = 'modal-input';
-            tempInput.type = 'number';
-            tempInput.step = '0.1';
-            tempInput.min = '0';
-            tempInput.max = '2';
-            tempInput.placeholder = 'Leave blank for model defaults';
-            tempInput.title = 'Leave blank to use model defaults.';
-            tempInput.value = formState.temperature;
-            tempRow.appendChild(tempLabel);
-            tempRow.appendChild(tempInput);
-            body.appendChild(tempRow);
+            configureBtn.addEventListener('click', () => {
+                const resumeStep = stepIndex;
+                close();
+                const draftAgent = {
+                    id: null,
+                    name: formState.name.trim() || generateAgentName(formState.role),
+                    role: formState.role.trim(),
+                    endpoint: {
+                        provider: formState.provider,
+                        model: formState.model,
+                        apiKeyRef: formState.keyRef || null,
+                        baseUrl: formState.baseUrl || null,
+                        temperature: formState.temperature ?? null,
+                        maxOutputTokens: formState.maxOutputTokens ?? null,
+                        timeoutMs: formState.timeoutMs ?? null,
+                        maxRetries: formState.maxRetries ?? null
+                    }
+                };
+                showAgentSettingsModal(draftAgent, {
+                    allowDraft: true,
+                    initialEndpoint: draftAgent.endpoint,
+                    onSave: async (endpoint) => {
+                        formState.provider = endpoint.provider || formState.provider;
+                        formState.model = endpoint.model || '';
+                        formState.keyRef = endpoint.apiKeyRef || endpoint.keyRef || '';
+                        formState.baseUrl = endpoint.baseUrl || '';
+                        formState.temperature = endpoint.temperature ?? '';
+                        formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
+                        formState.timeoutMs = endpoint.timeoutMs ?? '';
+                        formState.maxRetries = endpoint.maxRetries ?? '';
+                    },
+                    onClose: () => {
+                        showAddAgentWizard({ state: formState, stepIndex: resumeStep });
+                    }
+                });
+            });
 
-            const tokenRow = document.createElement('div');
-            tokenRow.className = 'modal-row';
-            const tokenLabel = document.createElement('label');
-            tokenLabel.className = 'modal-label';
-            tokenLabel.textContent = 'Max output tokens (optional)';
-            tokenLabel.title = 'Caps response length; leave blank for defaults.';
-            const tokenInput = document.createElement('input');
-            tokenInput.className = 'modal-input';
-            tokenInput.type = 'number';
-            tokenInput.min = '1';
-            tokenInput.placeholder = 'Leave blank for model defaults';
-            tokenInput.title = 'Leave blank to use model defaults.';
-            tokenInput.value = formState.maxOutputTokens;
-            tokenRow.appendChild(tokenLabel);
-            tokenRow.appendChild(tokenInput);
-            body.appendChild(tokenRow);
-
-            const updateEndpointState = () => {
-                formState.provider = providerSelect.value;
-                formState.model = modelInput.value.trim();
-                formState.temperature = tempInput.value;
-                formState.maxOutputTokens = tokenInput.value;
-                setNextEnabled(Boolean(formState.provider) && Boolean(formState.model));
-            };
-
-            providerSelect.addEventListener('change', updateEndpointState);
-            modelInput.addEventListener('input', updateEndpointState);
-            tempInput.addEventListener('input', updateEndpointState);
-            tokenInput.addEventListener('input', updateEndpointState);
-
-            updateEndpointState();
+            setNextEnabled(wired);
         };
 
         const renderPersonalityStep = () => {
@@ -3193,7 +3195,11 @@
                 goals: formState.goals,
                 endpoint: {
                     provider: formState.provider,
-                    model: formState.model
+                    model: formState.model,
+                    apiKeyRef: formState.keyRef || null,
+                    baseUrl: formState.baseUrl || null,
+                    timeoutMs: formState.timeoutMs || null,
+                    maxRetries: formState.maxRetries || null
                 },
                 personality: {
                     tone: 'neutral',
@@ -3216,7 +3222,6 @@
             if (!Number.isNaN(temperature)) {
                 payload.endpoint.temperature = temperature;
             }
-
             const maxTokens = parseInt(formState.maxOutputTokens, 10);
             if (!Number.isNaN(maxTokens)) {
                 payload.endpoint.maxOutputTokens = maxTokens;
@@ -3227,17 +3232,38 @@
                 confirmBtn.textContent = 'Creating...';
                 const created = await agentApi.create(payload);
                 log(`Created agent: ${created.name}`, 'success');
-                notificationStore.push(
-                    'success',
-                    'workbench',
-                    `Created ${created.name}.`,
-                    `Role: ${created.role || role}`,
-                    'social',
-                    false,
-                    'Run Greeting Scan',
-                    { kind: 'open-greeting-scan', agentId: created.id },
-                    'agents'
-                );
+                const endpointSnapshot = {
+                    provider: formState.provider,
+                    model: formState.model,
+                    keyRef: formState.keyRef || ''
+                };
+                const wiredNow = isEndpointWired(endpointSnapshot);
+                if (wiredNow) {
+                    notificationStore.push(
+                        'success',
+                        'workbench',
+                        `Created and connected ${created.name}.`,
+                        `Model: ${formState.model}`,
+                        'social',
+                        false,
+                        '',
+                        null,
+                        'agents'
+                    );
+                    await createAgentIntroIssue(created, endpointSnapshot, 'initial wiring');
+                } else {
+                    notificationStore.push(
+                        'success',
+                        'workbench',
+                        `Created ${created.name}.`,
+                        `Role: ${created.role || role}`,
+                        'social',
+                        false,
+                        '',
+                        null,
+                        'agents'
+                    );
+                }
                 await loadAgents();
                 close();
             } catch (err) {
@@ -4367,7 +4393,10 @@
         });
     }
 
-    function showAgentSettingsModal(agent) {
+    function showAgentSettingsModal(agent, options = {}) {
+        const allowDraft = Boolean(options.allowDraft);
+        const onSaveDraft = typeof options.onSave === 'function' ? options.onSave : null;
+        const onCloseDraft = typeof options.onClose === 'function' ? options.onClose : null;
         const name = agent?.name || 'Agent';
         const agentId = agent?.id;
         const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
@@ -4376,6 +4405,12 @@
             'Cancel',
             { closeOnCancel: true, closeOnConfirm: false }
         );
+        const closeWithCallback = (result = {}) => {
+            close();
+            if (onCloseDraft) {
+                onCloseDraft(result);
+            }
+        };
 
         modal.classList.add('agent-settings-modal');
 
@@ -4383,12 +4418,6 @@
             'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
             'lmstudio', 'ollama', 'jan', 'koboldcpp', 'custom'
         ];
-
-        const requiresKey = new Set([
-            'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai'
-        ]);
-
-        const localProviders = new Set(['lmstudio', 'ollama', 'jan', 'koboldcpp']);
 
         const defaultBaseUrls = {
             openai: 'https://api.openai.com',
@@ -4422,6 +4451,8 @@
         let modelList = [];
         let isLoadingModels = false;
         let baseUrlTouched = false;
+        let initialEndpointSnapshot = { provider: '', model: '', keyRef: '' };
+        let initialWired = false;
 
         const errorHint = document.createElement('div');
         errorHint.className = 'modal-hint modal-error-hint';
@@ -4669,12 +4700,12 @@
         };
 
         const updateLocalActions = () => {
-            const isLocal = localProviders.has(formState.provider);
+            const isLocal = LOCAL_PROVIDERS.has(formState.provider);
             localActions.style.display = isLocal ? 'flex' : 'none';
         };
 
         const updateLocalHint = (message = '') => {
-            const isLocal = localProviders.has(formState.provider);
+            const isLocal = LOCAL_PROVIDERS.has(formState.provider);
             if (!isLocal) {
                 modelHint.style.display = 'none';
                 return;
@@ -4774,7 +4805,7 @@
 
         const updateKeyVisibility = () => {
             const provider = formState.provider;
-            if (localProviders.has(provider)) {
+            if (LOCAL_PROVIDERS.has(provider)) {
                 keyRow.style.display = 'none';
                 addKeySection.style.display = 'none';
                 formState.keyRef = '';
@@ -4809,14 +4840,14 @@
                 const baseUrl = baseUrlTouched ? formState.baseUrl : '';
                 const models = await providerApi.listModels(formState.provider, baseUrl, formState.keyRef);
                 modelList = Array.isArray(models) ? models : [];
-                if (localProviders.has(formState.provider)) {
+                if (LOCAL_PROVIDERS.has(formState.provider)) {
                     updateLocalHint();
                 } else {
                     modelHint.style.display = 'none';
                 }
             } catch (err) {
                 const message = err.message || 'Failed to fetch models.';
-                const isLocal = localProviders.has(formState.provider);
+                const isLocal = LOCAL_PROVIDERS.has(formState.provider);
                 if (String(message).toLowerCase().includes('vault')) {
                     security.vaultUnlocked = false;
                     updateVaultSection();
@@ -4872,6 +4903,16 @@
                         formState.maxOutputTokens = agent.endpoint.maxOutputTokens ?? '';
                     }
                 }
+            } else if (allowDraft && options.initialEndpoint) {
+                const endpoint = options.initialEndpoint;
+                formState.provider = endpoint.provider || formState.provider;
+                formState.model = endpoint.model || '';
+                formState.keyRef = endpoint.apiKeyRef || endpoint.keyRef || '';
+                formState.baseUrl = endpoint.baseUrl || '';
+                formState.temperature = endpoint.temperature ?? '';
+                formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
+                formState.timeoutMs = endpoint.timeoutMs ?? '';
+                formState.maxRetries = endpoint.maxRetries ?? '';
             }
 
             if (formState.provider === 'nanogpt') {
@@ -4883,6 +4924,13 @@
             if (formState.baseUrl) {
                 baseUrlTouched = true;
             }
+
+            initialEndpointSnapshot = {
+                provider: formState.provider,
+                model: formState.model,
+                keyRef: formState.keyRef
+            };
+            initialWired = isEndpointWired(initialEndpointSnapshot);
 
             providerSelect.value = formState.provider;
             modelSearch.value = '';
@@ -5086,7 +5134,7 @@
                 errorHint.style.display = 'block';
                 return;
             }
-            if (requiresKey.has(formState.provider) && !formState.keyRef) {
+            if (PROVIDERS_REQUIRE_KEY.has(formState.provider) && !formState.keyRef) {
                 errorHint.textContent = 'API key is required for this provider.';
                 errorHint.style.display = 'block';
                 return;
@@ -5119,9 +5167,45 @@
             try {
                 confirmBtn.disabled = true;
                 confirmBtn.textContent = 'Saving...';
+                if (!agentId && allowDraft && onSaveDraft) {
+                    await onSaveDraft(payload);
+                    closeWithCallback({ saved: true });
+                    return;
+                }
+                const endpointSnapshot = {
+                    provider: formState.provider,
+                    model: formState.model,
+                    keyRef: formState.keyRef
+                };
+                const nowWired = isEndpointWired(endpointSnapshot);
+                const modelChanged = initialEndpointSnapshot.provider !== endpointSnapshot.provider
+                    || initialEndpointSnapshot.model !== endpointSnapshot.model;
+                const shouldSendIntro = nowWired && (!initialWired || modelChanged);
                 await agentEndpointsApi.save(agentId, payload);
-                notificationStore.success(`Saved settings for ${name}`, 'workbench');
-                close();
+                await loadAgentStatuses();
+                if (shouldSendIntro) {
+                    const reason = !initialWired ? 'initial wiring' : 'model change';
+                    const successMessage = !initialWired
+                        ? `Connected ${name} to ${formState.provider}.`
+                        : `Updated ${name} model.`;
+                    notificationStore.push(
+                        'success',
+                        'workbench',
+                        successMessage,
+                        `Model: ${formState.model}`,
+                        'social',
+                        false,
+                        '',
+                        null,
+                        'agents'
+                    );
+                    closeWithCallback({ saved: true });
+                    void createAgentIntroIssue(agent || { name }, endpointSnapshot, reason);
+                    return;
+                } else {
+                    notificationStore.success(`Saved endpoint settings for ${name}`, 'workbench');
+                }
+                closeWithCallback({ saved: true });
             } catch (err) {
                 errorHint.textContent = err.message || 'Failed to save agent settings.';
                 errorHint.style.display = 'block';
@@ -5130,7 +5214,7 @@
             }
         });
 
-        cancelBtn.addEventListener('click', close);
+        cancelBtn.addEventListener('click', () => closeWithCallback({ saved: false }));
 
         advancedToggle.addEventListener('click', () => {
             const isOpen = advancedBody.style.display !== 'none';
@@ -5140,11 +5224,92 @@
             localStorage.setItem('control-room:agent-settings-advanced', nextOpen ? 'open' : 'closed');
         });
 
-        if (!agentId) {
+        if (!agentId && !allowDraft) {
             errorHint.textContent = 'Agent id missing.';
             errorHint.style.display = 'block';
         } else {
             loadInitialData();
+        }
+    }
+
+    async function createAgentIntroIssue(agent, endpoint, reason) {
+        if (!agent) return null;
+        const name = agent.name || 'Agent';
+        const role = agent.role || 'role';
+        const provider = endpoint?.provider || 'provider';
+        const model = endpoint?.model || 'model';
+        const prompt = buildGreetingPrompt(agent);
+        const reasonLine = reason ? `Trigger: ${reason}` : '';
+        const body = [
+            `Intro from ${name}.`,
+            `${name} (${role}) is now wired to ${provider}${model ? ` / ${model}` : ''}.`,
+            reasonLine
+        ].filter(Boolean).join('\n');
+
+        try {
+            const issue = await issueApi.create({
+                title: `Agent intro: ${name}`,
+                body,
+                openedBy: name,
+                tags: ['agent-intro']
+            });
+            if (issue && issue.id) {
+                notificationStore.issueCreated(issue.id, issue.title, issue.openedBy, issue.assignedTo);
+                if (agent.id) {
+                    try {
+                        const reply = await api('/api/ai/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: prompt, agentId: agent.id })
+                        });
+                        if (reply && reply.content) {
+                            await issueApi.addComment(issue.id, {
+                                author: name,
+                                body: reply.content
+                            });
+                            notificationStore.issueCommentAdded(issue.id, name);
+                            await refreshIssueModal(issue.id);
+                        } else {
+                            notificationStore.warning(`Greeting response was empty for ${name}`, 'workbench');
+                        }
+                    } catch (err) {
+                        const errorMessage = `Greeting failed: ${err.message}`;
+                        log(`Failed to fetch greeting for ${name}: ${err.message}`, 'warning');
+                        notificationStore.warning(errorMessage, 'workbench');
+                        try {
+                            await issueApi.addComment(issue.id, {
+                                author: 'system',
+                                body: errorMessage
+                            });
+                            notificationStore.issueCommentAdded(issue.id, 'system');
+                            await refreshIssueModal(issue.id);
+                        } catch (commentErr) {
+                            log(`Failed to record greeting error: ${commentErr.message}`, 'warning');
+                        }
+                    }
+                }
+            }
+            return issue;
+        } catch (err) {
+            log(`Failed to create intro issue for ${name}: ${err.message}`, 'warning');
+            return null;
+        }
+    }
+
+    async function refreshIssueModal(issueId) {
+        if (!state.issueModal.isOpen || state.issueModal.issueId !== issueId) return;
+        state.issueModal.isLoading = true;
+        state.issueModal.error = null;
+        renderIssueModal();
+        try {
+            const issue = await issueApi.get(issueId);
+            state.issueModal.issue = issue;
+            state.issueModal.isLoading = false;
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.isLoading = false;
+            state.issueModal.error = err.message;
+            renderIssueModal();
         }
     }
 

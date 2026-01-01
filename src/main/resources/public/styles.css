@@ -2875,6 +2875,16 @@ html, body {
     color: var(--text-bright);
 }
 
+.panel-action-btn img {
+    width: 14px;
+    height: 14px;
+    filter: invert(70%);
+}
+
+.panel-action-btn:hover img {
+    filter: invert(100%);
+}
+
 .agent-create-modal {
     min-width: 520px;
     max-width: 640px;

@@ -3,7 +3,7 @@
   "agents" : {
     "planner" : {
       "provider" : "openrouter",
-      "model" : "google/gemma-3-4b-it:free",
+      "model" : "google/gemini-2.0-flash-exp:free",
       "baseUrl" : null,
       "apiKeyRef" : "openrouter:openrouter-a56348",
       "temperature" : null,
@@ -26,6 +26,26 @@
       "model" : "qwen/qwen3-4b-thinking-2507",
       "baseUrl" : "http://192.168.1.16:1234",
       "apiKeyRef" : null,
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "dr-bunsen-honeydew" : {
+      "provider" : "openrouter",
+      "model" : "google/gemini-2.0-flash-exp:free",
+      "baseUrl" : null,
+      "apiKeyRef" : "openrouter:openrouter-a56348",
+      "temperature" : null,
+      "maxOutputTokens" : null,
+      "timeoutMs" : null,
+      "maxRetries" : null
+    },
+    "testy-mactestface" : {
+      "provider" : "openrouter",
+      "model" : "anthropic/claude-haiku-4.5",
+      "baseUrl" : null,
+      "apiKeyRef" : "openrouter:openrouter-a56348",
       "temperature" : null,
       "maxOutputTokens" : null,
       "timeoutMs" : null,

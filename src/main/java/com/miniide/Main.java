@@ -12,6 +12,7 @@ import com.miniide.models.Notification.Scope;
 import com.miniide.models.Notification.Category;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
+import com.miniide.providers.ProviderChatService;
 import com.miniide.providers.ProviderModelsService;
 import com.miniide.settings.AgentKeysMetadataFile;
 import com.miniide.settings.SecuritySettings;
@@ -45,6 +46,7 @@ public class Main {
     private static AppLogger logger;
     private static SettingsService settingsService;
     private static ProviderModelsService providerModelsService;
+    private static ProviderChatService providerChatService;
 
     public static void main(String[] args) {
         try {
@@ -82,6 +84,7 @@ public class Main {
             // Initialize settings and provider services
             settingsService = new SettingsService(AppConfig.getSettingsDirectory(), objectMapper);
             providerModelsService = new ProviderModelsService(objectMapper);
+            providerChatService = new ProviderChatService(objectMapper);
             logger.info("Settings services initialized");
 
             // Create and configure Javalin
@@ -377,6 +380,46 @@ public class Main {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             String message = json.has("message") ? json.get("message").asText() : "";
+            String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
+
+            if (agentId != null && !agentId.isBlank()) {
+                Agent agent = agentRegistry.getAgent(agentId);
+                if (agent == null) {
+                    ctx.status(404).json(Map.of("error", "Agent not found: " + agentId));
+                    return;
+                }
+                var endpoint = agentEndpointRegistry.getEndpoint(agentId);
+                if (endpoint == null) {
+                    endpoint = agent.getEndpoint();
+                }
+                if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
+                    ctx.status(400).json(Map.of("error", "Agent endpoint not configured"));
+                    return;
+                }
+                if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+                    ctx.status(400).json(Map.of("error", "Agent model not configured"));
+                    return;
+                }
+                String provider = endpoint.getProvider().trim().toLowerCase();
+                String apiKey = null;
+                if (requiresApiKey(provider)) {
+                    String keyRef = endpoint.getApiKeyRef();
+                    if (keyRef == null || keyRef.isBlank()) {
+                        ctx.status(400).json(Map.of("error", "API key required for " + provider));
+                        return;
+                    }
+                    apiKey = settingsService.resolveKey(keyRef);
+                } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
+                    apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
+                }
+
+                String response = providerChatService.chat(provider, apiKey, endpoint, message);
+                ctx.json(Map.of(
+                    "role", "assistant",
+                    "content", response
+                ));
+                return;
+            }
 
             String response = generateStubResponse(message);
 
@@ -386,6 +429,22 @@ public class Main {
             ));
         } catch (Exception e) {
             ctx.status(500).json(Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static boolean requiresApiKey(String provider) {
+        if (provider == null) return false;
+        switch (provider.toLowerCase()) {
+            case "openai":
+            case "anthropic":
+            case "gemini":
+            case "grok":
+            case "openrouter":
+            case "nanogpt":
+            case "togetherai":
+                return true;
+            default:
+                return false;
         }
     }
 
