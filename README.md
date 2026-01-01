@@ -17,7 +17,10 @@ Control Room separates writing from orchestration:
 - In-file search and workspace search.
 - Patch review flow (diff modal) designed for AI-generated edits.
 - Workbench with agent sidebar, issue board MVP, and newsfeed.
-- Agent registry and profile system (avatars, roles, personalities, instructions).
+- Agent onboarding wizard, settings modal, and role settings modal.
+- Agent registry and profile system (avatars, roles, personalities, instructions, endpoints).
+- Agent availability lights and retired-model "nursing home" modal.
+- Sortable agent roster with persisted ordering.
 - Notification system (toast, status bar, notification center).
 - JSON persistence for issues and notifications.
 - Workspace switching with per-workspace data under `workspace/<name>`.
@@ -129,14 +132,64 @@ Issues:
 Agents:
 
 - GET `/api/agents`
+- GET `/api/agents/all`
 - POST `/api/agents`
 - GET `/api/agents/{id}`
 - PUT `/api/agents/{id}`
+- PUT `/api/agents/{id}/status`
+- PUT `/api/agents/order`
 - POST `/api/agents/import`
+- GET `/api/agent-endpoints`
+- GET `/api/agent-endpoints/{id}`
+- PUT `/api/agent-endpoints/{id}`
+- GET `/api/agents/role-settings`
+- GET `/api/agents/role-settings/{role}`
+- PUT `/api/agents/role-settings/{role}`
+
+Chat:
+
+- POST `/api/ai/chat`
+
+Settings and Providers:
+
+- GET `/api/settings/security`
+- PUT `/api/settings/security`
+- POST `/api/settings/security/unlock`
+- POST `/api/settings/security/lock`
+- GET `/api/settings/keys`
+- POST `/api/settings/keys`
+- DELETE `/api/settings/keys/{provider}/{id}`
+- GET `/api/providers/models`
+
+Workspace:
+
+- GET `/api/workspace/info`
+- POST `/api/workspace/select`
+- POST `/api/workspace/open`
+- POST `/api/workspace/terminal`
+
+Files:
+
+- GET `/api/tree`
+- GET `/api/file`
+- PUT `/api/file`
+- POST `/api/file`
+- DELETE `/api/file`
+- POST `/api/rename`
+- POST `/api/duplicate`
+- GET `/api/search`
+- GET `/api/segments`
+- POST `/api/file/reveal`
+- POST `/api/file/open-folder`
 
 Notifications:
 
 - GET `/api/notifications`
+- GET `/api/notifications/unread-count`
+- GET `/api/notifications/{id}`
+- POST `/api/notifications`
+- PUT `/api/notifications/{id}`
+- DELETE `/api/notifications/{id}`
 - POST `/api/notifications/mark-all-read`
 - POST `/api/notifications/clear`
 
