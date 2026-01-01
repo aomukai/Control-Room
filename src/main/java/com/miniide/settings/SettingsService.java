@@ -6,47 +6,40 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Service for managing security settings and API keys.
+ * Delegates to PlaintextKeyStore for file I/O and KeyMigrationService for mode switching.
+ */
 public class SettingsService {
-    private final Path settingsDir;
     private final Path securityPath;
-    private final Path keysPath;
-    private final Path vaultPath;
     private final ObjectMapper mapper;
     private final KeyVault keyVault;
+    private final PlaintextKeyStore plaintextStore;
+    private final KeyMigrationService migrationService;
 
     private SecuritySettings securitySettings;
 
     public SettingsService(Path settingsDir, ObjectMapper mapper) {
-        this.settingsDir = settingsDir;
         this.securityPath = settingsDir.resolve("security.json");
-        this.keysPath = settingsDir.resolve("agent-keys.json");
-        this.vaultPath = settingsDir.resolve("agent-keys.vault");
+        Path keysPath = settingsDir.resolve("agent-keys.json");
+        Path vaultPath = settingsDir.resolve("agent-keys.vault");
         this.mapper = mapper;
         this.keyVault = new KeyVault();
-        ensureSettingsDir();
+        this.plaintextStore = new PlaintextKeyStore(keysPath, mapper);
+        this.migrationService = new KeyMigrationService(plaintextStore, keyVault, vaultPath, mapper);
+
+        ensureSettingsDir(settingsDir);
         loadSecuritySettings();
     }
 
+    // ===== Security Settings =====
+
     public SecuritySettings getSecuritySettings() {
         return securitySettings;
-    }
-
-    public boolean isVaultUnlocked() {
-        return keyVault.isUnlocked();
-    }
-
-    public void lockVault() {
-        keyVault.lock();
-    }
-
-    public void unlockVault(String password) throws Exception {
-        keyVault.unlock(vaultPath, password, mapper);
     }
 
     public SecuritySettings updateSecurityMode(String mode, String password) throws Exception {
@@ -61,12 +54,12 @@ public class SettingsService {
             if (password == null || password.isBlank()) {
                 throw new IllegalArgumentException("Password is required to enable encryption.");
             }
-            migratePlaintextToEncrypted(password);
+            migrationService.migrateToEncrypted(password);
         } else if ("plaintext".equals(normalized)) {
             if (password == null || password.isBlank()) {
                 throw new IllegalArgumentException("Password is required to disable encryption.");
             }
-            migrateEncryptedToPlaintext(password);
+            migrationService.migrateToPlaintext(password);
         } else {
             throw new IllegalArgumentException("Unsupported security mode: " + mode);
         }
@@ -77,9 +70,26 @@ public class SettingsService {
         return securitySettings;
     }
 
+    // ===== Vault Operations =====
+
+    public boolean isVaultUnlocked() {
+        return keyVault.isUnlocked();
+    }
+
+    public void lockVault() {
+        keyVault.lock();
+    }
+
+    public void unlockVault(String password) throws Exception {
+        Path vaultPath = securityPath.getParent().resolve("agent-keys.vault");
+        keyVault.unlock(vaultPath, password, mapper);
+    }
+
+    // ===== Key Management =====
+
     public AgentKeysMetadataFile listKeyMetadata() throws IOException {
-        AgentKeysFile keys = loadKeysFile();
-        return toMetadata(keys);
+        AgentKeysFile keys = plaintextStore.load();
+        return plaintextStore.toMetadata(keys);
     }
 
     public String addKey(String provider, String label, String keyValue, String id, String password) throws Exception {
@@ -91,7 +101,7 @@ public class SettingsService {
         }
 
         String normalizedProvider = provider.trim().toLowerCase(Locale.US);
-        AgentKeysFile keys = loadKeysFile();
+        AgentKeysFile keys = plaintextStore.load();
         List<AgentKeyRecord> entries = keys.getProviders().computeIfAbsent(normalizedProvider, _k -> new ArrayList<>());
 
         String keyId = (id == null || id.isBlank()) ? generateKeyId(normalizedProvider) : id.trim();
@@ -112,10 +122,11 @@ public class SettingsService {
             List<AgentKeyRecord> decryptedEntries = decrypted.getProviders()
                 .computeIfAbsent(normalizedProvider, _k -> new ArrayList<>());
             decryptedEntries.add(record);
+            Path vaultPath = securityPath.getParent().resolve("agent-keys.vault");
             keyVault.save(vaultPath, password, mapper, decrypted);
-            writeMetadata(keys);
+            plaintextStore.saveMetadataOnly(keys);
         } else {
-            saveKeysFile(keys);
+            plaintextStore.save(keys);
         }
 
         return normalizedProvider + ":" + keyId;
@@ -126,7 +137,7 @@ public class SettingsService {
             throw new IllegalArgumentException("Provider and key id are required.");
         }
         String normalizedProvider = provider.trim().toLowerCase(Locale.US);
-        AgentKeysFile keys = loadKeysFile();
+        AgentKeysFile keys = plaintextStore.load();
         List<AgentKeyRecord> entries = keys.getProviders().get(normalizedProvider);
         if (entries != null) {
             entries.removeIf(entry -> id.equals(entry.getId()));
@@ -138,11 +149,12 @@ public class SettingsService {
             if (decrypted != null && decrypted.getProviders().containsKey(normalizedProvider)) {
                 decrypted.getProviders().get(normalizedProvider)
                     .removeIf(entry -> id.equals(entry.getId()));
+                Path vaultPath = securityPath.getParent().resolve("agent-keys.vault");
                 keyVault.save(vaultPath, password, mapper, decrypted);
             }
-            writeMetadata(keys);
+            plaintextStore.saveMetadataOnly(keys);
         } else {
-            saveKeysFile(keys);
+            plaintextStore.save(keys);
         }
     }
 
@@ -161,15 +173,15 @@ public class SettingsService {
             if (!keyVault.isUnlocked()) {
                 throw new IllegalStateException("Key vault is locked.");
             }
-            AgentKeysFile decrypted = keyVault.getDecryptedKeys();
-            return findKey(decrypted, provider, id);
+            return plaintextStore.findKey(keyVault.getDecryptedKeys(), provider, id);
         }
 
-        AgentKeysFile keys = loadKeysFile();
-        return findKey(keys, provider, id);
+        return plaintextStore.findKey(plaintextStore.load(), provider, id);
     }
 
-    private void ensureSettingsDir() {
+    // ===== Private Helpers =====
+
+    private void ensureSettingsDir(Path settingsDir) {
         try {
             Files.createDirectories(settingsDir);
         } catch (IOException ignored) {
@@ -199,65 +211,6 @@ public class SettingsService {
         }
     }
 
-    private AgentKeysFile loadKeysFile() {
-        if (!Files.exists(keysPath)) {
-            return new AgentKeysFile();
-        }
-        try {
-            AgentKeysFile file = mapper.readValue(keysPath.toFile(), AgentKeysFile.class);
-            if (file.getProviders() == null) {
-                file.setProviders(new HashMap<>());
-            }
-            return file;
-        } catch (IOException e) {
-            return new AgentKeysFile();
-        }
-    }
-
-    private void saveKeysFile(AgentKeysFile keys) throws IOException {
-        Files.createDirectories(keysPath.getParent());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(keysPath.toFile(), keys);
-    }
-
-    private void writeMetadata(AgentKeysFile keys) throws IOException {
-        AgentKeysMetadataFile metadata = toMetadata(keys);
-        Files.createDirectories(keysPath.getParent());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(keysPath.toFile(), metadata);
-    }
-
-    private AgentKeysMetadataFile toMetadata(AgentKeysFile keys) {
-        AgentKeysMetadataFile metadata = new AgentKeysMetadataFile();
-        metadata.setVersion(keys.getVersion());
-
-        Map<String, List<AgentKeyMetadata>> providers = new HashMap<>();
-        for (Map.Entry<String, List<AgentKeyRecord>> entry : keys.getProviders().entrySet()) {
-            List<AgentKeyMetadata> items = new ArrayList<>();
-            for (AgentKeyRecord record : entry.getValue()) {
-                if (record != null) {
-                    items.add(record.toMetadata());
-                }
-            }
-            providers.put(entry.getKey(), items);
-        }
-        metadata.setProviders(providers);
-        return metadata;
-    }
-
-    private void migratePlaintextToEncrypted(String password) throws Exception {
-        AgentKeysFile keys = loadKeysFile();
-        keyVault.save(vaultPath, password, mapper, keys);
-        writeMetadata(keys);
-    }
-
-    private void migrateEncryptedToPlaintext(String password) throws Exception {
-        AgentKeysFile keys = keyVault.unlock(vaultPath, password, mapper);
-        saveKeysFile(keys);
-        if (Files.exists(vaultPath)) {
-            Files.delete(vaultPath);
-        }
-        keyVault.lock();
-    }
-
     private void ensureUnlocked(String password) throws Exception {
         if (keyVault.isUnlocked()) {
             return;
@@ -265,6 +218,7 @@ public class SettingsService {
         if (password == null || password.isBlank()) {
             throw new IllegalStateException("Key vault is locked.");
         }
+        Path vaultPath = securityPath.getParent().resolve("agent-keys.vault");
         keyVault.unlock(vaultPath, password, mapper);
     }
 
@@ -282,21 +236,5 @@ public class SettingsService {
     private String generateKeyId(String provider) {
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 6);
         return provider + "-" + suffix;
-    }
-
-    private String findKey(AgentKeysFile keys, String provider, String id) {
-        if (keys == null || keys.getProviders() == null) {
-            return null;
-        }
-        List<AgentKeyRecord> entries = keys.getProviders().get(provider);
-        if (entries == null) {
-            return null;
-        }
-        for (AgentKeyRecord record : entries) {
-            if (record != null && id.equals(record.getId())) {
-                return record.getKey();
-            }
-        }
-        return null;
     }
 }
