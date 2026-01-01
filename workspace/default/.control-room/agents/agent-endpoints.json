@@ -3,7 +3,7 @@
   "agents" : {
     "planner" : {
       "provider" : "openrouter",
-      "model" : "google/gemini-2.0-flash-exp:free",
+      "model" : "anthropic/claude-opus-4.5",
       "baseUrl" : null,
       "apiKeyRef" : "openrouter:openrouter-a56348",
       "temperature" : null,
