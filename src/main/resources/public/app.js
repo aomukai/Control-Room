@@ -1157,6 +1157,7 @@
                 container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 log(`Selected agent: ${agent.name}`, 'info');
+                showWorkbenchChatModal(agent);
             });
 
             item.addEventListener('contextmenu', (e) => {
@@ -2192,7 +2193,7 @@
                 showConferenceInviteModal(agent);
                 break;
             case 'invite-chat':
-                log(`Invited ${agentName} to chat`, 'info');
+                showWorkbenchChatModal(agent);
                 break;
             case 'open-profile':
                 showAgentProfileModal(agent);
@@ -5806,6 +5807,8 @@
         localStorage.setItem('explorer-visible', visible ? '1' : '0');
     }
 
+    const workbenchChats = new Map();
+
     // Chat
     function addChatMessage(role, content) {
         const msg = document.createElement('div');
@@ -5818,6 +5821,118 @@
         msg.appendChild(contentDiv);
         elements.chatHistory.appendChild(msg);
         elements.chatHistory.scrollTop = elements.chatHistory.scrollHeight;
+    }
+
+    function getWorkbenchChatLog(agentId) {
+        if (!workbenchChats.has(agentId)) {
+            workbenchChats.set(agentId, []);
+        }
+        return workbenchChats.get(agentId);
+    }
+
+    function appendWorkbenchChatMessage(container, role, content) {
+        const msg = document.createElement('div');
+        msg.className = `chat-message ${role}`;
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'chat-message-content';
+        contentDiv.textContent = content;
+
+        msg.appendChild(contentDiv);
+        container.appendChild(msg);
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function showWorkbenchChatModal(agent) {
+        if (!agent || !agent.id) return;
+
+        setSelectedAgentId(agent.id);
+
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            `Chat with ${agent.name || 'Agent'}`,
+            'Close',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        modal.classList.add('workbench-chat-modal');
+
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'modal-text';
+        meta.textContent = agent.role ? `Role: ${agent.role}` : 'Direct chat';
+        body.appendChild(meta);
+
+        const chatBody = document.createElement('div');
+        chatBody.className = 'workbench-chat-body';
+
+        const history = document.createElement('div');
+        history.className = 'workbench-chat-history';
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'workbench-chat-input-row';
+
+        const input = document.createElement('textarea');
+        input.className = 'modal-textarea workbench-chat-input';
+        input.rows = 3;
+        input.placeholder = `Message ${agent.name || 'agent'}...`;
+
+        const sendBtn = document.createElement('button');
+        sendBtn.type = 'button';
+        sendBtn.className = 'modal-btn modal-btn-primary workbench-chat-send';
+        sendBtn.textContent = 'Send';
+
+        inputRow.appendChild(input);
+        inputRow.appendChild(sendBtn);
+
+        chatBody.appendChild(history);
+        chatBody.appendChild(inputRow);
+        body.appendChild(chatBody);
+
+        const log = getWorkbenchChatLog(agent.id);
+        log.forEach(entry => {
+            appendWorkbenchChatMessage(history, entry.role, entry.content);
+        });
+
+        const sendMessage = async () => {
+            const message = input.value.trim();
+            if (!message) return;
+            input.value = '';
+            sendBtn.disabled = true;
+
+            appendWorkbenchChatMessage(history, 'user', message);
+            log.push({ role: 'user', content: message });
+
+            try {
+                const response = await api('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, agentId: agent.id })
+                });
+                const reply = response.content || 'No response.';
+                appendWorkbenchChatMessage(history, 'assistant', reply);
+                log.push({ role: 'assistant', content: reply });
+            } catch (err) {
+                const errorMessage = 'Sorry, I encountered an error. Please try again.';
+                appendWorkbenchChatMessage(history, 'assistant', errorMessage);
+                log.push({ role: 'assistant', content: errorMessage });
+            } finally {
+                sendBtn.disabled = false;
+            }
+        };
+
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        setTimeout(() => input.focus(), 0);
     }
 
     async function sendChatMessage() {
