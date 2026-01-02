@@ -3458,6 +3458,43 @@ html, body {
     color: var(--text-secondary);
 }
 
+.issue-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+.issue-quick-action {
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.issue-quick-action:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+.issue-quick-action:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.issue-action-close:hover:not(:disabled) {
+    border-color: var(--error-color);
+    color: var(--error-color);
+}
+
+.issue-action-reopen:hover:not(:disabled) {
+    border-color: var(--success-color);
+    color: var(--success-color);
+}
+
 .issue-card-priority {
     font-size: 12px;
 }

@@ -220,9 +220,9 @@
   "assignedTo" : "Kermit",
   "tags" : [ ],
   "priority" : "normal",
-  "status" : "open",
+  "status" : "closed",
   "comments" : [ ],
   "createdAt" : 1767376494803,
-  "updatedAt" : 1767376494803,
-  "closedAt" : null
+  "updatedAt" : 1767377350070,
+  "closedAt" : 1767377350070
 } ]

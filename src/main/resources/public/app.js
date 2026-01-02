@@ -1557,6 +1557,10 @@
         // Comment count
         const commentCount = issue.comments ? issue.comments.length : 0;
 
+        const isClosed = issue.status === 'closed';
+        const actionLabel = isClosed ? 'Reopen' : 'Close';
+        const actionClass = isClosed ? 'issue-action-reopen' : 'issue-action-close';
+
         // Tags (show first 2)
         const tagsHtml = issue.tags && issue.tags.length > 0
             ? issue.tags.slice(0, 2).map(t => `<span class="issue-card-tag">${escapeHtml(t)}</span>`).join('')
@@ -1579,6 +1583,11 @@
                 ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">💬 ${commentCount}</span>` : ''}
                 <span class="issue-card-time" title="${formatTimestamp(issue.updatedAt)}">${formatRelativeTime(issue.updatedAt)}</span>
             </div>
+            <div class="issue-card-actions">
+                <button type="button" class="issue-quick-action ${actionClass}" title="${actionLabel} issue">
+                    ${actionLabel}
+                </button>
+            </div>
             ${tagsHtml || moreTagsHtml ? `<div class="issue-card-tags">${tagsHtml}${moreTagsHtml}</div>` : ''}
         `;
 
@@ -1586,6 +1595,28 @@
         card.addEventListener('click', () => {
             openIssueModal(issue.id);
         });
+
+        const quickAction = card.querySelector('.issue-quick-action');
+        if (quickAction) {
+            quickAction.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                quickAction.disabled = true;
+                const targetStatus = isClosed ? 'open' : 'closed';
+                try {
+                    const updated = await issueApi.update(issue.id, { status: targetStatus });
+                    if (targetStatus === 'closed') {
+                        notificationStore.issueClosed(updated.id, updated.title);
+                    } else {
+                        notificationStore.success(`Issue #${updated.id} reopened: ${updated.title}`, 'workbench');
+                    }
+                    await loadIssues();
+                } catch (err) {
+                    notificationStore.error(`Failed to ${actionLabel.toLowerCase()} Issue #${issue.id}: ${err.message}`, 'workbench');
+                } finally {
+                    quickAction.disabled = false;
+                }
+            });
+        }
 
         return card;
     }
