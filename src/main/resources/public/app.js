@@ -1054,6 +1054,8 @@
         // Mode-specific initialization
         if (mode === 'workbench') {
             renderWorkbenchView();
+        } else if (mode === 'settings') {
+            renderSettingsView();
         } else if (mode === 'editor') {
             // Re-layout Monaco editor when switching back
             if (state.editor) {
@@ -1070,6 +1072,153 @@
 
     function isEditorView() {
         return state.viewMode.current === 'editor';
+    }
+
+    // ============================================
+    // SETTINGS VIEW
+    // ============================================
+
+    function showComingSoonModal(title, details) {
+        const { modal, body, confirmBtn } = createModalShell(
+            title || 'Coming soon',
+            'Got it',
+            'Close',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+        modal.classList.add('settings-coming-soon-modal');
+
+        const text = document.createElement('div');
+        text.className = 'modal-text';
+        text.textContent = details || 'This setting is wired up visually for now. Functionality will ship soon.';
+        body.appendChild(text);
+
+        confirmBtn.focus();
+    }
+
+    function renderSettingsView() {
+        const container = document.getElementById('settings-content');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="settings-page">
+                <div class="settings-header">
+                    <h2>Settings</h2>
+                    <p>Configure Control Room. Most controls are visual placeholders for now.</p>
+                </div>
+
+                <div class="settings-grid">
+                    <section class="settings-card">
+                        <div class="settings-card-title">Appearance</div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Theme</div>
+                                <small>Choose a UI theme</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Theme selection is not wired yet.">
+                                <option value="default">Default</option>
+                                <option value="studio">Studio</option>
+                                <option value="midnight">Midnight</option>
+                                <option value="paper">Paper</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Day / Night Mode</div>
+                                <small>Manual mode toggle</small>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" class="settings-control" data-coming-soon="Day/night mode is coming soon.">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="settings-card">
+                        <div class="settings-card-title">Provider Defaults</div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Default Provider</div>
+                                <small>Used when no agent override exists</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Default provider wiring is coming soon.">
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="gemini">Gemini</option>
+                                <option value="openrouter">OpenRouter</option>
+                                <option value="local">Local</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Default Model</div>
+                                <small>Fallback model per provider</small>
+                            </div>
+                            <input class="settings-control" type="text" placeholder="e.g., gpt-4.1-mini" data-coming-soon="Default model wiring is coming soon.">
+                        </div>
+                    </section>
+
+                    <section class="settings-card">
+                        <div class="settings-card-title">Keys & Security</div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Key Storage</div>
+                                <small>Plaintext vs encrypted vault</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Key storage settings are coming soon.">
+                                <option value="encrypted">Encrypted Vault</option>
+                                <option value="plaintext">Plaintext</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Manage Provider Keys</div>
+                                <small>Add or remove stored keys</small>
+                            </div>
+                            <button class="settings-button" type="button" data-coming-soon="Key management UI is coming soon.">
+                                Open Key Manager
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="settings-card">
+                        <div class="settings-card-title">Cloud Backup</div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Backup Mode</div>
+                                <small>Auto sync when enabled</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Cloud backup is coming soon.">
+                                <option value="auto">Auto</option>
+                                <option value="manual">Manual</option>
+                                <option value="off">Off</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Backup Provider</div>
+                                <small>Select a cloud target</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Backup provider selection is coming soon.">
+                                <option value="none">Select provider</option>
+                                <option value="drive">Google Drive</option>
+                                <option value="dropbox">Dropbox</option>
+                                <option value="s3">S3 Compatible</option>
+                            </select>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        `;
+
+        container.querySelectorAll('[data-coming-soon]').forEach(control => {
+            const message = control.getAttribute('data-coming-soon') || '';
+            const handler = () => showComingSoonModal('Coming soon', message);
+            if (control.tagName === 'SELECT' || control.tagName === 'INPUT') {
+                control.addEventListener('change', handler);
+            } else {
+                control.addEventListener('click', handler);
+            }
+        });
     }
 
     // ============================================
