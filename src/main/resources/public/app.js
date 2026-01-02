@@ -92,6 +92,7 @@
         newsfeedList: document.getElementById('newsfeed-list'),
         agentList: document.getElementById('agent-list'),
         btnToggleMode: document.getElementById('btn-toggle-mode'),
+        btnToggleModeTop: document.getElementById('btn-toggle-mode-top'),
         btnOpenSettings: document.getElementById('btn-open-settings'),
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
         workspaceName: document.getElementById('workspace-name')
@@ -1024,6 +1025,19 @@
             elements.btnToggleMode.setAttribute('aria-label', toggleLabel);
         }
 
+        if (elements.btnToggleModeTop) {
+            const isWorkbench = mode === 'workbench';
+            const toggleLabel = mode === 'settings' ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
+            elements.btnToggleModeTop.classList.toggle('active', isWorkbench);
+            elements.btnToggleModeTop.style.display = mode === 'editor' ? 'none' : 'flex';
+            const label = elements.btnToggleModeTop.querySelector('.tab-label');
+            if (label) {
+                label.textContent = toggleLabel;
+            } else {
+                elements.btnToggleModeTop.textContent = toggleLabel;
+            }
+        }
+
         if (elements.btnOpenSettings) {
             elements.btnOpenSettings.classList.toggle('is-active', mode === 'settings');
         }
@@ -1040,6 +1054,9 @@
         state.viewMode.current = mode;
 
         updateModeControls(mode);
+        if (elements.leftSidebar) {
+            elements.leftSidebar.classList.toggle('workbench-hidden', mode === 'workbench');
+        }
 
         // Update view panels
         document.querySelectorAll('.view-panel').forEach(panel => {
@@ -6640,17 +6657,23 @@
     }
 
     // Sidebar Buttons
+    function handleToggleModeClick() {
+        if (state.viewMode.current === 'workbench') {
+            setViewMode('editor');
+        } else if (state.viewMode.current === 'editor') {
+            setViewMode('workbench');
+        } else {
+            setViewMode('editor');
+        }
+    }
+
     function initSidebarButtons() {
         if (elements.btnToggleMode) {
-            elements.btnToggleMode.addEventListener('click', () => {
-                if (state.viewMode.current === 'workbench') {
-                    setViewMode('editor');
-                } else if (state.viewMode.current === 'editor') {
-                    setViewMode('workbench');
-                } else {
-                    setViewMode('editor');
-                }
-            });
+            elements.btnToggleMode.addEventListener('click', handleToggleModeClick);
+        }
+
+        if (elements.btnToggleModeTop) {
+            elements.btnToggleModeTop.addEventListener('click', handleToggleModeClick);
         }
 
         if (elements.btnToggleExplorer) {

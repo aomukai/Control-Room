@@ -51,6 +51,10 @@ html, body {
     overflow: hidden;
 }
 
+#left-sidebar.workbench-hidden {
+    display: none;
+}
+
 #left-sidebar.explorer-collapsed {
     width: 64px;
     min-width: 64px;
