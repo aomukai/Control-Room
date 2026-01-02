@@ -1683,11 +1683,15 @@
             return;
         }
 
-        agents.forEach(agent => {
+        agents.forEach((agent, index) => {
             const item = document.createElement('div');
             item.className = 'agent-item';
             item.dataset.agentId = agent.id || '';
             item.draggable = true;
+
+            if (index === 0) {
+                item.classList.add('team-lead');
+            }
 
             const icon = document.createElement('span');
             icon.className = 'agent-icon';
@@ -1738,6 +1742,13 @@
             item.appendChild(icon);
             item.appendChild(info);
             item.appendChild(status);
+
+            if (index === 0) {
+                const badge = document.createElement('span');
+                badge.className = 'agent-lead-badge';
+                badge.textContent = 'Lead';
+                item.appendChild(badge);
+            }
 
             item.addEventListener('click', () => {
                 container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
