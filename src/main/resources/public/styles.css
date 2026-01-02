@@ -2775,6 +2775,12 @@ html, body {
     gap: 12px;
 }
 
+.settings-inline {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .settings-label {
     display: flex;
     flex-direction: column;
@@ -2817,6 +2823,84 @@ html, body {
 .settings-button:hover {
     border-color: var(--accent-color);
     color: var(--text-bright);
+}
+
+.settings-button-danger:hover {
+    border-color: var(--error-color);
+    color: var(--error-color);
+}
+
+.settings-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.settings-subtitle {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-secondary);
+}
+
+.settings-key-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-key-provider {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    background: var(--bg-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.settings-key-provider-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.settings-key-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}
+
+.settings-key-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.settings-key-label {
+    font-size: 12px;
+    color: var(--text-bright);
+}
+
+.settings-key-info {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.settings-empty {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 8px 0;
+}
+
+.settings-error {
+    color: var(--error-color);
+    font-size: 12px;
+    display: none;
 }
 
 .toggle-switch {

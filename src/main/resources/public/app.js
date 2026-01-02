@@ -1095,6 +1095,85 @@
         confirmBtn.focus();
     }
 
+    function promptForPassword(title, hint) {
+        return new Promise(resolve => {
+            const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+                title || 'Enter password',
+                'Confirm',
+                'Cancel',
+                { closeOnCancel: true, closeOnConfirm: false }
+            );
+
+            modal.classList.add('settings-coming-soon-modal');
+
+            const text = document.createElement('div');
+            text.className = 'modal-text';
+            text.textContent = hint || 'Password required.';
+            body.appendChild(text);
+
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.className = 'modal-input';
+            input.placeholder = 'Password';
+            body.appendChild(input);
+
+            const error = document.createElement('div');
+            error.className = 'modal-error-hint';
+            error.style.display = 'none';
+            body.appendChild(error);
+
+            const finish = (value) => {
+                resolve(value);
+                close();
+            };
+
+            confirmBtn.addEventListener('click', () => {
+                const value = input.value.trim();
+                if (!value) {
+                    error.textContent = 'Password is required.';
+                    error.style.display = 'block';
+                    return;
+                }
+                finish(value);
+            });
+
+            cancelBtn.addEventListener('click', () => finish(null));
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    confirmBtn.click();
+                }
+            });
+
+            input.focus();
+        });
+    }
+
+    function getProviderDefaults() {
+        const raw = localStorage.getItem('control-room:provider-defaults');
+        if (!raw) {
+            return { provider: 'openai', model: '' };
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            return {
+                provider: parsed.provider || 'openai',
+                model: parsed.model || ''
+            };
+        } catch (err) {
+            return { provider: 'openai', model: '' };
+        }
+    }
+
+    function saveProviderDefaults(data) {
+        const payload = {
+            provider: data.provider || 'openai',
+            model: data.model || ''
+        };
+        localStorage.setItem('control-room:provider-defaults', JSON.stringify(payload));
+        notificationStore.success('Provider defaults saved.', 'global');
+    }
+
     function renderSettingsView() {
         const container = document.getElementById('settings-content');
         if (!container) return;
@@ -1175,7 +1254,7 @@
                                 <div>Default Provider</div>
                                 <small>Used when no agent override exists</small>
                             </div>
-                            <select class="settings-control" data-coming-soon="Default provider wiring is coming soon.">
+                            <select class="settings-control" id="settings-default-provider">
                                 <option value="openai">OpenAI</option>
                                 <option value="anthropic">Anthropic</option>
                                 <option value="gemini">Gemini</option>
@@ -1188,7 +1267,7 @@
                                 <div>Default Model</div>
                                 <small>Fallback model per provider</small>
                             </div>
-                            <input class="settings-control" type="text" placeholder="e.g., gpt-4.1-mini" data-coming-soon="Default model wiring is coming soon.">
+                            <input class="settings-control" type="text" id="settings-default-model" placeholder="e.g., gpt-4.1-mini">
                         </div>
                     </section>
 
@@ -1199,19 +1278,71 @@
                                 <div>Key Storage</div>
                                 <small>Plaintext vs encrypted vault</small>
                             </div>
-                            <select class="settings-control" data-coming-soon="Key storage settings are coming soon.">
+                            <select class="settings-control" id="settings-key-mode">
                                 <option value="encrypted">Encrypted Vault</option>
                                 <option value="plaintext">Plaintext</option>
                             </select>
                         </div>
                         <div class="settings-row">
                             <div class="settings-label">
-                                <div>Manage Provider Keys</div>
-                                <small>Add or remove stored keys</small>
+                                <div>Vault Status</div>
+                                <small id="settings-vault-status">Checking...</small>
                             </div>
-                            <button class="settings-button" type="button" data-coming-soon="Key management UI is coming soon.">
-                                Open Key Manager
-                            </button>
+                            <div class="settings-inline">
+                                <button class="settings-button" type="button" id="settings-vault-unlock">Unlock</button>
+                                <button class="settings-button" type="button" id="settings-vault-lock">Lock</button>
+                            </div>
+                        </div>
+                        <div class="settings-subsection">
+                            <div class="settings-subtitle">Provider Keys</div>
+                            <div id="settings-key-list" class="settings-key-list"></div>
+                        </div>
+                        <div class="settings-subsection">
+                            <div class="settings-subtitle">Add Key</div>
+                            <div class="settings-row">
+                                <div class="settings-label">
+                                    <div>Provider</div>
+                                    <small>Where this key belongs</small>
+                                </div>
+                                <select class="settings-control" id="settings-key-provider">
+                                    <option value="openai">OpenAI</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="gemini">Gemini</option>
+                                    <option value="grok">Grok</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                    <option value="nanogpt">NanoGPT</option>
+                                    <option value="togetherai">TogetherAI</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-label">
+                                    <div>Label</div>
+                                    <small>Human-friendly name</small>
+                                </div>
+                                <input class="settings-control" type="text" id="settings-key-label" placeholder="e.g., Primary key">
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-label">
+                                    <div>API Key</div>
+                                    <small>Stored securely</small>
+                                </div>
+                                <input class="settings-control" type="password" id="settings-key-value" placeholder="Paste key">
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-label">
+                                    <div>Custom ID</div>
+                                    <small>Optional identifier</small>
+                                </div>
+                                <input class="settings-control" type="text" id="settings-key-id" placeholder="Optional">
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-label">
+                                    <div>Actions</div>
+                                    <small>Save this key</small>
+                                </div>
+                                <button class="settings-button" type="button" id="settings-key-save">Save Key</button>
+                            </div>
+                            <div class="settings-error" id="settings-key-error"></div>
                         </div>
                     </section>
 
@@ -1287,6 +1418,221 @@
                 control.addEventListener('click', handler);
             }
         });
+
+        initSettingsWiring();
+    }
+
+    async function initSettingsWiring() {
+        const providerSelect = document.getElementById('settings-default-provider');
+        const modelInput = document.getElementById('settings-default-model');
+        const modeSelect = document.getElementById('settings-key-mode');
+        const vaultStatus = document.getElementById('settings-vault-status');
+        const vaultUnlock = document.getElementById('settings-vault-unlock');
+        const vaultLock = document.getElementById('settings-vault-lock');
+        const keyList = document.getElementById('settings-key-list');
+        const keyProvider = document.getElementById('settings-key-provider');
+        const keyLabel = document.getElementById('settings-key-label');
+        const keyValue = document.getElementById('settings-key-value');
+        const keyId = document.getElementById('settings-key-id');
+        const keySave = document.getElementById('settings-key-save');
+        const keyError = document.getElementById('settings-key-error');
+
+        if (!providerSelect || !modelInput || !modeSelect || !vaultStatus || !vaultUnlock || !vaultLock || !keyList) {
+            return;
+        }
+
+        let security = { keysSecurityMode: 'plaintext', vaultUnlocked: false };
+        let keysMeta = { providers: {} };
+
+        const updateProviderDefaultsUI = () => {
+            const defaults = getProviderDefaults();
+            providerSelect.value = defaults.provider || 'openai';
+            modelInput.value = defaults.model || '';
+        };
+
+        const renderKeyList = () => {
+            keyList.innerHTML = '';
+            const providers = keysMeta.providers || {};
+            const providerNames = Object.keys(providers).sort();
+            if (providerNames.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'settings-empty';
+                empty.textContent = 'No keys stored yet.';
+                keyList.appendChild(empty);
+                return;
+            }
+
+            providerNames.forEach(provider => {
+                const entries = providers[provider] || [];
+                const section = document.createElement('div');
+                section.className = 'settings-key-provider';
+                const header = document.createElement('div');
+                header.className = 'settings-key-provider-title';
+                header.textContent = provider;
+                section.appendChild(header);
+
+                entries.forEach(entry => {
+                    const row = document.createElement('div');
+                    row.className = 'settings-key-row';
+                    const meta = document.createElement('div');
+                    meta.className = 'settings-key-meta';
+                    const label = document.createElement('div');
+                    label.className = 'settings-key-label';
+                    label.textContent = entry.label || entry.id;
+                    const info = document.createElement('div');
+                    info.className = 'settings-key-info';
+                    info.textContent = entry.id ? `ID: ${entry.id}` : 'No id';
+                    meta.appendChild(label);
+                    meta.appendChild(info);
+                    const actions = document.createElement('div');
+                    actions.className = 'settings-key-actions';
+                    const del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'settings-button settings-button-danger';
+                    del.textContent = 'Delete';
+                    del.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let password = null;
+                        if (security.keysSecurityMode === 'encrypted' && !security.vaultUnlocked) {
+                            password = await promptForPassword('Unlock vault to delete', 'Enter vault password.');
+                            if (!password) return;
+                        }
+                        try {
+                            await settingsApi.deleteKey(provider, entry.id, password || undefined);
+                            notificationStore.success(`Deleted key ${entry.label || entry.id}`, 'global');
+                            await refreshSettingsData();
+                        } catch (err) {
+                            notificationStore.error(`Failed to delete key: ${err.message}`, 'global');
+                        }
+                    });
+                    actions.appendChild(del);
+                    row.appendChild(meta);
+                    row.appendChild(actions);
+                    section.appendChild(row);
+                });
+
+                keyList.appendChild(section);
+            });
+        };
+
+        const updateVaultUI = () => {
+            if (security.vaultUnlocked) {
+                vaultStatus.textContent = 'Unlocked';
+                vaultUnlock.disabled = true;
+                vaultLock.disabled = false;
+            } else {
+                vaultStatus.textContent = security.keysSecurityMode === 'encrypted' ? 'Locked' : 'Not required';
+                vaultUnlock.disabled = security.keysSecurityMode !== 'encrypted';
+                vaultLock.disabled = security.keysSecurityMode !== 'encrypted';
+            }
+        };
+
+        const refreshSettingsData = async () => {
+            try {
+                security = await settingsApi.getSecurity();
+            } catch (err) {
+                notificationStore.warning(`Failed to load security settings: ${err.message}`, 'global');
+            }
+            try {
+                keysMeta = await settingsApi.listKeys();
+            } catch (err) {
+                notificationStore.warning(`Failed to load key metadata: ${err.message}`, 'global');
+            }
+            modeSelect.value = security.keysSecurityMode || 'plaintext';
+            updateVaultUI();
+            renderKeyList();
+        };
+
+        updateProviderDefaultsUI();
+        providerSelect.addEventListener('change', () => {
+            saveProviderDefaults({ provider: providerSelect.value, model: modelInput.value.trim() });
+        });
+        modelInput.addEventListener('change', () => {
+            saveProviderDefaults({ provider: providerSelect.value, model: modelInput.value.trim() });
+        });
+
+        modeSelect.addEventListener('change', async () => {
+            const nextMode = modeSelect.value;
+            const password = await promptForPassword('Update key storage mode', 'Enter your vault password to confirm.');
+            if (!password) {
+                modeSelect.value = security.keysSecurityMode || 'plaintext';
+                return;
+            }
+            try {
+                await settingsApi.updateSecurity(nextMode, password);
+                notificationStore.success('Security mode updated.', 'global');
+                await refreshSettingsData();
+            } catch (err) {
+                notificationStore.error(`Failed to update security mode: ${err.message}`, 'global');
+                modeSelect.value = security.keysSecurityMode || 'plaintext';
+            }
+        });
+
+        vaultUnlock.addEventListener('click', async () => {
+            const password = await promptForPassword('Unlock vault', 'Enter vault password.');
+            if (!password) return;
+            try {
+                await settingsApi.unlockVault(password);
+                notificationStore.success('Vault unlocked.', 'global');
+                await refreshSettingsData();
+            } catch (err) {
+                notificationStore.error(`Failed to unlock vault: ${err.message}`, 'global');
+            }
+        });
+
+        vaultLock.addEventListener('click', async () => {
+            try {
+                await settingsApi.lockVault();
+                notificationStore.success('Vault locked.', 'global');
+                await refreshSettingsData();
+            } catch (err) {
+                notificationStore.error(`Failed to lock vault: ${err.message}`, 'global');
+            }
+        });
+
+        keySave.addEventListener('click', async () => {
+            if (keyError) {
+                keyError.textContent = '';
+                keyError.style.display = 'none';
+            }
+            const provider = keyProvider.value;
+            const label = keyLabel.value.trim();
+            const key = keyValue.value.trim();
+            const id = keyId.value.trim();
+            if (!provider || !key) {
+                if (keyError) {
+                    keyError.textContent = 'Provider and key are required.';
+                    keyError.style.display = 'block';
+                }
+                return;
+            }
+            let password = null;
+            if (security.keysSecurityMode === 'encrypted' && !security.vaultUnlocked) {
+                password = await promptForPassword('Unlock vault to add key', 'Enter vault password.');
+                if (!password) return;
+            }
+            try {
+                await settingsApi.addKey({
+                    provider,
+                    label: label || null,
+                    key,
+                    id: id || null,
+                    password: password || undefined
+                });
+                notificationStore.success('Key added.', 'global');
+                keyLabel.value = '';
+                keyValue.value = '';
+                keyId.value = '';
+                await refreshSettingsData();
+            } catch (err) {
+                if (keyError) {
+                    keyError.textContent = err.message || 'Failed to add key.';
+                    keyError.style.display = 'block';
+                }
+            }
+        });
+
+        await refreshSettingsData();
     }
 
     // ============================================
