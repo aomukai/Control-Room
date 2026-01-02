@@ -93,6 +93,8 @@
         agentList: document.getElementById('agent-list'),
         btnToggleMode: document.getElementById('btn-toggle-mode'),
         btnToggleModeTop: document.getElementById('btn-toggle-mode-top'),
+        btnOpenIssues: document.getElementById('btn-open-issues'),
+        btnStartConference: document.getElementById('btn-start-conference'),
         btnOpenSettings: document.getElementById('btn-open-settings'),
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
         workspaceName: document.getElementById('workspace-name')
@@ -1038,6 +1040,10 @@
             }
         }
 
+        if (elements.btnOpenIssues) {
+            elements.btnOpenIssues.style.display = mode === 'workbench' ? 'flex' : 'none';
+        }
+
         if (elements.btnOpenSettings) {
             elements.btnOpenSettings.classList.toggle('is-active', mode === 'settings');
         }
@@ -1811,13 +1817,248 @@
     }
 
     function renderWorkbenchChatPane() {
-        // Now renders the Issue Board instead of placeholder
-        renderIssueBoard();
+        renderWorkbenchDashboard();
+    }
+
+    function getPlannerAgent() {
+        const agents = state.agents.list || [];
+        const primaryPlanner = agents.find(agent => agent.role === 'planner' && agent.isPrimaryForRole);
+        if (primaryPlanner) return primaryPlanner;
+        const planner = agents.find(agent => agent.role === 'planner');
+        if (planner) return planner;
+        return agents[0] || null;
+    }
+
+    function renderWorkbenchDashboard() {
+        const container = document.getElementById('workbench-chat-content');
+        if (!container) return;
+
+        const leader = getPlannerAgent();
+        const leaderName = leader?.name || 'Planner';
+        const leaderAvatar = leader?.avatar || '';
+
+        container.innerHTML = `
+            <div class="workbench-dashboard">
+                <div class="workbench-card workbench-card-hero">
+                    <div class="workbench-briefing-header">
+                        <div class="workbench-briefing-avatar" id="workbench-briefing-avatar"></div>
+                        <div>
+                            <div class="workbench-card-title">Planner Briefing</div>
+                            <div class="workbench-card-subtitle">Resolved issues and momentum check-in.</div>
+                        </div>
+                        <button class="workbench-briefing-dismiss" id="workbench-dismiss-briefing" type="button">Dismiss</button>
+                    </div>
+                    <div class="workbench-briefing" id="workbench-briefing">
+                        <div class="workbench-digest-loading">Loading digest...</div>
+                    </div>
+                    <div class="workbench-briefing-actions">
+                        <button class="workbench-link-btn" id="workbench-open-issues" type="button">Open Issues</button>
+                        <button class="workbench-link-btn" id="workbench-start-conference" type="button">Start Conference</button>
+                    </div>
+                    <div class="workbench-briefing-signature">${escapeHtml(leaderName)}</div>
+                </div>
+                <div class="workbench-card">
+                    <div class="workbench-card-title">Issue Pulse</div>
+                    <div class="workbench-card-subtitle">Open vs resolved trends.</div>
+                    <div class="workbench-stats" id="workbench-issue-stats">
+                        <div class="workbench-digest-loading">Loading stats...</div>
+                    </div>
+                </div>
+                <div class="workbench-card workbench-card-compact">
+                    <div class="workbench-card-title">Credits Leaderboard</div>
+                    <div class="workbench-card-subtitle">Coming soon.</div>
+                    <div class="workbench-placeholder">Top contributors will appear here.</div>
+                    <div class="workbench-card-detail">No credits yet. Once enabled, this card will show weekly leaders.</div>
+                </div>
+                <div class="workbench-card workbench-card-compact">
+                    <div class="workbench-card-title">Team Activity</div>
+                    <div class="workbench-card-subtitle">Last 24 hours.</div>
+                    <div class="workbench-placeholder">Telemetry and token usage are coming soon.</div>
+                    <div class="workbench-card-detail">Token usage, active sessions, and throughput will appear here.</div>
+                </div>
+            </div>
+        `;
+
+        const briefingAvatar = document.getElementById('workbench-briefing-avatar');
+        if (briefingAvatar) {
+            const avatarData = leaderAvatar && leaderAvatar.trim() ? leaderAvatar.trim() : '';
+            if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
+                const img = document.createElement('img');
+                img.src = avatarData;
+                img.alt = leaderName;
+                briefingAvatar.appendChild(img);
+            } else if (avatarData) {
+                briefingAvatar.textContent = avatarData;
+            } else {
+                briefingAvatar.textContent = leaderName.charAt(0).toUpperCase();
+            }
+        }
+
+        const dismissBtn = document.getElementById('workbench-dismiss-briefing');
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', () => {
+                const card = dismissBtn.closest('.workbench-card');
+                if (card) card.remove();
+            });
+        }
+
+        container.querySelectorAll('.workbench-card-compact').forEach(card => {
+            card.classList.add('workbench-card-expandable');
+            card.addEventListener('click', () => {
+                card.classList.toggle('is-expanded');
+            });
+        });
+
+        const openIssuesBtn = document.getElementById('workbench-open-issues');
+        if (openIssuesBtn) {
+            openIssuesBtn.addEventListener('click', () => {
+                openIssueBoardPanel();
+            });
+        }
+
+        const startConferenceBtn = document.getElementById('workbench-start-conference');
+        if (startConferenceBtn) {
+            startConferenceBtn.addEventListener('click', () => {
+                showConferenceInviteModal();
+            });
+        }
+
+        loadWorkbenchDashboardData();
+    }
+
+    async function loadWorkbenchDashboardData() {
+        const digestContainer = document.getElementById('workbench-briefing');
+        const statsContainer = document.getElementById('workbench-issue-stats');
+        if (!digestContainer || !statsContainer) return;
+
+        try {
+            const issues = await issueApi.list();
+            const total = issues.length;
+            const openCount = issues.filter(issue => issue.status === 'open').length;
+            const closed = issues.filter(issue => issue.status === 'closed');
+            const resolvedCount = closed.length;
+            const recentResolved = closed
+                .sort((a, b) => (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0))
+                .slice(0, 5);
+
+            statsContainer.innerHTML = `
+                <div class="workbench-stat">
+                    <span class="workbench-stat-label">Open</span>
+                    <span class="workbench-stat-value">${openCount}</span>
+                </div>
+                <div class="workbench-stat">
+                    <span class="workbench-stat-label">Resolved</span>
+                    <span class="workbench-stat-value">${resolvedCount}</span>
+                </div>
+                <div class="workbench-stat">
+                    <span class="workbench-stat-label">Total</span>
+                    <span class="workbench-stat-value">${total}</span>
+                </div>
+            `;
+
+            if (recentResolved.length === 0) {
+                digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let’s get a win on the board.</div>';
+                return;
+            }
+
+            const leader = getPlannerAgent();
+            const leaderName = leader?.name || 'Planner';
+            const creditsEarned = Math.min(resolvedCount, 12);
+            const highlightAgent = leaderName;
+
+            digestContainer.innerHTML = `
+                <div class="workbench-briefing-text">
+                    Hello, here’s the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
+                    ${highlightAgent ? `${escapeHtml(highlightAgent)} was exceptionally successful.` : ''}
+                    Check the issues board for the newest items, or start a conference to regroup.
+                </div>
+                <div class="workbench-digest-list">
+                    ${recentResolved.map(issue => `
+                        <div class="workbench-digest-item">
+                            <div class="workbench-digest-title">Issue #${issue.id}: ${escapeHtml(issue.title)}</div>
+                            <div class="workbench-digest-meta">${formatTimestamp(issue.closedAt || issue.updatedAt)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } catch (err) {
+            digestContainer.innerHTML = `<div class="workbench-placeholder">Failed to load briefing: ${escapeHtml(err.message)}</div>`;
+            statsContainer.innerHTML = `<div class="workbench-placeholder">Stats unavailable.</div>`;
+        }
     }
 
     // ============================================
     // ISSUE BOARD
     // ============================================
+
+    function createWorkbenchPanelShell(title) {
+        const overlay = document.createElement('div');
+        overlay.className = 'workbench-panel-overlay';
+
+        const panel = document.createElement('div');
+        panel.className = 'workbench-panel';
+
+        const header = document.createElement('div');
+        header.className = 'workbench-panel-header';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'workbench-panel-title';
+        titleEl.textContent = title || '';
+
+        const actions = document.createElement('div');
+        actions.className = 'workbench-panel-actions';
+
+        header.appendChild(titleEl);
+        header.appendChild(actions);
+
+        const body = document.createElement('div');
+        body.className = 'workbench-panel-body';
+
+        panel.appendChild(header);
+        panel.appendChild(body);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        const close = () => {
+            overlay.classList.remove('is-visible');
+            setTimeout(() => {
+                overlay.remove();
+            }, 240);
+        };
+
+        requestAnimationFrame(() => {
+            void overlay.offsetHeight;
+            overlay.classList.add('is-visible');
+        });
+
+        return { overlay, panel, header, actions, body, close };
+    }
+
+    function openIssueBoardPanel() {
+        if (document.getElementById('issue-board-overlay')) return;
+        const { overlay, panel, actions, body, close } = createWorkbenchPanelShell('Issue Board');
+        overlay.id = 'issue-board-overlay';
+        panel.classList.add('issue-board-panel');
+
+        const newIssueBtn = document.createElement('button');
+        newIssueBtn.type = 'button';
+        newIssueBtn.className = 'workbench-panel-btn';
+        newIssueBtn.textContent = 'New Issue';
+        newIssueBtn.addEventListener('click', () => {
+            showIssueCreateModal();
+        });
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'workbench-panel-btn';
+        closeBtn.textContent = 'Close';
+        closeBtn.addEventListener('click', close);
+
+        actions.appendChild(newIssueBtn);
+        actions.appendChild(closeBtn);
+
+        renderIssueBoard(body);
+    }
 
     function showIssueCreateModal() {
         const { modal, body, confirmBtn, close } = createModalShell(
@@ -1973,11 +2214,11 @@
         }
     }
 
-    function renderIssueBoard() {
-        const container = document.getElementById('workbench-chat-content');
-        if (!container) return;
+    function renderIssueBoard(container) {
+        const target = container || document.getElementById('workbench-chat-content');
+        if (!target) return;
 
-        container.innerHTML = `
+        target.innerHTML = `
             <div class="issue-board">
                 <div class="issue-board-header">
                     <div class="issue-board-title">
@@ -5574,6 +5815,7 @@
 
         const updateStartState = () => {
             const invitedCount = Array.from(selections.values()).filter(item => item.invited.checked).length;
+            inviteAllCheckbox.checked = invitedCount > 0 && invitedCount === selections.size;
             confirmBtn.disabled = invitedCount === 0;
         };
 
@@ -5623,16 +5865,8 @@
         const mutedIds = new Set();
         const chatLog = [];
 
-        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
-            'Conference',
-            'Exit',
-            'Discard Session',
-            { closeOnCancel: false, closeOnConfirm: true }
-        );
-
-        modal.classList.add('conference-mode-modal');
-        confirmBtn.textContent = 'Exit';
-        cancelBtn.textContent = 'Discard Session';
+        const { panel, actions, body, close } = createWorkbenchPanelShell('Conference');
+        panel.classList.add('conference-mode-modal');
 
         const header = document.createElement('div');
         header.className = 'conference-header';
@@ -5803,9 +6037,20 @@
             }
         });
 
-        cancelBtn.addEventListener('click', () => {
-            close();
-        });
+        const exitBtn = document.createElement('button');
+        exitBtn.type = 'button';
+        exitBtn.className = 'workbench-panel-btn';
+        exitBtn.textContent = 'Exit';
+        exitBtn.addEventListener('click', close);
+
+        const discardBtn = document.createElement('button');
+        discardBtn.type = 'button';
+        discardBtn.className = 'workbench-panel-btn workbench-panel-btn-danger';
+        discardBtn.textContent = 'Discard Session';
+        discardBtn.addEventListener('click', close);
+
+        actions.appendChild(discardBtn);
+        actions.appendChild(exitBtn);
 
         renderAttendees();
         setTimeout(() => chatInput.focus(), 0);
@@ -7012,6 +7257,18 @@
 
         if (elements.btnToggleModeTop) {
             elements.btnToggleModeTop.addEventListener('click', handleToggleModeClick);
+        }
+
+        if (elements.btnOpenIssues) {
+            elements.btnOpenIssues.addEventListener('click', () => {
+                openIssueBoardPanel();
+            });
+        }
+
+        if (elements.btnStartConference) {
+            elements.btnStartConference.addEventListener('click', () => {
+                showConferenceInviteModal();
+            });
         }
 
         if (elements.btnToggleExplorer) {

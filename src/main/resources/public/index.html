@@ -92,6 +92,9 @@
                     <button class="top-bar-tab" id="btn-toggle-mode-top" type="button">
                         <span class="tab-label">Switch to Workbench</span>
                     </button>
+                    <button class="top-bar-tab" id="btn-open-issues" type="button">
+                        <span class="tab-label">Issues</span>
+                    </button>
                 </div>
                 <div id="top-bar-right">
                     <button id="btn-workspace-switch" class="workspace-switch" type="button" title="Switch workspace" aria-label="Switch workspace">
@@ -253,15 +256,22 @@
                             <div class="workbench-panel-header">
                                 <span class="panel-title">Agents</span>
                                 <div class="panel-action-group">
-                                    <button id="btn-retired-agents" class="panel-action-btn" title="Retired Agents" aria-label="Retired Agents">
-                                        <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="">
-                                    </button>
                                     <button id="btn-add-agent" class="panel-action-btn" title="Add Agent">+</button>
                                     <button id="btn-import-agent" class="panel-action-btn" title="Import Agent">v</button>
                                 </div>
                             </div>
+                            <div class="workbench-agent-actions">
+                                <button id="btn-start-conference" class="panel-action-primary" type="button">
+                                    Start Conference
+                                </button>
+                            </div>
                             <div id="agent-list" class="agent-list">
                                 <!-- Will be populated by JS -->
+                            </div>
+                            <div class="workbench-agent-footer">
+                                <button id="btn-retired-agents" class="panel-action-btn" title="Nursing Home" aria-label="Nursing Home">
+                                    Nursing Home
+                                </button>
                             </div>
                         </div>
 
