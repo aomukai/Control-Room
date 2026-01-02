@@ -2750,6 +2750,10 @@ html, body {
     min-height: 160px;
 }
 
+.settings-card-wide {
+    grid-column: 1 / -1;
+}
+
 .settings-card-title {
     font-size: 13px;
     text-transform: uppercase;
@@ -2856,6 +2860,41 @@ html, body {
 
 .settings-coming-soon-modal {
     max-width: 420px;
+}
+
+.hotkey-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.hotkey-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.hotkey-keys {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--text-secondary);
+}
+
+.hotkey-keys kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    font-size: 11px;
+    color: var(--text-primary);
+    font-family: 'Consolas', 'Monaco', monospace;
 }
 #top-bar {
     display: flex;

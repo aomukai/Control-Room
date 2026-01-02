@@ -1134,6 +1134,41 @@
                     </section>
 
                     <section class="settings-card">
+                        <div class="settings-card-title">Editor Preferences</div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Editor Font</div>
+                                <small>Monospace font family</small>
+                            </div>
+                            <input class="settings-control" type="text" placeholder="e.g., JetBrains Mono" data-coming-soon="Editor font preferences are coming soon.">
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>Editor Font Size</div>
+                                <small>Content text size</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="Editor font size is coming soon.">
+                                <option value="12">12</option>
+                                <option value="13">13</option>
+                                <option value="14">14</option>
+                                <option value="15">15</option>
+                                <option value="16">16</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <div class="settings-label">
+                                <div>UI Font Size</div>
+                                <small>Interface text size</small>
+                            </div>
+                            <select class="settings-control" data-coming-soon="UI font size is coming soon.">
+                                <option value="small">Small</option>
+                                <option value="medium">Medium</option>
+                                <option value="large">Large</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <section class="settings-card">
                         <div class="settings-card-title">Provider Defaults</div>
                         <div class="settings-row">
                             <div class="settings-label">
@@ -1205,6 +1240,39 @@
                                 <option value="s3">S3 Compatible</option>
                             </select>
                         </div>
+                    </section>
+
+                    <section class="settings-card settings-card-wide">
+                        <div class="settings-card-title">Hotkeys</div>
+                        <div class="settings-label">
+                            <div>Default Shortcuts</div>
+                            <small>Read-only for now</small>
+                        </div>
+                        <div class="hotkey-list">
+                            <div class="hotkey-row">
+                                <span>Save file</span>
+                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>S</kbd></span>
+                            </div>
+                            <div class="hotkey-row">
+                                <span>Find in file</span>
+                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>F</kbd></span>
+                            </div>
+                            <div class="hotkey-row">
+                                <span>Search in workspace</span>
+                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd></span>
+                            </div>
+                            <div class="hotkey-row">
+                                <span>Toggle Workbench</span>
+                                <span class="hotkey-keys"><kbd>Button</kbd></span>
+                            </div>
+                            <div class="hotkey-row">
+                                <span>Open settings</span>
+                                <span class="hotkey-keys"><kbd>Button</kbd></span>
+                            </div>
+                        </div>
+                        <button class="settings-button" type="button" data-coming-soon="Hotkey customization is coming soon.">
+                            Customize Hotkeys
+                        </button>
                     </section>
                 </div>
             </div>
