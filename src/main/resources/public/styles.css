@@ -2717,7 +2717,7 @@ html, body {
 
 .settings-page {
     padding: 24px;
-    max-width: 1080px;
+    max-width: 1400px;
     margin: 0 auto;
 }
 
@@ -2735,8 +2735,10 @@ html, body {
 
 .settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 16px;
+    align-items: start;
+    grid-auto-flow: dense;
 }
 
 .settings-card {
@@ -2750,8 +2752,12 @@ html, body {
     min-height: 160px;
 }
 
-.settings-card-wide {
-    grid-column: 1 / -1;
+.settings-card-span-2 {
+    grid-column: span 2;
+}
+
+.settings-card-span-3 {
+    grid-column: span 3;
 }
 
 .settings-card-title {
@@ -2860,6 +2866,18 @@ html, body {
 
 .settings-coming-soon-modal {
     max-width: 420px;
+}
+
+@media (min-width: 1100px) {
+    .settings-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .settings-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .hotkey-list {

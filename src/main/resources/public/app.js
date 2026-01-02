@@ -1242,7 +1242,7 @@
                         </div>
                     </section>
 
-                    <section class="settings-card settings-card-wide">
+                    <section class="settings-card settings-card-span-3">
                         <div class="settings-card-title">Hotkeys</div>
                         <div class="settings-label">
                             <div>Default Shortcuts</div>
