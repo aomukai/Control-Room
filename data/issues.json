@@ -212,4 +212,17 @@
   "createdAt" : 1767283589356,
   "updatedAt" : 1767283600347,
   "closedAt" : null
+}, {
+  "id" : 14,
+  "title" : "Test",
+  "body" : "This is a test issue for @kermit",
+  "openedBy" : "user",
+  "assignedTo" : "Kermit",
+  "tags" : [ ],
+  "priority" : "normal",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767376494803,
+  "updatedAt" : 1767376494803,
+  "closedAt" : null
 } ]

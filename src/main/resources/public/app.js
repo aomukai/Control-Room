@@ -63,6 +63,7 @@
         diffPreview: document.getElementById('diff-preview'),
         diffContent: document.getElementById('diff-content'),
         closeDiff: document.getElementById('close-diff'),
+        btnCreateIssue: document.getElementById('btn-create-issue'),
         btnRevealFile: document.getElementById('btn-reveal-file'),
         btnOpenFolder: document.getElementById('btn-open-folder'),
         btnFind: document.getElementById('btn-find'),
@@ -1237,6 +1238,134 @@
     // ISSUE BOARD
     // ============================================
 
+    function showIssueCreateModal() {
+        const { modal, body, confirmBtn, close } = createModalShell(
+            'Create Issue',
+            'Create',
+            'Cancel',
+            { closeOnCancel: true }
+        );
+
+        modal.classList.add('issue-create-modal');
+
+        const error = document.createElement('div');
+        error.className = 'modal-error-hint';
+        body.appendChild(error);
+
+        const buildRow = (labelText, inputEl) => {
+            const row = document.createElement('div');
+            row.className = 'modal-row';
+            const label = document.createElement('label');
+            label.className = 'modal-label';
+            label.textContent = labelText;
+            row.appendChild(label);
+            row.appendChild(inputEl);
+            return row;
+        };
+
+        const titleInput = document.createElement('input');
+        titleInput.type = 'text';
+        titleInput.className = 'modal-input';
+        titleInput.placeholder = 'Short, descriptive title';
+        body.appendChild(buildRow('Title', titleInput));
+
+        const bodyInput = document.createElement('textarea');
+        bodyInput.className = 'modal-textarea';
+        bodyInput.rows = 4;
+        bodyInput.placeholder = 'Describe the issue...';
+        body.appendChild(buildRow('Description', bodyInput));
+
+        const prioritySelect = document.createElement('select');
+        prioritySelect.className = 'modal-select';
+        [
+            { value: 'urgent', label: 'Urgent' },
+            { value: 'high', label: 'High' },
+            { value: 'normal', label: 'Normal' },
+            { value: 'low', label: 'Low' }
+        ].forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            prioritySelect.appendChild(option);
+        });
+        prioritySelect.value = 'normal';
+        body.appendChild(buildRow('Priority', prioritySelect));
+
+        const tagsInput = document.createElement('input');
+        tagsInput.type = 'text';
+        tagsInput.className = 'modal-input';
+        tagsInput.placeholder = 'Comma-separated tags (optional)';
+        body.appendChild(buildRow('Tags', tagsInput));
+
+        const assigneeInput = document.createElement('input');
+        assigneeInput.type = 'text';
+        assigneeInput.className = 'modal-input';
+        assigneeInput.placeholder = 'Optional assignee';
+        body.appendChild(buildRow('Assignee', assigneeInput));
+
+        const parseTags = (value) => {
+            const rawTags = value.split(',').map(tag => tag.trim()).filter(Boolean);
+            return Array.from(new Set(rawTags));
+        };
+
+        const submitIssue = async () => {
+            const title = titleInput.value.trim();
+            if (!title) {
+                error.textContent = 'Title is required.';
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            error.textContent = '';
+
+            const bodyText = bodyInput.value.trim();
+            const tags = parseTags(tagsInput.value || '');
+            const assignee = assigneeInput.value.trim();
+
+            const payload = {
+                title,
+                body: bodyText,
+                priority: prioritySelect.value,
+                tags
+            };
+
+            if (assignee) {
+                payload.assignedTo = assignee;
+            }
+
+            try {
+                const issue = await issueApi.create(payload);
+                notificationStore.issueCreated(issue.id, issue.title, issue.openedBy || 'user', issue.assignedTo || '');
+                await loadIssues();
+                close();
+                openIssueModal(issue.id);
+            } catch (err) {
+                error.textContent = err.message;
+                confirmBtn.disabled = false;
+            }
+        };
+
+        confirmBtn.addEventListener('click', submitIssue);
+
+        [titleInput, tagsInput, assigneeInput].forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    submitIssue();
+                }
+            });
+        });
+
+        bodyInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                submitIssue();
+            }
+        });
+
+        titleInput.focus();
+    }
+
     async function loadIssues() {
         state.issueBoard.isLoading = true;
         state.issueBoard.error = null;
@@ -1275,6 +1404,9 @@
                         <span>Issue Board</span>
                     </div>
                     <div class="issue-board-actions">
+                        <button type="button" class="issue-board-btn issue-board-btn-primary" id="issue-board-new" title="Create issue">
+                            New Issue
+                        </button>
                         <button type="button" class="issue-board-btn" id="issue-board-refresh" title="Refresh">
                             <span>↻</span>
                         </button>
@@ -1324,6 +1456,13 @@
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
                 loadIssues();
+            });
+        }
+
+        const newBtn = document.getElementById('issue-board-new');
+        if (newBtn) {
+            newBtn.addEventListener('click', () => {
+                showIssueCreateModal();
             });
         }
 
@@ -5982,6 +6121,12 @@
                 performSearch(elements.searchInput.value);
             }
         });
+
+        if (elements.btnCreateIssue) {
+            elements.btnCreateIssue.addEventListener('click', () => {
+                showIssueCreateModal();
+            });
+        }
 
         // Chat
         elements.chatSend.addEventListener('click', sendChatMessage);
