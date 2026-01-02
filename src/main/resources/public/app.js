@@ -1057,6 +1057,7 @@
         }
 
         const previousMode = state.viewMode.current;
+        state.viewMode.previous = previousMode;
         state.viewMode.current = mode;
 
         updateModeControls(mode);
@@ -1202,236 +1203,465 @@
         if (!container) return;
 
         container.innerHTML = `
-            <div class="settings-page">
-                <div class="settings-header">
-                    <h2>Settings</h2>
-                    <p>Configure Control Room. Most controls are visual placeholders for now.</p>
-                </div>
-
-                <div class="settings-grid">
-                    <section class="settings-card">
-                        <div class="settings-card-title">Appearance</div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Theme</div>
-                                <small>Choose a UI theme</small>
-                            </div>
-                            <select class="settings-control" data-coming-soon="Theme selection is not wired yet.">
-                                <option value="default">Default</option>
-                                <option value="studio">Studio</option>
-                                <option value="midnight">Midnight</option>
-                                <option value="paper">Paper</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Day / Night Mode</div>
-                                <small>Manual mode toggle</small>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" class="settings-control" data-coming-soon="Day/night mode is coming soon.">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="settings-card-title">Editor Preferences</div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Editor Font</div>
-                                <small>Monospace font family</small>
-                            </div>
-                            <input class="settings-control" type="text" placeholder="e.g., JetBrains Mono" data-coming-soon="Editor font preferences are coming soon.">
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Editor Font Size</div>
-                                <small>Content text size</small>
-                            </div>
-                            <select class="settings-control" data-coming-soon="Editor font size is coming soon.">
-                                <option value="12">12</option>
-                                <option value="13">13</option>
-                                <option value="14">14</option>
-                                <option value="15">15</option>
-                                <option value="16">16</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>UI Font Size</div>
-                                <small>Interface text size</small>
-                            </div>
-                            <select class="settings-control" data-coming-soon="UI font size is coming soon.">
-                                <option value="small">Small</option>
-                                <option value="medium">Medium</option>
-                                <option value="large">Large</option>
-                            </select>
-                        </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="settings-card-title">Provider Defaults</div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Default Provider</div>
-                                <small>Used when no agent override exists</small>
-                            </div>
-                            <select class="settings-control" id="settings-default-provider">
-                                <option value="openai">OpenAI</option>
-                                <option value="anthropic">Anthropic</option>
-                                <option value="gemini">Gemini</option>
-                                <option value="openrouter">OpenRouter</option>
-                                <option value="local">Local</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Default Model</div>
-                                <small>Fallback model per provider</small>
-                            </div>
-                            <input class="settings-control" type="text" id="settings-default-model" placeholder="e.g., gpt-4.1-mini">
-                        </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="settings-card-title">Keys & Security</div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Key Storage</div>
-                                <small>Plaintext vs encrypted vault</small>
-                            </div>
-                            <select class="settings-control" id="settings-key-mode">
-                                <option value="encrypted">Encrypted Vault</option>
-                                <option value="plaintext">Plaintext</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Vault Status</div>
-                                <small id="settings-vault-status">Checking...</small>
-                            </div>
-                            <div class="settings-inline">
-                                <button class="settings-button" type="button" id="settings-vault-unlock">Unlock</button>
-                                <button class="settings-button" type="button" id="settings-vault-lock">Lock</button>
-                            </div>
-                        </div>
-                        <div class="settings-subsection">
-                            <div class="settings-subtitle">Provider Keys</div>
-                            <div id="settings-key-list" class="settings-key-list"></div>
-                        </div>
-                        <div class="settings-subsection">
-                            <div class="settings-subtitle">Add Key</div>
-                            <div class="settings-row">
-                                <div class="settings-label">
-                                    <div>Provider</div>
-                                    <small>Where this key belongs</small>
-                                </div>
-                                <select class="settings-control" id="settings-key-provider">
-                                    <option value="openai">OpenAI</option>
-                                    <option value="anthropic">Anthropic</option>
-                                    <option value="gemini">Gemini</option>
-                                    <option value="grok">Grok</option>
-                                    <option value="openrouter">OpenRouter</option>
-                                    <option value="nanogpt">NanoGPT</option>
-                                    <option value="togetherai">TogetherAI</option>
-                                </select>
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-label">
-                                    <div>Label</div>
-                                    <small>Human-friendly name</small>
-                                </div>
-                                <input class="settings-control" type="text" id="settings-key-label" placeholder="e.g., Primary key">
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-label">
-                                    <div>API Key</div>
-                                    <small>Stored securely</small>
-                                </div>
-                                <input class="settings-control" type="password" id="settings-key-value" placeholder="Paste key">
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-label">
-                                    <div>Custom ID</div>
-                                    <small>Optional identifier</small>
-                                </div>
-                                <input class="settings-control" type="text" id="settings-key-id" placeholder="Optional">
-                            </div>
-                            <div class="settings-row">
-                                <div class="settings-label">
-                                    <div>Actions</div>
-                                    <small>Save this key</small>
-                                </div>
-                                <button class="settings-button" type="button" id="settings-key-save">Save Key</button>
-                            </div>
-                            <div class="settings-error" id="settings-key-error"></div>
-                        </div>
-                    </section>
-
-                    <section class="settings-card">
-                        <div class="settings-card-title">Cloud Backup</div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Backup Mode</div>
-                                <small>Auto sync when enabled</small>
-                            </div>
-                            <select class="settings-control" data-coming-soon="Cloud backup is coming soon.">
-                                <option value="auto">Auto</option>
-                                <option value="manual">Manual</option>
-                                <option value="off">Off</option>
-                            </select>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-label">
-                                <div>Backup Provider</div>
-                                <small>Select a cloud target</small>
-                            </div>
-                            <select class="settings-control" data-coming-soon="Backup provider selection is coming soon.">
-                                <option value="none">Select provider</option>
-                                <option value="drive">Google Drive</option>
-                                <option value="dropbox">Dropbox</option>
-                                <option value="s3">S3 Compatible</option>
-                            </select>
-                        </div>
-                    </section>
-
-                    <section class="settings-card settings-card-span-3">
-                        <div class="settings-card-title">Hotkeys</div>
-                        <div class="settings-label">
-                            <div>Default Shortcuts</div>
-                            <small>Read-only for now</small>
-                        </div>
-                        <div class="hotkey-list">
-                            <div class="hotkey-row">
-                                <span>Save file</span>
-                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>S</kbd></span>
-                            </div>
-                            <div class="hotkey-row">
-                                <span>Find in file</span>
-                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>F</kbd></span>
-                            </div>
-                            <div class="hotkey-row">
-                                <span>Search in workspace</span>
-                                <span class="hotkey-keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd></span>
-                            </div>
-                            <div class="hotkey-row">
-                                <span>Toggle Workbench</span>
-                                <span class="hotkey-keys"><kbd>Button</kbd></span>
-                            </div>
-                            <div class="hotkey-row">
-                                <span>Open settings</span>
-                                <span class="hotkey-keys"><kbd>Button</kbd></span>
-                            </div>
-                        </div>
-                        <button class="settings-button" type="button" data-coming-soon="Hotkey customization is coming soon.">
-                            Customize Hotkeys
+            <div class="settings-layout">
+                <!-- Settings Sidebar Navigation -->
+                <nav class="settings-nav">
+                    <div class="settings-nav-header">
+                        <button class="settings-back-btn" id="settings-back-btn" type="button" title="Back to Editor">
+                            <img src="assets/icons/heroicons_outline/arrow-left.svg" alt="">
                         </button>
-                    </section>
-                </div>
+                        <h2>
+                            <img src="assets/icons/heroicons_outline/cog-6-tooth.svg" alt="">
+                            Settings
+                        </h2>
+                    </div>
+                    <div class="settings-nav-list">
+                        <div class="settings-nav-item active" data-section="appearance">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/swatch.svg" alt=""></span>
+                            Appearance
+                        </div>
+                        <div class="settings-nav-item" data-section="editor">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/pencil-square.svg" alt=""></span>
+                            Editor
+                            <span class="nav-badge">Soon</span>
+                        </div>
+                        <div class="settings-nav-item" data-section="providers">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/server.svg" alt=""></span>
+                            Providers
+                        </div>
+                        <div class="settings-nav-item" data-section="security">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/key.svg" alt=""></span>
+                            Keys & Security
+                        </div>
+                        <div class="settings-nav-item" data-section="backup">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/cloud.svg" alt=""></span>
+                            Backup
+                            <span class="nav-badge">Soon</span>
+                        </div>
+                        <div class="settings-nav-item" data-section="shortcuts">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/command-line.svg" alt=""></span>
+                            Shortcuts
+                        </div>
+                    </div>
+                    <div class="settings-nav-footer">
+                        Control Room v0.1
+                    </div>
+                </nav>
+
+                <!-- Settings Main Content -->
+                <main class="settings-main">
+                    <div class="settings-content">
+
+                        <!-- Appearance Section -->
+                        <section class="settings-section active" id="settings-appearance">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/swatch.svg" alt="">
+                                    Appearance
+                                </h3>
+                                <p>Customize the look and feel of Control Room.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Theme</div>
+                                <div class="settings-card">
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Color Theme</span>
+                                            <span class="settings-label-desc">Choose a UI color scheme</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Theme selection is not wired yet.">
+                                            <option value="default">Default Dark</option>
+                                            <option value="studio">Studio</option>
+                                            <option value="midnight">Midnight</option>
+                                            <option value="paper">Paper (Light)</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Day / Night Mode</span>
+                                            <span class="settings-label-desc">Toggle between light and dark modes</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" data-coming-soon="Day/night mode is coming soon.">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Interface</div>
+                                <div class="settings-card">
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">UI Scale</span>
+                                            <span class="settings-label-desc">Adjust interface element sizes</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="UI scaling is coming soon.">
+                                            <option value="small">Compact</option>
+                                            <option value="medium" selected>Normal</option>
+                                            <option value="large">Large</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Sidebar Position</span>
+                                            <span class="settings-label-desc">Place the main sidebar on left or right</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Sidebar position is coming soon.">
+                                            <option value="left" selected>Left</option>
+                                            <option value="right">Right</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Editor Section -->
+                        <section class="settings-section" id="settings-editor">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/pencil-square.svg" alt="">
+                                    Editor
+                                </h3>
+                                <p>Configure the text editor behavior and typography.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Typography</div>
+                                <div class="settings-card">
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Editor Font</span>
+                                            <span class="settings-label-desc">Monospace font for code editing</span>
+                                        </div>
+                                        <input class="settings-control settings-control-wide" type="text" placeholder="JetBrains Mono, Consolas" data-coming-soon="Editor font is coming soon.">
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Font Size</span>
+                                            <span class="settings-label-desc">Text size in the editor</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Font size is coming soon.">
+                                            <option value="12">12px</option>
+                                            <option value="13">13px</option>
+                                            <option value="14" selected>14px</option>
+                                            <option value="15">15px</option>
+                                            <option value="16">16px</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Line Height</span>
+                                            <span class="settings-label-desc">Spacing between lines</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Line height is coming soon.">
+                                            <option value="1.2">Tight (1.2)</option>
+                                            <option value="1.5" selected>Normal (1.5)</option>
+                                            <option value="1.8">Relaxed (1.8)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Behavior</div>
+                                <div class="settings-card">
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Word Wrap</span>
+                                            <span class="settings-label-desc">Wrap long lines automatically</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" checked data-coming-soon="Word wrap setting is coming soon.">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Auto Save</span>
+                                            <span class="settings-label-desc">Save files automatically after changes</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" data-coming-soon="Auto save is coming soon.">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Providers Section -->
+                        <section class="settings-section" id="settings-providers">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/server.svg" alt="">
+                                    AI Providers
+                                </h3>
+                                <p>Configure default AI provider and model settings.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Default Configuration</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Default Provider</span>
+                                            <span class="settings-label-desc">Used when no agent override exists</span>
+                                        </div>
+                                        <select class="settings-control" id="settings-default-provider">
+                                            <option value="openai">OpenAI</option>
+                                            <option value="anthropic">Anthropic</option>
+                                            <option value="gemini">Gemini</option>
+                                            <option value="grok">Grok</option>
+                                            <option value="openrouter">OpenRouter</option>
+                                            <option value="local">Local</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Default Model</span>
+                                            <span class="settings-label-desc">Fallback model for the selected provider</span>
+                                        </div>
+                                        <input class="settings-control settings-control-wide" type="text" id="settings-default-model" placeholder="e.g., gpt-4o-mini">
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Security Section -->
+                        <section class="settings-section" id="settings-security">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/key.svg" alt="">
+                                    Keys & Security
+                                </h3>
+                                <p>Manage API keys and security settings for your providers.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Vault Settings</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Key Storage Mode</span>
+                                            <span class="settings-label-desc">How API keys are stored on disk</span>
+                                        </div>
+                                        <select class="settings-control" id="settings-key-mode">
+                                            <option value="encrypted">Encrypted Vault</option>
+                                            <option value="plaintext">Plaintext</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Vault Status</span>
+                                            <span class="settings-label-desc" id="settings-vault-status">Checking...</span>
+                                        </div>
+                                        <div class="settings-inline">
+                                            <button class="settings-button" type="button" id="settings-vault-unlock">Unlock</button>
+                                            <button class="settings-button" type="button" id="settings-vault-lock">Lock</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Stored Keys</div>
+                                <div id="settings-key-list" class="settings-key-list"></div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Add New Key</div>
+                                <div class="settings-card">
+                                    <div class="settings-subsection">
+                                        <div class="settings-add-key-form">
+                                            <div class="settings-add-key-row">
+                                                <div class="settings-add-key-field">
+                                                    <label>Provider</label>
+                                                    <select class="settings-control" id="settings-key-provider">
+                                                        <option value="openai">OpenAI</option>
+                                                        <option value="anthropic">Anthropic</option>
+                                                        <option value="gemini">Gemini</option>
+                                                        <option value="grok">Grok</option>
+                                                        <option value="openrouter">OpenRouter</option>
+                                                        <option value="nanogpt">NanoGPT</option>
+                                                        <option value="togetherai">TogetherAI</option>
+                                                    </select>
+                                                </div>
+                                                <div class="settings-add-key-field">
+                                                    <label>Label</label>
+                                                    <input class="settings-control" type="text" id="settings-key-label" placeholder="My API key">
+                                                </div>
+                                            </div>
+                                            <div class="settings-add-key-row">
+                                                <div class="settings-add-key-field" style="flex: 2;">
+                                                    <label>API Key</label>
+                                                    <input class="settings-control" type="password" id="settings-key-value" placeholder="Paste your API key here">
+                                                </div>
+                                                <div class="settings-add-key-field">
+                                                    <label>Custom ID (Optional)</label>
+                                                    <input class="settings-control" type="text" id="settings-key-id" placeholder="my-key-1">
+                                                </div>
+                                            </div>
+                                            <div class="settings-add-key-row" style="justify-content: flex-end;">
+                                                <button class="settings-button settings-button-primary" type="button" id="settings-key-save">Save Key</button>
+                                            </div>
+                                            <div class="settings-error" id="settings-key-error"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Backup Section -->
+                        <section class="settings-section" id="settings-backup">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/cloud.svg" alt="">
+                                    Cloud Backup
+                                </h3>
+                                <p>Configure automatic backups to cloud storage providers.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Backup Configuration</div>
+                                <div class="settings-card">
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Backup Mode</span>
+                                            <span class="settings-label-desc">Automatically sync changes to cloud</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Cloud backup is coming soon.">
+                                            <option value="off" selected>Off</option>
+                                            <option value="auto">Automatic</option>
+                                            <option value="manual">Manual Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Backup Provider</span>
+                                            <span class="settings-label-desc">Cloud storage destination</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Backup provider is coming soon.">
+                                            <option value="none">Select provider...</option>
+                                            <option value="drive">Google Drive</option>
+                                            <option value="dropbox">Dropbox</option>
+                                            <option value="s3">S3 Compatible</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row coming-soon">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Backup Frequency</span>
+                                            <span class="settings-label-desc">How often to create backups</span>
+                                        </div>
+                                        <select class="settings-control" data-coming-soon="Backup frequency is coming soon.">
+                                            <option value="hourly">Every Hour</option>
+                                            <option value="daily" selected>Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Shortcuts Section -->
+                        <section class="settings-section" id="settings-shortcuts">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/command-line.svg" alt="">
+                                    Keyboard Shortcuts
+                                </h3>
+                                <p>View and customize keyboard shortcuts.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Editor Shortcuts</div>
+                                <div class="settings-card">
+                                    <div class="settings-subsection">
+                                        <div class="hotkey-list">
+                                            <div class="hotkey-row">
+                                                <span>Save file</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>S</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Find in file</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>F</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Find and replace</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>H</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Go to line</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>G</kbd></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Navigation Shortcuts</div>
+                                <div class="settings-card">
+                                    <div class="settings-subsection">
+                                        <div class="hotkey-list">
+                                            <div class="hotkey-row">
+                                                <span>Search in workspace</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>Shift</kbd> <span>+</span> <kbd>F</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Quick open file</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>P</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Toggle sidebar</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>B</kbd></span>
+                                            </div>
+                                            <div class="hotkey-row">
+                                                <span>Toggle workbench</span>
+                                                <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>Shift</kbd> <span>+</span> <kbd>W</kbd></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <button class="settings-button" type="button" data-coming-soon="Custom shortcut editing is coming soon.">
+                                    Customize Shortcuts
+                                </button>
+                            </div>
+                        </section>
+
+                    </div>
+                </main>
             </div>
         `;
 
+        // Wire up back button
+        const backBtn = container.querySelector('#settings-back-btn');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                // Go back to editor (or workbench if that was the previous mode)
+                const previousMode = state.viewMode.previous || 'editor';
+                setViewMode(previousMode === 'settings' ? 'editor' : previousMode);
+            });
+        }
+
+        // Wire up nav item clicks
+        container.querySelectorAll('.settings-nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const section = item.getAttribute('data-section');
+                container.querySelectorAll('.settings-nav-item').forEach(i => i.classList.remove('active'));
+                container.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
+                item.classList.add('active');
+                const targetSection = container.querySelector(`#settings-${section}`);
+                if (targetSection) targetSection.classList.add('active');
+            });
+        });
+
+        // Wire up coming-soon controls
         container.querySelectorAll('[data-coming-soon]').forEach(control => {
             const message = control.getAttribute('data-coming-soon') || '';
             const handler = () => showComingSoonModal('Coming soon', message);
