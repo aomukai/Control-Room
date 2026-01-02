@@ -5467,6 +5467,17 @@
         agendaRow.appendChild(agendaInput);
         body.appendChild(agendaRow);
 
+        const inviteAllRow = document.createElement('label');
+        inviteAllRow.className = 'conference-invite-actions';
+        const inviteAllCheckbox = document.createElement('input');
+        inviteAllCheckbox.type = 'checkbox';
+        inviteAllCheckbox.className = 'conference-agent-checkbox';
+        const inviteAllText = document.createElement('span');
+        inviteAllText.textContent = 'Invite all agents';
+        inviteAllRow.appendChild(inviteAllCheckbox);
+        inviteAllRow.appendChild(inviteAllText);
+        body.appendChild(inviteAllRow);
+
         if (agents.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'conference-agent-empty';
@@ -5566,6 +5577,17 @@
             confirmBtn.disabled = invitedCount === 0;
         };
 
+        inviteAllCheckbox.addEventListener('change', () => {
+            const shouldInvite = inviteAllCheckbox.checked;
+            selections.forEach(item => {
+                item.invited.checked = shouldInvite;
+                if (!shouldInvite && item.lead.checked) {
+                    item.invited.checked = true;
+                }
+            });
+            updateStartState();
+        });
+
         updateStartState();
 
         confirmBtn.addEventListener('click', () => {
@@ -5585,6 +5607,322 @@
                 log(`Conference agenda: ${agenda}`, 'info');
             }
             notificationStore.success(`Conference started with ${invited.length} agent(s).`, 'workbench');
+            close();
+            showConferenceModeModal({
+                agenda,
+                invited,
+                moderators: leaders
+            });
+        });
+    }
+
+    function showConferenceModeModal(config) {
+        const invited = Array.isArray(config?.invited) ? config.invited.slice() : [];
+        const moderators = Array.isArray(config?.moderators) ? config.moderators.slice() : [];
+        const agenda = config?.agenda || '';
+        const mutedIds = new Set();
+        const chatLog = [];
+
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Conference',
+            'Exit',
+            'Discard Session',
+            { closeOnCancel: false, closeOnConfirm: true }
+        );
+
+        modal.classList.add('conference-mode-modal');
+        confirmBtn.textContent = 'Exit';
+        cancelBtn.textContent = 'Discard Session';
+
+        const header = document.createElement('div');
+        header.className = 'conference-header';
+
+        const headerLeft = document.createElement('div');
+        headerLeft.className = 'conference-title';
+        headerLeft.textContent = agenda ? `Agenda: ${agenda}` : 'No agenda set';
+
+        const headerActions = document.createElement('div');
+        headerActions.className = 'conference-actions';
+
+        const btnCreateIssue = document.createElement('button');
+        btnCreateIssue.type = 'button';
+        btnCreateIssue.className = 'conference-action-btn';
+        btnCreateIssue.textContent = 'Create Issue from Chat';
+        btnCreateIssue.addEventListener('click', () => {
+            showComingSoonModal('Create Issue', 'Conference transcript -> issue creation is coming soon.');
+        });
+
+        const btnManage = document.createElement('button');
+        btnManage.type = 'button';
+        btnManage.className = 'conference-action-btn';
+        btnManage.textContent = 'Manage Attendees';
+        btnManage.addEventListener('click', () => {
+            showConferenceManageModal(invited, renderAttendees);
+        });
+
+        headerActions.appendChild(btnCreateIssue);
+        headerActions.appendChild(btnManage);
+
+        header.appendChild(headerLeft);
+        header.appendChild(headerActions);
+        body.appendChild(header);
+
+        const layout = document.createElement('div');
+        layout.className = 'conference-layout';
+
+        const attendeesPane = document.createElement('div');
+        attendeesPane.className = 'conference-attendees';
+
+        const attendeesTitle = document.createElement('div');
+        attendeesTitle.className = 'conference-attendees-title';
+        attendeesTitle.textContent = `Attendees (${invited.length})`;
+        attendeesPane.appendChild(attendeesTitle);
+
+        const attendeesList = document.createElement('div');
+        attendeesList.className = 'conference-attendees-list';
+        attendeesPane.appendChild(attendeesList);
+
+        const chatPane = document.createElement('div');
+        chatPane.className = 'conference-chat';
+
+        const chatHistory = document.createElement('div');
+        chatHistory.className = 'conference-chat-history';
+
+        const chatHint = document.createElement('div');
+        chatHint.className = 'conference-chat-hint';
+        chatHint.textContent = 'Conference chat is not wired yet. Messages are local for now.';
+
+        const chatInputRow = document.createElement('div');
+        chatInputRow.className = 'conference-chat-input-row';
+        const chatInput = document.createElement('textarea');
+        chatInput.className = 'conference-chat-input';
+        chatInput.rows = 3;
+        chatInput.placeholder = 'Type a message to the room...';
+        const chatSend = document.createElement('button');
+        chatSend.type = 'button';
+        chatSend.className = 'conference-chat-send';
+        chatSend.textContent = 'Send';
+        chatInputRow.appendChild(chatInput);
+        chatInputRow.appendChild(chatSend);
+
+        chatPane.appendChild(chatHistory);
+        chatPane.appendChild(chatHint);
+        chatPane.appendChild(chatInputRow);
+
+        layout.appendChild(attendeesPane);
+        layout.appendChild(chatPane);
+        body.appendChild(layout);
+
+        const renderAttendees = () => {
+            attendeesTitle.textContent = `Attendees (${invited.length})`;
+            attendeesList.innerHTML = '';
+            if (invited.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'conference-attendees-empty';
+                empty.textContent = 'No attendees.';
+                attendeesList.appendChild(empty);
+                return;
+            }
+            invited.forEach(agent => {
+                const row = document.createElement('div');
+                row.className = 'conference-attendee';
+                const avatar = document.createElement('div');
+                avatar.className = 'conference-attendee-avatar';
+                const avatarData = agent.avatar && agent.avatar.trim() ? agent.avatar.trim() : '';
+                if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
+                    const img = document.createElement('img');
+                    img.src = avatarData;
+                    img.alt = agent.name || 'Agent';
+                    avatar.appendChild(img);
+                } else if (avatarData) {
+                    avatar.textContent = avatarData;
+                } else {
+                    avatar.textContent = agent.name ? agent.name.charAt(0).toUpperCase() : '?';
+                }
+                if (agent.color && !avatarData.startsWith('data:') && !avatarData.startsWith('http')) {
+                    avatar.style.background = agent.color;
+                }
+
+                const info = document.createElement('div');
+                info.className = 'conference-attendee-info';
+
+                const name = document.createElement('div');
+                name.className = 'conference-attendee-name';
+                name.textContent = agent.name || 'Unnamed Agent';
+                const meta = document.createElement('div');
+                meta.className = 'conference-attendee-meta';
+                const role = agent.role ? `Role: ${agent.role}` : 'Role: -';
+                const isLead = moderators.some(moderator => moderator.id === agent.id);
+                const leadTag = isLead ? 'Moderator' : 'Participant';
+                const mutedTag = mutedIds.has(agent.id) ? 'Muted' : '';
+                meta.textContent = [role, leadTag, mutedTag].filter(Boolean).join(' • ');
+                if (isLead) {
+                    row.classList.add('conference-attendee-moderator');
+                }
+                info.appendChild(name);
+                info.appendChild(meta);
+                row.appendChild(avatar);
+                row.appendChild(info);
+                attendeesList.appendChild(row);
+
+                row.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    showConferenceAttendeeMenu(e, agent, invited, moderators, mutedIds, renderAttendees);
+                });
+            });
+        };
+
+        const addChatMessage = (author, role, content) => {
+            const entry = document.createElement('div');
+            entry.className = `conference-chat-message ${role}`;
+            const header = document.createElement('div');
+            header.className = 'conference-chat-message-header';
+            header.textContent = author;
+            const body = document.createElement('div');
+            body.className = 'conference-chat-message-body';
+            body.textContent = content;
+            entry.appendChild(header);
+            entry.appendChild(body);
+            chatHistory.appendChild(entry);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        };
+
+        const sendMessage = () => {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            chatInput.value = '';
+            chatLog.push({ author: 'You', role: 'user', content: text });
+            addChatMessage('You', 'user', text);
+        };
+
+        chatSend.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            close();
+        });
+
+        renderAttendees();
+        setTimeout(() => chatInput.focus(), 0);
+    }
+
+    function showConferenceAttendeeMenu(event, agent, invited, moderators, mutedIds, onUpdate) {
+        hideContextMenu();
+
+        const menu = document.createElement('div');
+        menu.className = 'context-menu';
+        menu.style.top = `${event.clientY}px`;
+        menu.style.left = `${event.clientX}px`;
+
+        const isMuted = mutedIds.has(agent.id);
+        const isModerator = moderators.some(item => item.id === agent.id);
+
+        const actions = [
+            {
+                label: isMuted ? 'Unmute' : 'Mute',
+                action: () => {
+                    if (isMuted) mutedIds.delete(agent.id);
+                    else mutedIds.add(agent.id);
+                    onUpdate();
+                }
+            },
+            {
+                label: 'Kick',
+                action: () => {
+                    const index = invited.findIndex(item => item.id === agent.id);
+                    if (index !== -1) invited.splice(index, 1);
+                    const leadIndex = moderators.findIndex(item => item.id === agent.id);
+                    if (leadIndex !== -1) moderators.splice(leadIndex, 1);
+                    mutedIds.delete(agent.id);
+                    onUpdate();
+                }
+            },
+            {
+                label: isModerator ? 'Demote from Moderator' : 'Promote to Moderator',
+                action: () => {
+                    if (isModerator) {
+                        const idx = moderators.findIndex(item => item.id === agent.id);
+                        if (idx !== -1) moderators.splice(idx, 1);
+                    } else {
+                        moderators.length = 0;
+                        moderators.push(agent);
+                    }
+                    onUpdate();
+                }
+            }
+        ];
+
+        actions.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'context-menu-item';
+            row.textContent = item.label;
+            row.addEventListener('click', () => {
+                hideContextMenu();
+                item.action();
+            });
+            menu.appendChild(row);
+        });
+
+        document.body.appendChild(menu);
+        contextMenu = menu;
+    }
+
+    function showConferenceManageModal(invited, onUpdate) {
+        const agents = (state.agents.list || []).filter(agent => agent.enabled !== false);
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Manage Attendees',
+            'Apply',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: false }
+        );
+
+        modal.classList.add('conference-manage-modal');
+
+        const info = document.createElement('div');
+        info.className = 'modal-text';
+        info.textContent = 'Select agents to include in this conference.';
+        body.appendChild(info);
+
+        const list = document.createElement('div');
+        list.className = 'conference-manage-list';
+        body.appendChild(list);
+
+        const invitedIds = new Set(invited.map(agent => agent.id));
+
+        agents.forEach(agent => {
+            const row = document.createElement('label');
+            row.className = 'conference-manage-row';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = invitedIds.has(agent.id);
+            const name = document.createElement('span');
+            name.textContent = agent.name || 'Unnamed Agent';
+            const role = document.createElement('span');
+            role.className = 'conference-manage-role';
+            role.textContent = agent.role || 'role';
+            row.appendChild(checkbox);
+            row.appendChild(name);
+            row.appendChild(role);
+            list.appendChild(row);
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            invited.length = 0;
+            const rows = Array.from(list.querySelectorAll('.conference-manage-row'));
+            rows.forEach((row, index) => {
+                const checkbox = row.querySelector('input');
+                if (checkbox && checkbox.checked) {
+                    invited.push(agents[index]);
+                }
+            });
+            if (typeof onUpdate === 'function') {
+                onUpdate();
+            }
             close();
         });
     }

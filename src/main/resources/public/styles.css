@@ -1381,7 +1381,7 @@ html, body {
     padding: 4px 0;
     min-width: 160px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    z-index: 1000;
+    z-index: 1300;
 }
 
 .context-menu-item {
@@ -1577,6 +1577,15 @@ html, body {
     background: var(--bg-dark);
 }
 
+.conference-invite-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
 .conference-agent-row {
     display: grid;
     grid-template-columns: 1fr 140px 90px 90px;
@@ -1631,6 +1640,276 @@ html, body {
     color: var(--text-secondary);
     font-size: 12px;
     text-align: center;
+}
+
+/* Conference Mode Modal */
+.conference-mode-modal {
+    width: 92%;
+    max-width: 1100px;
+    min-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.conference-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.conference-title {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.conference-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.conference-action-btn {
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.conference-action-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+.conference-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 12px;
+    min-height: 520px;
+}
+
+.conference-attendees {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.conference-attendees-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-secondary);
+}
+
+.conference-attendees-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.conference-attendees-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.conference-attendee {
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.conference-attendee-moderator {
+    border-color: rgba(78, 201, 176, 0.7);
+    box-shadow: 0 0 0 1px rgba(78, 201, 176, 0.2);
+}
+
+.conference-attendee-moderator .conference-attendee-name {
+    color: var(--success-color);
+}
+
+.conference-attendee-moderator .conference-attendee-meta {
+    color: rgba(78, 201, 176, 0.8);
+}
+
+.conference-attendee-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: var(--text-bright);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.conference-attendee-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.conference-attendee-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.conference-attendee-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.conference-attendee-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.conference-chat {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.conference-chat-history {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.conference-chat-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.conference-chat-message {
+    max-width: 70%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    align-self: flex-start;
+}
+
+.conference-chat-message.user {
+    align-self: flex-end;
+    background: rgba(14, 99, 156, 0.2);
+    border-color: rgba(14, 99, 156, 0.5);
+}
+
+.conference-chat-message-header {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.conference-chat-message-body {
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.conference-chat-input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.conference-chat-input {
+    flex: 1;
+    min-height: 70px;
+    padding: 10px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    resize: vertical;
+}
+
+.conference-chat-send {
+    background: var(--accent-color);
+    border: none;
+    color: var(--text-bright);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.conference-chat-send:hover {
+    background: var(--accent-hover);
+}
+
+.conference-manage-modal {
+    min-width: 420px;
+}
+
+.conference-manage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.conference-manage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.conference-manage-row {
+    justify-content: space-between;
+}
+
+.conference-manage-role {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+@media (max-width: 980px) {
+    .conference-mode-modal {
+        min-width: 0;
+    }
+
+    .conference-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .conference-chat-message {
+        max-width: 100%;
+    }
 }
 
 /* Move Modal */
