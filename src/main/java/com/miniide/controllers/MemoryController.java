@@ -41,6 +41,7 @@ public class MemoryController implements Controller {
         app.put("/api/memory/{id}/active/{versionId}", this::setActiveVersion);
         app.put("/api/memory/{id}/pin", this::pinMemory);
         app.put("/api/memory/{id}/state", this::setState);
+        app.post("/api/memory/decay", this::runDecay);
     }
 
     private void createMemoryItem(Context ctx) {
@@ -257,6 +258,35 @@ public class MemoryController implements Controller {
             ctx.json(Map.of("success", true, "memoryId", memoryId, "state", state));
         } catch (Exception e) {
             logger.error("Error setting memory state: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void runDecay(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            long archiveDays = json.has("archiveAfterDays") ? json.get("archiveAfterDays").asLong(14) : 14;
+            long expireDays = json.has("expireAfterDays") ? json.get("expireAfterDays").asLong(30) : 30;
+            boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
+
+            MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
+            settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
+            settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
+            settings.setPruneExpiredR5(pruneExpiredR5);
+
+            MemoryService.DecayResult result = memoryService.runDecay(settings);
+
+            ctx.json(Map.of(
+                "archived", result.getArchivedIds(),
+                "expired", result.getExpiredIds(),
+                "prunedEvents", result.getPrunedEvents(),
+                "lockedItems", result.getLockedItems(),
+                "archiveAfterDays", archiveDays,
+                "expireAfterDays", expireDays,
+                "pruneExpiredR5", pruneExpiredR5
+            ));
+        } catch (Exception e) {
+            logger.error("Error running decay: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
         }
     }

@@ -7868,6 +7868,9 @@
         const memIdInput = document.getElementById('moderator-memory-id');
         const versionInput = document.getElementById('moderator-version-id');
         const feedback = document.getElementById('moderator-feedback');
+        const archiveInput = document.getElementById('decay-archive-days');
+        const expireInput = document.getElementById('decay-expire-days');
+        const pruneCheckbox = document.getElementById('decay-prune-r5');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
@@ -7932,6 +7935,28 @@
                 } catch (err) {
                     setFeedback(`Failed to archive: ${err.message}`, 'error');
                     notificationStore.error(`Failed to archive memory: ${err.message}`, 'workbench');
+                }
+            });
+        }
+
+        const btnDecay = document.getElementById('btn-run-decay');
+        if (btnDecay) {
+            btnDecay.addEventListener('click', async () => {
+                const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
+                const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
+                const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                try {
+                    const res = await memoryApi.decay({
+                        archiveAfterDays: archiveDays,
+                        expireAfterDays: expireDays,
+                        pruneExpiredR5: pruneR5
+                    });
+                    const msg = `Decay done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
+                    setFeedback(msg, 'success');
+                    notificationStore.success(msg, 'workbench');
+                } catch (err) {
+                    setFeedback(`Decay failed: ${err.message}`, 'error');
+                    notificationStore.error(`Decay failed: ${err.message}`, 'workbench');
                 }
             });
         }

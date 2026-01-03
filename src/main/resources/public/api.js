@@ -363,6 +363,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ state })
             });
+        },
+        async decay(options = {}) {
+            return api('/api/memory/decay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
+            });
         }
     };
 

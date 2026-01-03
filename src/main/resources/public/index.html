@@ -320,6 +320,21 @@
                                 <button id="btn-pin-memory" type="button">Pin at R3</button>
                                 <button id="btn-archive-memory" type="button">Archive</button>
                             </div>
+                            <div class="settings-row">
+                                <label for="decay-archive-days">Archive after (days)</label>
+                                <input id="decay-archive-days" type="number" min="1" value="14">
+                            </div>
+                            <div class="settings-row">
+                                <label for="decay-expire-days">Expire after (days)</label>
+                                <input id="decay-expire-days" type="number" min="1" value="30">
+                            </div>
+                            <div class="settings-row">
+                                <label for="decay-prune-r5">Prune expired R5</label>
+                                <input id="decay-prune-r5" type="checkbox" aria-label="Prune expired R5 evidence">
+                            </div>
+                            <div class="settings-actions">
+                                <button id="btn-run-decay" type="button">Run Decay / Compression</button>
+                            </div>
                             <div id="moderator-feedback" class="settings-feedback" aria-live="polite"></div>
                         </div>
                     </div>

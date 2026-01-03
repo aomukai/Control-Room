@@ -226,6 +226,66 @@ public class MemoryService {
         return true;
     }
 
+    public DecayResult runDecay(DecaySettings settings) {
+        long now = System.currentTimeMillis();
+        DecayResult result = new DecayResult();
+
+        long archiveAfterMs = settings.getArchiveAfterMs();
+        long expireAfterMs = settings.getExpireAfterMs();
+        boolean pruneExpiredR5 = settings.isPruneExpiredR5();
+
+        for (MemoryItem item : items.values()) {
+            long lastAccess = item.getLastAccessedAt() != null
+                ? item.getLastAccessedAt()
+                : (item.getCreatedAt() != null ? item.getCreatedAt() : now);
+
+            if (item.getActiveLockUntil() != null && item.getActiveLockUntil() > now) {
+                result.lockedItems++;
+                continue;
+            }
+
+            if ("active".equalsIgnoreCase(item.getState())
+                && archiveAfterMs > 0
+                && now - lastAccess >= archiveAfterMs) {
+                item.setState("archived");
+                result.archivedIds.add(item.getId());
+                touch(item, now);
+            }
+
+            if ("archived".equalsIgnoreCase(item.getState())
+                && expireAfterMs > 0
+                && now - lastAccess >= expireAfterMs) {
+                item.setState("expired");
+                result.expiredIds.add(item.getId());
+                touch(item, now);
+
+                if (pruneExpiredR5 && item.getPinnedMinLevel() == null) {
+                    int pruned = pruneR5(item.getId());
+                    result.prunedEvents += pruned;
+                }
+            }
+        }
+
+        saveSnapshot();
+        return result;
+    }
+
+    private int pruneR5(String memoryId) {
+        List<R5Event> events = eventsByItem.getOrDefault(memoryId, List.of());
+        int removed = events.size();
+        for (R5Event ev : events) {
+            eventsById.remove(ev.getId());
+        }
+        eventsByItem.remove(memoryId);
+
+        List<MemoryVersion> versions = versionsByItem.getOrDefault(memoryId, new ArrayList<>());
+        versions.removeIf(v -> v.getRepLevel() >= 5);
+        versionsByItem.put(memoryId, versions);
+        versionsById.entrySet().removeIf(e -> memoryId.equals(e.getValue().getMemoryItemId())
+            && e.getValue().getRepLevel() >= 5);
+        return removed;
+    }
+
     // ----- Internal helpers -----
 
     private MemoryVersion selectAutoVersion(MemoryItem item) {
@@ -392,6 +452,67 @@ public class MemoryService {
 
         public boolean isEscalated() {
             return escalated;
+        }
+    }
+
+    public static class DecaySettings {
+        private long archiveAfterMs;
+        private long expireAfterMs;
+        private boolean pruneExpiredR5;
+
+        public long getArchiveAfterMs() {
+            return archiveAfterMs;
+        }
+
+        public void setArchiveAfterMs(long archiveAfterMs) {
+            this.archiveAfterMs = archiveAfterMs;
+        }
+
+        public long getExpireAfterMs() {
+            return expireAfterMs;
+        }
+
+        public void setExpireAfterMs(long expireAfterMs) {
+            this.expireAfterMs = expireAfterMs;
+        }
+
+        public boolean isPruneExpiredR5() {
+            return pruneExpiredR5;
+        }
+
+        public void setPruneExpiredR5(boolean pruneExpiredR5) {
+            this.pruneExpiredR5 = pruneExpiredR5;
+        }
+    }
+
+    public static class DecayResult {
+        private final List<String> archivedIds = new ArrayList<>();
+        private final List<String> expiredIds = new ArrayList<>();
+        private int prunedEvents = 0;
+        private int lockedItems = 0;
+
+        public List<String> getArchivedIds() {
+            return archivedIds;
+        }
+
+        public List<String> getExpiredIds() {
+            return expiredIds;
+        }
+
+        public int getPrunedEvents() {
+            return prunedEvents;
+        }
+
+        public void setPrunedEvents(int prunedEvents) {
+            this.prunedEvents = prunedEvents;
+        }
+
+        public int getLockedItems() {
+            return lockedItems;
+        }
+
+        public void setLockedItems(int lockedItems) {
+            this.lockedItems = lockedItems;
         }
     }
 
