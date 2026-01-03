@@ -18,6 +18,7 @@ public class Main {
     private static final String VERSION = "1.0.0";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static AppLogger logger;
+    private static MemoryDecayScheduler decayScheduler;
 
     public static void main(String[] args) {
         try {
@@ -69,7 +70,14 @@ public class Main {
                 cfg.http.maxRequestSize = 10_000_000L;
             });
 
+            // Start memory decay scheduler (runs in background)
+            MemoryService.DecaySettings decaySettings = buildDecaySettingsFromEnv();
+            long intervalMs = getIntervalFromEnv();
+            decayScheduler = new MemoryDecayScheduler(memoryService, intervalMs, decaySettings);
+            decayScheduler.start();
+
             // Create and register controllers
+            MemoryController memoryController = new MemoryController(memoryService, decayScheduler, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(workspaceService, objectMapper),
                 new WorkspaceController(workspaceService, objectMapper),
@@ -77,20 +85,12 @@ public class Main {
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
-                new MemoryController(memoryService, objectMapper),
+                memoryController,
                 new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, memoryService, objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));
             logger.info("Registered " + controllers.size() + " controllers");
-
-            // Start memory decay scheduler (runs in background)
-            MemoryDecayScheduler decayScheduler = new MemoryDecayScheduler(
-                memoryService,
-                6 * 60 * 60 * 1000L, // every 6 hours
-                null
-            );
-            decayScheduler.start();
 
             // Register exception handlers
             registerExceptionHandlers(app);
@@ -164,5 +164,50 @@ public class Main {
             m = e.getClass().getSimpleName();
         }
         return Map.of("error", m);
+    }
+
+    private static long getIntervalFromEnv() {
+        String env = System.getenv("CR_DECAY_INTERVAL_MINUTES");
+        if (env != null && !env.isBlank()) {
+            try {
+                long minutes = Long.parseLong(env.trim());
+                if (minutes > 0) {
+                    return minutes * 60_000L;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 6 * 60 * 60 * 1000L; // default 6h
+    }
+
+    private static MemoryService.DecaySettings buildDecaySettingsFromEnv() {
+        MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
+        settings.setArchiveAfterMs(parseDaysEnv("CR_DECAY_ARCHIVE_DAYS", 14));
+        settings.setExpireAfterMs(parseDaysEnv("CR_DECAY_EXPIRE_DAYS", 30));
+        settings.setPruneExpiredR5(parseBoolEnv("CR_DECAY_PRUNE_R5", false));
+        return settings;
+    }
+
+    private static long parseDaysEnv(String key, int defaultDays) {
+        String env = System.getenv(key);
+        if (env != null && !env.isBlank()) {
+            try {
+                int days = Integer.parseInt(env.trim());
+                if (days > 0) {
+                    return days * 24L * 60L * 60L * 1000L;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return defaultDays * 24L * 60L * 60L * 1000L;
+    }
+
+    private static boolean parseBoolEnv(String key, boolean defaultValue) {
+        String env = System.getenv(key);
+        if (env == null || env.isBlank()) {
+            return defaultValue;
+        }
+        String v = env.trim().toLowerCase();
+        return v.equals("1") || v.equals("true") || v.equals("yes") || v.equals("on");
     }
 }

@@ -7871,10 +7871,32 @@
         const archiveInput = document.getElementById('decay-archive-days');
         const expireInput = document.getElementById('decay-expire-days');
         const pruneCheckbox = document.getElementById('decay-prune-r5');
+        const decayStatus = document.getElementById('decay-status');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
                 feedback.dataset.level = level;
+            }
+        };
+
+        const setDecayStatus = (text) => {
+            if (decayStatus) {
+                decayStatus.textContent = text;
+            }
+        };
+
+        const loadDecayStatus = async () => {
+            try {
+                const status = await memoryApi.getDecayStatus();
+                const minutes = status.intervalMs ? Math.round(status.intervalMs / 60000) : null;
+                const archived = status.archived ? status.archived.length : 0;
+                const expired = status.expired ? status.expired.length : 0;
+                const pruned = status.prunedEvents || 0;
+                const locked = status.lockedItems || 0;
+                const lastRun = status.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : 'never';
+                setDecayStatus(`Schedule: ${minutes || 'n/a'} min | Last run: ${lastRun} | Archived: ${archived} | Expired: ${expired} | Pruned: ${pruned} | Locked skipped: ${locked}`);
+            } catch (err) {
+                setDecayStatus(`Failed to load decay status: ${err.message}`);
             }
         };
 
@@ -7954,12 +7976,15 @@
                     const msg = `Decay done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
                     setFeedback(msg, 'success');
                     notificationStore.success(msg, 'workbench');
+                    loadDecayStatus();
                 } catch (err) {
                     setFeedback(`Decay failed: ${err.message}`, 'error');
                     notificationStore.error(`Decay failed: ${err.message}`, 'workbench');
                 }
             });
         }
+
+        loadDecayStatus();
     }
 
     // Initialize

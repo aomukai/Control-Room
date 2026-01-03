@@ -370,6 +370,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
             });
+        },
+        async getDecayStatus() {
+            return api('/api/memory/decay/status');
         }
     };
 

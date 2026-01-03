@@ -21,11 +21,13 @@ import java.util.Map;
 public class MemoryController implements Controller {
 
     private final MemoryService memoryService;
+    private final MemoryDecayScheduler decayScheduler;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public MemoryController(MemoryService memoryService, ObjectMapper objectMapper) {
+    public MemoryController(MemoryService memoryService, MemoryDecayScheduler decayScheduler, ObjectMapper objectMapper) {
         this.memoryService = memoryService;
+        this.decayScheduler = decayScheduler;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -42,6 +44,7 @@ public class MemoryController implements Controller {
         app.put("/api/memory/{id}/pin", this::pinMemory);
         app.put("/api/memory/{id}/state", this::setState);
         app.post("/api/memory/decay", this::runDecay);
+        app.get("/api/memory/decay/status", this::getDecayStatus);
     }
 
     private void createMemoryItem(Context ctx) {
@@ -289,5 +292,26 @@ public class MemoryController implements Controller {
             logger.error("Error running decay: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private void getDecayStatus(Context ctx) {
+        if (decayScheduler == null) {
+            ctx.status(404).json(Map.of("error", "Decay scheduler not configured"));
+            return;
+        }
+        MemoryDecayScheduler.DecayStatus status = decayScheduler.getStatus();
+        Map<String, Object> body = new HashMap<>();
+        body.put("intervalMs", status.intervalMs);
+        body.put("archiveAfterMs", status.settings != null ? status.settings.getArchiveAfterMs() : null);
+        body.put("expireAfterMs", status.settings != null ? status.settings.getExpireAfterMs() : null);
+        body.put("pruneExpiredR5", status.settings != null && status.settings.isPruneExpiredR5());
+        body.put("lastRunAt", status.lastRunAt);
+        if (status.lastResult != null) {
+            body.put("archived", status.lastResult.getArchivedIds());
+            body.put("expired", status.lastResult.getExpiredIds());
+            body.put("prunedEvents", status.lastResult.getPrunedEvents());
+            body.put("lockedItems", status.lastResult.getLockedItems());
+        }
+        ctx.json(body);
     }
 }

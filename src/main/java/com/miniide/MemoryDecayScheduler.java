@@ -16,6 +16,8 @@ public class MemoryDecayScheduler {
     private final MemoryService.DecaySettings settings;
     private final ScheduledExecutorService executor;
     private final AppLogger logger = AppLogger.get();
+    private volatile long lastRunAt = 0L;
+    private volatile MemoryService.DecayResult lastResult = null;
 
     public MemoryDecayScheduler(MemoryService memoryService, long intervalMs, MemoryService.DecaySettings settings) {
         this.memoryService = Objects.requireNonNull(memoryService, "memoryService");
@@ -36,6 +38,8 @@ public class MemoryDecayScheduler {
     private void runOnce() {
         try {
             MemoryService.DecayResult result = memoryService.runDecay(settings);
+            lastRunAt = System.currentTimeMillis();
+            lastResult = result;
             log("Decay run: archived=" + result.getArchivedIds().size()
                 + ", expired=" + result.getExpiredIds().size()
                 + ", prunedEvents=" + result.getPrunedEvents()
@@ -43,6 +47,15 @@ public class MemoryDecayScheduler {
         } catch (Exception e) {
             logWarning("Memory decay failed: " + e.getMessage());
         }
+    }
+
+    public DecayStatus getStatus() {
+        DecayStatus status = new DecayStatus();
+        status.intervalMs = intervalMs;
+        status.settings = settings;
+        status.lastRunAt = lastRunAt;
+        status.lastResult = lastResult;
+        return status;
     }
 
     private MemoryService.DecaySettings defaultSettings() {
@@ -71,5 +84,12 @@ public class MemoryDecayScheduler {
         if (logger != null) {
             logger.warn("[MemoryDecayScheduler] " + message);
         }
+    }
+
+    public static class DecayStatus {
+        public long intervalMs;
+        public long lastRunAt;
+        public MemoryService.DecaySettings settings;
+        public MemoryService.DecayResult lastResult;
     }
 }
