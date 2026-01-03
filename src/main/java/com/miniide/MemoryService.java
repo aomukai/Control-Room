@@ -270,6 +270,8 @@ public class MemoryService {
                 if (!dryRun && pruneExpiredR5 && item.getPinnedMinLevel() == null) {
                     int pruned = pruneR5(item.getId());
                     result.prunedEvents += pruned;
+                } else if (dryRun && pruneExpiredR5 && item.getPinnedMinLevel() == null) {
+                    result.prunableIds.add(item.getId());
                 }
             }
         }
@@ -498,6 +500,7 @@ public class MemoryService {
     public static class DecayResult {
         private final List<String> archivedIds = new ArrayList<>();
         private final List<String> expiredIds = new ArrayList<>();
+        private final List<String> prunableIds = new ArrayList<>();
         private int prunedEvents = 0;
         private int lockedItems = 0;
 
@@ -507,6 +510,10 @@ public class MemoryService {
 
         public List<String> getExpiredIds() {
             return expiredIds;
+        }
+
+        public List<String> getPrunableIds() {
+            return prunableIds;
         }
 
         public int getPrunedEvents() {

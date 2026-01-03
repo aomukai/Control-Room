@@ -7874,6 +7874,7 @@
         const decayStatus = document.getElementById('decay-status');
         const intervalInput = document.getElementById('decay-interval-min');
         const dryRunCheckbox = document.getElementById('decay-dry-run');
+        const decayReport = document.getElementById('decay-report');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
@@ -7885,6 +7886,19 @@
             if (decayStatus) {
                 decayStatus.textContent = text;
             }
+        };
+
+        const showDecayReport = (res, dryRun) => {
+            if (!decayReport) return;
+            const archived = res.archived || [];
+            const expired = res.expired || [];
+            const prunable = res.prunable || [];
+            decayReport.innerHTML = `
+                <div><strong>Decay ${dryRun ? '(dry run)' : ''} results:</strong></div>
+                <div>Archived: ${archived.length}, Expired: ${expired.length}, Prunable R5: ${prunable.length}, Locked skipped: ${res.lockedItems || 0}</div>
+                <div>Pruned events: ${res.prunedEvents || 0}</div>
+                ${dryRun && prunable.length ? `<div>Prunable IDs:</div><ul>${prunable.slice(0, 10).map(id => `<li>${id}</li>`).join('')}${prunable.length > 10 ? '<li>...</li>' : ''}</ul>` : ''}
+            `;
         };
 
         const loadDecayStatus = async () => {
@@ -7984,6 +7998,7 @@
                     const msg = `Decay ${dryRun ? '(dry run)' : ''} done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
                     setFeedback(msg, dryRun ? 'info' : 'success');
                     notificationStore.success(msg, 'workbench');
+                    showDecayReport(res, dryRun);
                     if (!dryRun) {
                         loadDecayStatus();
                     }

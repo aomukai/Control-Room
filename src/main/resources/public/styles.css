@@ -5053,6 +5053,20 @@ input[type="password"].settings-control {
     color: var(--text-secondary);
 }
 
+.decay-report {
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.decay-report ul {
+    margin-top: 6px;
+    padding-left: 16px;
+}
+
 /* Loading State */
 .issue-board-loading {
     display: flex;

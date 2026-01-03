@@ -284,6 +284,7 @@ public class MemoryController implements Controller {
             ctx.json(Map.of(
                 "archived", result.getArchivedIds(),
                 "expired", result.getExpiredIds(),
+                "prunable", result.getPrunableIds(),
                 "prunedEvents", result.getPrunedEvents(),
                 "lockedItems", result.getLockedItems(),
                 "dryRun", dryRun,
