@@ -328,9 +328,10 @@ public class MemoryService {
         if (item.getPinnedMinLevel() != null) {
             targetLevel = Math.max(targetLevel, item.getPinnedMinLevel());
         }
+        final int targetLevelFinal = targetLevel;
 
         MemoryVersion exact = versions.stream()
-            .filter(v -> v.getRepLevel() == targetLevel)
+            .filter(v -> v.getRepLevel() == targetLevelFinal)
             .findFirst()
             .orElse(null);
         if (exact != null) {
@@ -338,7 +339,7 @@ public class MemoryService {
         }
 
         MemoryVersion higher = versions.stream()
-            .filter(v -> v.getRepLevel() > targetLevel)
+            .filter(v -> v.getRepLevel() > targetLevelFinal)
             .min(Comparator.comparingInt(MemoryVersion::getRepLevel))
             .orElse(null);
         if (higher != null) {

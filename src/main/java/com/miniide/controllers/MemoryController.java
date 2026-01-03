@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.MemoryDecayScheduler;
 import com.miniide.MemoryService;
 import com.miniide.models.MemoryItem;
 import com.miniide.models.MemoryVersion;
@@ -129,7 +130,10 @@ public class MemoryController implements Controller {
 
     private void getMemory(Context ctx) {
         String memoryId = ctx.pathParam("id");
-        String level = ctx.queryParam("level", "auto");
+        String level = ctx.queryParam("level");
+        if (level == null) {
+            level = "auto";
+        }
 
         MemoryService.MemoryResult result = "more".equalsIgnoreCase(level)
             ? memoryService.getMemoryAtNextLevel(memoryId)
@@ -284,19 +288,20 @@ public class MemoryController implements Controller {
 
             MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
-            ctx.json(Map.of(
-                "archived", result.getArchivedIds(),
-                "expired", result.getExpiredIds(),
-                "prunable", result.getPrunableIds(),
-                "prunedEvents", result.getPrunedEvents(),
-                "lockedItems", result.getLockedItems(),
-                "lockedIds", result.getLockedIds(),
-                "items", result.getItems(),
-                "dryRun", dryRun,
-                "archiveAfterDays", archiveDays,
-                "expireAfterDays", expireDays,
-                "pruneExpiredR5", pruneExpiredR5
-            ));
+            Map<String, Object> response = new HashMap<>();
+            response.put("archived", result.getArchivedIds());
+            response.put("expired", result.getExpiredIds());
+            response.put("prunable", result.getPrunableIds());
+            response.put("prunedEvents", result.getPrunedEvents());
+            response.put("lockedItems", result.getLockedItems());
+            response.put("lockedIds", result.getLockedIds());
+            response.put("items", result.getItems());
+            response.put("dryRun", dryRun);
+            response.put("archiveAfterDays", archiveDays);
+            response.put("expireAfterDays", expireDays);
+            response.put("pruneExpiredR5", pruneExpiredR5);
+
+            ctx.json(response);
         } catch (Exception e) {
             logger.error("Error running decay: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
