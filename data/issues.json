@@ -225,4 +225,30 @@
   "createdAt" : 1767376494803,
   "updatedAt" : 1767377350070,
   "closedAt" : 1767377350070
+}, {
+  "id" : 15,
+  "title" : "Hallo! Spieglein, Spieglein an der Wand, wer ist der Schö...",
+  "body" : "",
+  "openedBy" : "user",
+  "assignedTo" : null,
+  "tags" : [ "from-chat", "planner" ],
+  "priority" : "normal",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767461989153,
+  "updatedAt" : 1767461989153,
+  "closedAt" : null
+}, {
+  "id" : 16,
+  "title" : "Hello! Let's discuss the issue with shoe prices in Ankh-M...",
+  "body" : "## Chat Log\n\n**User:** Hello! Let's discuss the issue with shoe prices in Ankh-Morpork. Can you tell me what you know about the problem?\n\n**Kermit:** Ah, you're referring to what's sometimes called the \"Boots Theory of Socioeconomic Unfairness\" - articulated by Captain Samuel Vimes of the Ankh-Morpork City Watch in Terry Pratchett's Discworld novels.\n\nThe essence of the problem is this: A truly good pair of boots might cost fifty dollars and last ten years. A poor man who can only afford ten-dollar boots will buy boots that fall apart in a season or two. Over ten years, he spends far more on cheap boots than the rich man spends on good ones - and still has wet feet.\n\nVimes observed this from personal experience, having spent his career walking the streets of the city on a watchman's salary.\n\nThe broader point Pratchett was making - with characteristic wit - is that **poverty is expensive**. The poor often pay more in the long run because they can't afford the upfront cost of quality, whether that's boots, housing, or other necessities. It's a structural trap rather than a matter of poor decision-making.\n\nIt's become a widely referenced concept in real-world discussions about poverty and economics, often called the \"Vimes Boots Index\" or similar.\n\nIs there a particular aspect of this you wanted to explore - the literary context, or its real-world applications?\n\n",
+  "openedBy" : "user",
+  "assignedTo" : null,
+  "tags" : [ "from-chat", "planner" ],
+  "priority" : "normal",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767462656898,
+  "updatedAt" : 1767462656898,
+  "closedAt" : null
 } ]

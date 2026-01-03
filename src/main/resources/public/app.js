@@ -7313,14 +7313,19 @@
         return workbenchChats.get(agentId);
     }
 
-    function appendWorkbenchChatMessage(container, role, content) {
+    function appendWorkbenchChatMessage(container, role, content, agentName) {
         const msg = document.createElement('div');
-        msg.className = `chat-message ${role}`;
+        msg.className = `workbench-chat-message ${role}`;
+
+        const label = document.createElement('div');
+        label.className = 'workbench-chat-message-label';
+        label.textContent = role === 'user' ? 'You' : (agentName || 'Assistant');
 
         const contentDiv = document.createElement('div');
-        contentDiv.className = 'chat-message-content';
+        contentDiv.className = 'workbench-chat-message-content';
         contentDiv.textContent = content;
 
+        msg.appendChild(label);
         msg.appendChild(contentDiv);
         container.appendChild(msg);
         container.scrollTop = container.scrollHeight;
@@ -7332,23 +7337,64 @@
         setSelectedAgentId(agent.id);
 
         const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
-            `Chat with ${agent.name || 'Agent'}`,
-            'Close',
-            'Cancel',
-            { closeOnCancel: true, closeOnConfirm: true }
+            `${agent.name || 'Agent'}`,
+            'Exit and Create Issue',
+            null,
+            { closeOnCancel: false, closeOnConfirm: false }
         );
 
         modal.classList.add('workbench-chat-modal');
+
+        // Make modal sticky - prevent closing on overlay click
+        const overlay = modal.closest('.modal-overlay');
+        if (overlay) {
+            overlay.style.pointerEvents = 'none';
+            modal.style.pointerEvents = 'auto';
+        }
 
         if (cancelBtn) {
             cancelBtn.style.display = 'none';
         }
 
-        const meta = document.createElement('div');
-        meta.className = 'modal-text';
-        meta.textContent = agent.role ? `Role: ${agent.role}` : 'Direct chat';
-        body.appendChild(meta);
+        // Agent meta card with avatar
+        const agentMeta = document.createElement('div');
+        agentMeta.className = 'workbench-chat-agent-meta';
 
+        const avatar = document.createElement('div');
+        avatar.className = 'workbench-chat-agent-avatar';
+
+        // Use agent's actual avatar if available
+        const avatarData = agent.avatar && agent.avatar.trim() ? agent.avatar.trim() : '';
+        if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
+            const img = document.createElement('img');
+            img.src = avatarData;
+            img.alt = agent.name || 'Agent';
+            img.className = 'workbench-chat-agent-avatar-img';
+            avatar.appendChild(img);
+        } else if (avatarData) {
+            avatar.textContent = avatarData;
+        } else {
+            avatar.textContent = (agent.name || 'A').charAt(0).toUpperCase();
+        }
+
+        const agentInfo = document.createElement('div');
+        agentInfo.className = 'workbench-chat-agent-info';
+
+        const agentName = document.createElement('div');
+        agentName.className = 'workbench-chat-agent-name';
+        agentName.textContent = agent.name || 'Agent';
+
+        const agentRole = document.createElement('div');
+        agentRole.className = 'workbench-chat-agent-role';
+        agentRole.textContent = agent.role ? `${agent.role} • Quick chat for task assignment` : 'Direct chat for task assignment';
+
+        agentInfo.appendChild(agentName);
+        agentInfo.appendChild(agentRole);
+        agentMeta.appendChild(avatar);
+        agentMeta.appendChild(agentInfo);
+        body.appendChild(agentMeta);
+
+        // Chat body
         const chatBody = document.createElement('div');
         chatBody.className = 'workbench-chat-body';
 
@@ -7359,13 +7405,13 @@
         inputRow.className = 'workbench-chat-input-row';
 
         const input = document.createElement('textarea');
-        input.className = 'modal-textarea workbench-chat-input';
+        input.className = 'workbench-chat-input';
         input.rows = 3;
-        input.placeholder = `Message ${agent.name || 'agent'}...`;
+        input.placeholder = `Describe the task for ${agent.name || 'this agent'}...`;
 
         const sendBtn = document.createElement('button');
         sendBtn.type = 'button';
-        sendBtn.className = 'modal-btn modal-btn-primary workbench-chat-send';
+        sendBtn.className = 'workbench-chat-send';
         sendBtn.textContent = 'Send';
 
         inputRow.appendChild(input);
@@ -7375,18 +7421,20 @@
         chatBody.appendChild(inputRow);
         body.appendChild(chatBody);
 
+        // Load chat history
         const log = getWorkbenchChatLog(agent.id);
         log.forEach(entry => {
-            appendWorkbenchChatMessage(history, entry.role, entry.content);
+            appendWorkbenchChatMessage(history, entry.role, entry.content, agent.name);
         });
 
+        // Send message handler
         const sendMessage = async () => {
             const message = input.value.trim();
             if (!message) return;
             input.value = '';
             sendBtn.disabled = true;
 
-            appendWorkbenchChatMessage(history, 'user', message);
+            appendWorkbenchChatMessage(history, 'user', message, agent.name);
             log.push({ role: 'user', content: message });
 
             try {
@@ -7396,17 +7444,79 @@
                     body: JSON.stringify({ message, agentId: agent.id })
                 });
                 const reply = response.content || 'No response.';
-                appendWorkbenchChatMessage(history, 'assistant', reply);
+                appendWorkbenchChatMessage(history, 'assistant', reply, agent.name);
                 log.push({ role: 'assistant', content: reply });
             } catch (err) {
                 const errorMessage = 'Sorry, I encountered an error. Please try again.';
-                appendWorkbenchChatMessage(history, 'assistant', errorMessage);
+                appendWorkbenchChatMessage(history, 'assistant', errorMessage, agent.name);
                 log.push({ role: 'assistant', content: errorMessage });
             } finally {
                 sendBtn.disabled = false;
             }
         };
 
+        // Create issue from chat log and close
+        const exitAndCreateIssue = async () => {
+            if (log.length === 0) {
+                notificationStore.warning('No chat history to create issue from.', 'workbench');
+                return;
+            }
+
+            // Build issue description from chat log
+            let description = '## Chat Log\n\n';
+            log.forEach(entry => {
+                const speaker = entry.role === 'user' ? 'User' : agent.name || 'Agent';
+                description += `**${speaker}:** ${entry.content}\n\n`;
+            });
+
+            // Find team lead
+            const teamLead = (state.agents.list || []).find(a => a.role && a.role.toLowerCase().includes('lead'));
+
+            // Assign to both agent and team lead
+            const assignees = [agent.id];
+            if (teamLead && teamLead.id !== agent.id) {
+                assignees.push(teamLead.id);
+            }
+
+            // Extract title from first user message or use default
+            const firstUserMessage = log.find(entry => entry.role === 'user');
+            const title = firstUserMessage ?
+                (firstUserMessage.content.length > 60 ?
+                    firstUserMessage.content.substring(0, 57) + '...' :
+                    firstUserMessage.content) :
+                'Task from chat';
+
+            try {
+                const response = await api('/api/issues', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        body: description,
+                        assignee: agent.id,
+                        priority: 'normal',
+                        status: 'open',
+                        tags: ['from-chat', agent.role || 'general']
+                    })
+                });
+
+                const assigneeName = teamLead && teamLead.id !== agent.id ?
+                    `${agent.name} and ${teamLead.name}` :
+                    agent.name || 'Agent';
+
+                notificationStore.success(`Issue created and assigned to ${assigneeName}!`, 'workbench', {
+                    action: 'openIssue',
+                    issueId: response.id
+                });
+
+                close();
+            } catch (err) {
+                notificationStore.error('Failed to create issue. Please try again.', 'workbench');
+                console.error('Issue creation error:', err);
+            }
+        };
+
+        // Event listeners
         sendBtn.addEventListener('click', sendMessage);
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -7414,6 +7524,9 @@
                 sendMessage();
             }
         });
+
+        // Wire up the "Exit and Create Issue" button
+        confirmBtn.addEventListener('click', exitAndCreateIssue);
 
         setTimeout(() => input.focus(), 0);
     }
