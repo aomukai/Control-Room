@@ -7802,8 +7802,10 @@
                 updateChatMemoryBadge(null);
                 if (value) {
                     log(`Bound chat to memory ${value}`, 'info');
+                    notificationStore.success(`Chat bound to memory ${value}`, 'editor');
                 } else {
                     log('Chat memory binding cleared', 'info');
+                    notificationStore.info('Chat memory binding cleared', 'editor');
                 }
             });
         }
@@ -7880,13 +7882,16 @@
                 const verId = versionInput.value.trim();
                 if (!memId || !verId) {
                     setFeedback('Memory ID and Version ID are required to promote.', 'error');
+                    notificationStore.warning('Memory ID and Version ID required to promote.', 'workbench');
                     return;
                 }
                 try {
                     const res = await memoryApi.setActive(memId, verId, { reason: 'manual-promote', lockMinutes: 90 });
                     setFeedback(`Active set to ${verId} (lock until ${res.lockUntil || 'now'})`, 'success');
+                    notificationStore.success(`Promoted ${memId} -> ${verId}`, 'workbench');
                 } catch (err) {
                     setFeedback(`Failed to promote: ${err.message}`, 'error');
+                    notificationStore.error(`Failed to promote memory: ${err.message}`, 'workbench');
                 }
             });
         }
@@ -7897,13 +7902,16 @@
                 const memId = memIdInput.value.trim();
                 if (!memId) {
                     setFeedback('Memory ID required to pin.', 'error');
+                    notificationStore.warning('Memory ID required to pin.', 'workbench');
                     return;
                 }
                 try {
                     await memoryApi.pin(memId, 3);
                     setFeedback(`Pinned ${memId} at R3`, 'success');
+                    notificationStore.success(`Pinned ${memId} at R3`, 'workbench');
                 } catch (err) {
                     setFeedback(`Failed to pin: ${err.message}`, 'error');
+                    notificationStore.error(`Failed to pin memory: ${err.message}`, 'workbench');
                 }
             });
         }
@@ -7914,13 +7922,16 @@
                 const memId = memIdInput.value.trim();
                 if (!memId) {
                     setFeedback('Memory ID required to archive.', 'error');
+                    notificationStore.warning('Memory ID required to archive.', 'workbench');
                     return;
                 }
                 try {
                     await memoryApi.setState(memId, 'archived');
                     setFeedback(`Archived ${memId}`, 'success');
+                    notificationStore.success(`Archived ${memId}`, 'workbench');
                 } catch (err) {
                     setFeedback(`Failed to archive: ${err.message}`, 'error');
+                    notificationStore.error(`Failed to archive memory: ${err.message}`, 'workbench');
                 }
             });
         }
