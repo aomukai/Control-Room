@@ -52,6 +52,7 @@ public class Main {
             IssueMemoryService issueService = new IssueMemoryService();
             MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");
+            logger.info("Memory service initialized");
 
             // Initialize settings and provider services
             SettingsService settingsService = new SettingsService(AppConfig.getSettingsDirectory(), objectMapper);
@@ -83,6 +84,14 @@ public class Main {
             controllers.forEach(c -> c.registerRoutes(app));
             logger.info("Registered " + controllers.size() + " controllers");
 
+            // Start memory decay scheduler (runs in background)
+            MemoryDecayScheduler decayScheduler = new MemoryDecayScheduler(
+                memoryService,
+                6 * 60 * 60 * 1000L, // every 6 hours
+                null
+            );
+            decayScheduler.start();
+
             // Register exception handlers
             registerExceptionHandlers(app);
 
@@ -106,6 +115,7 @@ public class Main {
             // Add shutdown hook for clean shutdown
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 logger.info("Shutting down...");
+                decayScheduler.stop();
                 app.stop();
                 logger.close();
             }));
