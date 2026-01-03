@@ -7872,6 +7872,8 @@
         const expireInput = document.getElementById('decay-expire-days');
         const pruneCheckbox = document.getElementById('decay-prune-r5');
         const decayStatus = document.getElementById('decay-status');
+        const intervalInput = document.getElementById('decay-interval-min');
+        const dryRunCheckbox = document.getElementById('decay-dry-run');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
@@ -7895,6 +7897,10 @@
                 const locked = status.lockedItems || 0;
                 const lastRun = status.lastRunAt ? new Date(status.lastRunAt).toLocaleString() : 'never';
                 setDecayStatus(`Schedule: ${minutes || 'n/a'} min | Last run: ${lastRun} | Archived: ${archived} | Expired: ${expired} | Pruned: ${pruned} | Locked skipped: ${locked}`);
+                if (intervalInput && minutes) intervalInput.value = minutes;
+                if (archiveInput && status.archiveAfterMs) archiveInput.value = Math.round(status.archiveAfterMs / (24 * 60 * 60 * 1000));
+                if (expireInput && status.expireAfterMs) expireInput.value = Math.round(status.expireAfterMs / (24 * 60 * 60 * 1000));
+                if (pruneCheckbox) pruneCheckbox.checked = Boolean(status.pruneExpiredR5);
             } catch (err) {
                 setDecayStatus(`Failed to load decay status: ${err.message}`);
             }
@@ -7967,19 +7973,48 @@
                 const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
                 const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                const dryRun = dryRunCheckbox ? dryRunCheckbox.checked : false;
                 try {
                     const res = await memoryApi.decay({
                         archiveAfterDays: archiveDays,
                         expireAfterDays: expireDays,
+                        pruneExpiredR5: pruneR5,
+                        dryRun
+                    });
+                    const msg = `Decay ${dryRun ? '(dry run)' : ''} done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
+                    setFeedback(msg, dryRun ? 'info' : 'success');
+                    notificationStore.success(msg, 'workbench');
+                    if (!dryRun) {
+                        loadDecayStatus();
+                    }
+                } catch (err) {
+                    setFeedback(`Decay failed: ${err.message}`, 'error');
+                    notificationStore.error(`Decay failed: ${err.message}`, 'workbench');
+                }
+            });
+        }
+
+        const btnSaveConfig = document.getElementById('btn-save-decay-config');
+        if (btnSaveConfig) {
+            btnSaveConfig.addEventListener('click', async () => {
+                const interval = intervalInput && intervalInput.value ? parseInt(intervalInput.value, 10) : 360;
+                const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
+                const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
+                const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                try {
+                    await memoryApi.saveDecayConfig({
+                        intervalMinutes: interval,
+                        archiveAfterDays: archiveDays,
+                        expireAfterDays: expireDays,
                         pruneExpiredR5: pruneR5
                     });
-                    const msg = `Decay done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
+                    const msg = `Decay config saved. Interval: ${interval}m, archive: ${archiveDays}d, expire: ${expireDays}d, prune R5: ${pruneR5}`;
                     setFeedback(msg, 'success');
                     notificationStore.success(msg, 'workbench');
                     loadDecayStatus();
                 } catch (err) {
-                    setFeedback(`Decay failed: ${err.message}`, 'error');
-                    notificationStore.error(`Decay failed: ${err.message}`, 'workbench');
+                    setFeedback(`Failed to save decay config: ${err.message}`, 'error');
+                    notificationStore.error(`Failed to save decay config: ${err.message}`, 'workbench');
                 }
             });
         }

@@ -329,11 +329,20 @@
                                 <input id="decay-expire-days" type="number" min="1" value="30">
                             </div>
                             <div class="settings-row">
+                                <label for="decay-interval-min">Interval (minutes)</label>
+                                <input id="decay-interval-min" type="number" min="10" value="360">
+                            </div>
+                            <div class="settings-row">
                                 <label for="decay-prune-r5">Prune expired R5</label>
                                 <input id="decay-prune-r5" type="checkbox" aria-label="Prune expired R5 evidence">
                             </div>
                             <div class="settings-actions">
+                                <button id="btn-save-decay-config" type="button">Save Decay Config</button>
                                 <button id="btn-run-decay" type="button">Run Decay / Compression</button>
+                                <label class="settings-toggle">
+                                    <input id="decay-dry-run" type="checkbox" aria-label="Dry run only">
+                                    <span>Dry run</span>
+                                </label>
                             </div>
                             <div id="moderator-feedback" class="settings-feedback" aria-live="polite"></div>
                             <div class="settings-feedback" id="decay-status" aria-live="polite"></div>

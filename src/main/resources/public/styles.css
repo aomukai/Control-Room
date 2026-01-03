@@ -5037,6 +5037,17 @@ input[type="password"].settings-control {
     color: var(--text-bright);
 }
 
+.settings-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+}
+
+.settings-toggle input {
+    accent-color: var(--accent-color);
+}
+
 .settings-feedback {
     margin-top: 10px;
     color: var(--text-secondary);

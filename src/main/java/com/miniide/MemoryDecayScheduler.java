@@ -12,9 +12,10 @@ import java.util.concurrent.TimeUnit;
 public class MemoryDecayScheduler {
 
     private final MemoryService memoryService;
-    private final long intervalMs;
-    private final MemoryService.DecaySettings settings;
+    private long intervalMs;
+    private MemoryService.DecaySettings settings;
     private final ScheduledExecutorService executor;
+    private java.util.concurrent.ScheduledFuture<?> future;
     private final AppLogger logger = AppLogger.get();
     private volatile long lastRunAt = 0L;
     private volatile MemoryService.DecayResult lastResult = null;
@@ -27,12 +28,26 @@ public class MemoryDecayScheduler {
     }
 
     public void start() {
-        executor.scheduleAtFixedRate(this::runOnce, this.intervalMs, this.intervalMs, TimeUnit.MILLISECONDS);
+        future = executor.scheduleAtFixedRate(this::runOnce, this.intervalMs, this.intervalMs, TimeUnit.MILLISECONDS);
         log("Scheduled memory decay every " + (intervalMs / 1000 / 60) + " minutes");
     }
 
     public void stop() {
         executor.shutdownNow();
+    }
+
+    public synchronized void updateConfig(long newIntervalMs, MemoryService.DecaySettings newSettings) {
+        if (newIntervalMs > 0) {
+            this.intervalMs = newIntervalMs;
+        }
+        if (newSettings != null) {
+            this.settings = newSettings;
+        }
+        if (future != null) {
+            future.cancel(false);
+        }
+        future = executor.scheduleAtFixedRate(this::runOnce, this.intervalMs, this.intervalMs, TimeUnit.MILLISECONDS);
+        log("Updated decay schedule: every " + (intervalMs / 1000 / 60) + " minutes");
     }
 
     private void runOnce() {

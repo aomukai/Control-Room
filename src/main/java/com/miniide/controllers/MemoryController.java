@@ -45,6 +45,7 @@ public class MemoryController implements Controller {
         app.put("/api/memory/{id}/state", this::setState);
         app.post("/api/memory/decay", this::runDecay);
         app.get("/api/memory/decay/status", this::getDecayStatus);
+        app.put("/api/memory/decay/config", this::updateDecayConfig);
     }
 
     private void createMemoryItem(Context ctx) {
@@ -271,19 +272,21 @@ public class MemoryController implements Controller {
             long archiveDays = json.has("archiveAfterDays") ? json.get("archiveAfterDays").asLong(14) : 14;
             long expireDays = json.has("expireAfterDays") ? json.get("expireAfterDays").asLong(30) : 30;
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
+            boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
             settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
             settings.setPruneExpiredR5(pruneExpiredR5);
 
-            MemoryService.DecayResult result = memoryService.runDecay(settings);
+            MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
             ctx.json(Map.of(
                 "archived", result.getArchivedIds(),
                 "expired", result.getExpiredIds(),
                 "prunedEvents", result.getPrunedEvents(),
                 "lockedItems", result.getLockedItems(),
+                "dryRun", dryRun,
                 "archiveAfterDays", archiveDays,
                 "expireAfterDays", expireDays,
                 "pruneExpiredR5", pruneExpiredR5
@@ -313,5 +316,37 @@ public class MemoryController implements Controller {
             body.put("lockedItems", status.lastResult.getLockedItems());
         }
         ctx.json(body);
+    }
+
+    private void updateDecayConfig(Context ctx) {
+        if (decayScheduler == null) {
+            ctx.status(404).json(Map.of("error", "Decay scheduler not configured"));
+            return;
+        }
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            long intervalMinutes = json.has("intervalMinutes") ? json.get("intervalMinutes").asLong(360) : 360;
+            long archiveDays = json.has("archiveAfterDays") ? json.get("archiveAfterDays").asLong(14) : 14;
+            long expireDays = json.has("expireAfterDays") ? json.get("expireAfterDays").asLong(30) : 30;
+            boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
+
+            MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
+            settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
+            settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
+            settings.setPruneExpiredR5(pruneExpiredR5);
+
+            decayScheduler.updateConfig(intervalMinutes * 60_000L, settings);
+
+            ctx.json(Map.of(
+                "success", true,
+                "intervalMinutes", intervalMinutes,
+                "archiveAfterDays", archiveDays,
+                "expireAfterDays", expireDays,
+                "pruneExpiredR5", pruneExpiredR5
+            ));
+        } catch (Exception e) {
+            logger.error("Error updating decay config: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
     }
 }

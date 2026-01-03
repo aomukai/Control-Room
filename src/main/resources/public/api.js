@@ -373,6 +373,13 @@
         },
         async getDecayStatus() {
             return api('/api/memory/decay/status');
+        },
+        async saveDecayConfig(options = {}) {
+            return api('/api/memory/decay/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
+            });
         }
     };
 

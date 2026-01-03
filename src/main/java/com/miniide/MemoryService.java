@@ -227,6 +227,10 @@ public class MemoryService {
     }
 
     public DecayResult runDecay(DecaySettings settings) {
+        return runDecay(settings, false);
+    }
+
+    public DecayResult runDecay(DecaySettings settings, boolean dryRun) {
         long now = System.currentTimeMillis();
         DecayResult result = new DecayResult();
 
@@ -247,26 +251,32 @@ public class MemoryService {
             if ("active".equalsIgnoreCase(item.getState())
                 && archiveAfterMs > 0
                 && now - lastAccess >= archiveAfterMs) {
-                item.setState("archived");
+                if (!dryRun) {
+                    item.setState("archived");
+                    touch(item, now);
+                }
                 result.archivedIds.add(item.getId());
-                touch(item, now);
             }
 
             if ("archived".equalsIgnoreCase(item.getState())
                 && expireAfterMs > 0
                 && now - lastAccess >= expireAfterMs) {
-                item.setState("expired");
+                if (!dryRun) {
+                    item.setState("expired");
+                    touch(item, now);
+                }
                 result.expiredIds.add(item.getId());
-                touch(item, now);
 
-                if (pruneExpiredR5 && item.getPinnedMinLevel() == null) {
+                if (!dryRun && pruneExpiredR5 && item.getPinnedMinLevel() == null) {
                     int pruned = pruneR5(item.getId());
                     result.prunedEvents += pruned;
                 }
             }
         }
 
-        saveSnapshot();
+        if (!dryRun) {
+            saveSnapshot();
+        }
         return result;
     }
 
