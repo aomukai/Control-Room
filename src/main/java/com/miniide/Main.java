@@ -50,6 +50,7 @@ public class Main {
             // Initialize notification and issue services
             NotificationStore notificationStore = new NotificationStore();
             IssueMemoryService issueService = new IssueMemoryService();
+            MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");
 
             // Initialize settings and provider services
@@ -75,6 +76,7 @@ public class Main {
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
+                new MemoryController(memoryService, objectMapper),
                 new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, objectMapper)
             );
 
