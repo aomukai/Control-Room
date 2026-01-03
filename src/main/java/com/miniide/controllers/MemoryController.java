@@ -273,11 +273,13 @@ public class MemoryController implements Controller {
             long expireDays = json.has("expireAfterDays") ? json.get("expireAfterDays").asLong(30) : 30;
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
             boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
+            boolean collectReport = json.has("collectReport") && json.get("collectReport").asBoolean();
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
             settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
             settings.setPruneExpiredR5(pruneExpiredR5);
+            settings.setCollectReport(collectReport);
 
             MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
@@ -287,6 +289,8 @@ public class MemoryController implements Controller {
                 "prunable", result.getPrunableIds(),
                 "prunedEvents", result.getPrunedEvents(),
                 "lockedItems", result.getLockedItems(),
+                "lockedIds", result.getLockedIds(),
+                "items", result.getItems(),
                 "dryRun", dryRun,
                 "archiveAfterDays", archiveDays,
                 "expireAfterDays", expireDays,

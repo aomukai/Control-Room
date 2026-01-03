@@ -380,6 +380,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
             });
+        },
+        async downloadDecayReport(options = {}) {
+            return api('/api/memory/decay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...options, dryRun: true, collectReport: true })
+            });
         }
     };
 

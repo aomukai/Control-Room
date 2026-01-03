@@ -8034,6 +8034,34 @@
             });
         }
 
+        const btnDownloadReport = document.getElementById('btn-download-decay-report');
+        if (btnDownloadReport) {
+            btnDownloadReport.addEventListener('click', async () => {
+                const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
+                const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
+                const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                try {
+                    const res = await memoryApi.downloadDecayReport({
+                        archiveAfterDays: archiveDays,
+                        expireAfterDays: expireDays,
+                        pruneExpiredR5: pruneR5
+                    });
+                    const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `decay-report-${Date.now()}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    notificationStore.success('Dry run report downloaded.', 'workbench');
+                } catch (err) {
+                    notificationStore.error(`Failed to download report: ${err.message}`, 'workbench');
+                }
+            });
+        }
+
         loadDecayStatus();
     }
 

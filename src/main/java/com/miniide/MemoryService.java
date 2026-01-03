@@ -237,6 +237,7 @@ public class MemoryService {
         long archiveAfterMs = settings.getArchiveAfterMs();
         long expireAfterMs = settings.getExpireAfterMs();
         boolean pruneExpiredR5 = settings.isPruneExpiredR5();
+        boolean collectReport = dryRun || settings.isCollectReport();
 
         for (MemoryItem item : items.values()) {
             long lastAccess = item.getLastAccessedAt() != null
@@ -245,6 +246,9 @@ public class MemoryService {
 
             if (item.getActiveLockUntil() != null && item.getActiveLockUntil() > now) {
                 result.lockedItems++;
+                if (collectReport) {
+                    result.lockedIds.add(item.getId());
+                }
                 continue;
             }
 
@@ -256,6 +260,9 @@ public class MemoryService {
                     touch(item, now);
                 }
                 result.archivedIds.add(item.getId());
+                if (collectReport) {
+                    result.items.add(new DecayItemReport(item.getId(), "archived"));
+                }
             }
 
             if ("archived".equalsIgnoreCase(item.getState())
@@ -266,6 +273,9 @@ public class MemoryService {
                     touch(item, now);
                 }
                 result.expiredIds.add(item.getId());
+                if (collectReport) {
+                    result.items.add(new DecayItemReport(item.getId(), "expired"));
+                }
 
                 if (!dryRun && pruneExpiredR5 && item.getPinnedMinLevel() == null) {
                     int pruned = pruneR5(item.getId());
@@ -471,6 +481,7 @@ public class MemoryService {
         private long archiveAfterMs;
         private long expireAfterMs;
         private boolean pruneExpiredR5;
+        private boolean collectReport;
 
         public long getArchiveAfterMs() {
             return archiveAfterMs;
@@ -495,12 +506,22 @@ public class MemoryService {
         public void setPruneExpiredR5(boolean pruneExpiredR5) {
             this.pruneExpiredR5 = pruneExpiredR5;
         }
+
+        public boolean isCollectReport() {
+            return collectReport;
+        }
+
+        public void setCollectReport(boolean collectReport) {
+            this.collectReport = collectReport;
+        }
     }
 
     public static class DecayResult {
         private final List<String> archivedIds = new ArrayList<>();
         private final List<String> expiredIds = new ArrayList<>();
         private final List<String> prunableIds = new ArrayList<>();
+        private final List<String> lockedIds = new ArrayList<>();
+        private final List<DecayItemReport> items = new ArrayList<>();
         private int prunedEvents = 0;
         private int lockedItems = 0;
 
@@ -530,6 +551,42 @@ public class MemoryService {
 
         public void setLockedItems(int lockedItems) {
             this.lockedItems = lockedItems;
+        }
+
+        public List<String> getLockedIds() {
+            return lockedIds;
+        }
+
+        public List<DecayItemReport> getItems() {
+            return items;
+        }
+    }
+
+    public static class DecayItemReport {
+        private String memoryId;
+        private String action; // archived | expired
+
+        public DecayItemReport() {}
+
+        public DecayItemReport(String memoryId, String action) {
+            this.memoryId = memoryId;
+            this.action = action;
+        }
+
+        public String getMemoryId() {
+            return memoryId;
+        }
+
+        public void setMemoryId(String memoryId) {
+            this.memoryId = memoryId;
+        }
+
+        public String getAction() {
+            return action;
+        }
+
+        public void setAction(String action) {
+            this.action = action;
         }
     }
 

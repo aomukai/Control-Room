@@ -5067,6 +5067,12 @@ input[type="password"].settings-control {
     padding-left: 16px;
 }
 
+.settings-actions button.primary {
+    background: var(--accent-color);
+    border-color: var(--accent-hover);
+    color: var(--text-bright);
+}
+
 /* Loading State */
 .issue-board-loading {
     display: flex;

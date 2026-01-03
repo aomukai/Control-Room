@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 public class MemoryDecayScheduler {
 
     private final MemoryService memoryService;
+    private final NotificationStore notificationStore;
     private long intervalMs;
     private MemoryService.DecaySettings settings;
     private final ScheduledExecutorService executor;
@@ -20,8 +21,9 @@ public class MemoryDecayScheduler {
     private volatile long lastRunAt = 0L;
     private volatile MemoryService.DecayResult lastResult = null;
 
-    public MemoryDecayScheduler(MemoryService memoryService, long intervalMs, MemoryService.DecaySettings settings) {
+    public MemoryDecayScheduler(MemoryService memoryService, NotificationStore notificationStore, long intervalMs, MemoryService.DecaySettings settings) {
         this.memoryService = Objects.requireNonNull(memoryService, "memoryService");
+        this.notificationStore = notificationStore;
         this.intervalMs = intervalMs > 0 ? intervalMs : TimeUnit.HOURS.toMillis(6);
         this.settings = settings != null ? settings : defaultSettings();
         this.executor = Executors.newSingleThreadScheduledExecutor(decayThreadFactory());
@@ -59,6 +61,7 @@ public class MemoryDecayScheduler {
                 + ", expired=" + result.getExpiredIds().size()
                 + ", prunedEvents=" + result.getPrunedEvents()
                 + ", lockedSkipped=" + result.getLockedItems());
+            sendNotification(result);
         } catch (Exception e) {
             logWarning("Memory decay failed: " + e.getMessage());
         }
@@ -99,6 +102,25 @@ public class MemoryDecayScheduler {
         if (logger != null) {
             logger.warn("[MemoryDecayScheduler] " + message);
         }
+    }
+
+    private void sendNotification(MemoryService.DecayResult result) {
+        if (notificationStore == null) return;
+        String msg = "Memory decay: archived " + result.getArchivedIds().size()
+            + ", expired " + result.getExpiredIds().size()
+            + ", pruned events " + result.getPrunedEvents()
+            + ", locked skipped " + result.getLockedItems();
+        notificationStore.push(
+            com.miniide.models.Notification.Level.INFO,
+            com.miniide.models.Notification.Scope.GLOBAL,
+            msg,
+            "",
+            com.miniide.models.Notification.Category.INFO,
+            false,
+            "",
+            null,
+            "decay"
+        );
     }
 
     public static class DecayStatus {

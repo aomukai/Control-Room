@@ -73,7 +73,7 @@ public class Main {
             // Start memory decay scheduler (runs in background)
             MemoryService.DecaySettings decaySettings = buildDecaySettingsFromEnv();
             long intervalMs = getIntervalFromEnv();
-            decayScheduler = new MemoryDecayScheduler(memoryService, intervalMs, decaySettings);
+            decayScheduler = new MemoryDecayScheduler(memoryService, notificationStore, intervalMs, decaySettings);
             decayScheduler.start();
 
             // Create and register controllers
@@ -185,6 +185,7 @@ public class Main {
         settings.setArchiveAfterMs(parseDaysEnv("CR_DECAY_ARCHIVE_DAYS", 14));
         settings.setExpireAfterMs(parseDaysEnv("CR_DECAY_EXPIRE_DAYS", 30));
         settings.setPruneExpiredR5(parseBoolEnv("CR_DECAY_PRUNE_R5", false));
+        settings.setCollectReport(parseBoolEnv("CR_DECAY_REPORT", false));
         return settings;
     }
 
