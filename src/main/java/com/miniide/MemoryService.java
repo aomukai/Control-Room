@@ -482,6 +482,8 @@ public class MemoryService {
         private long expireAfterMs;
         private boolean pruneExpiredR5;
         private boolean collectReport;
+        private boolean dryRun;
+        private boolean notifyOnRun = true;
 
         public long getArchiveAfterMs() {
             return archiveAfterMs;
@@ -513,6 +515,22 @@ public class MemoryService {
 
         public void setCollectReport(boolean collectReport) {
             this.collectReport = collectReport;
+        }
+
+        public boolean isDryRun() {
+            return dryRun;
+        }
+
+        public void setDryRun(boolean dryRun) {
+            this.dryRun = dryRun;
+        }
+
+        public boolean isNotifyOnRun() {
+            return notifyOnRun;
+        }
+
+        public void setNotifyOnRun(boolean notifyOnRun) {
+            this.notifyOnRun = notifyOnRun;
         }
     }
 

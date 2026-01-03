@@ -280,6 +280,7 @@ public class MemoryController implements Controller {
             settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
             settings.setPruneExpiredR5(pruneExpiredR5);
             settings.setCollectReport(collectReport);
+            settings.setDryRun(dryRun);
 
             MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
@@ -334,11 +335,16 @@ public class MemoryController implements Controller {
             long archiveDays = json.has("archiveAfterDays") ? json.get("archiveAfterDays").asLong(14) : 14;
             long expireDays = json.has("expireAfterDays") ? json.get("expireAfterDays").asLong(30) : 30;
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
+            boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
+            boolean notify = json.has("notifyOnRun") ? json.get("notifyOnRun").asBoolean(true) : true;
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
             settings.setExpireAfterMs(expireDays * 24 * 60 * 60 * 1000L);
             settings.setPruneExpiredR5(pruneExpiredR5);
+            settings.setDryRun(dryRun);
+            settings.setCollectReport(true);
+            settings.setNotifyOnRun(notify);
 
             decayScheduler.updateConfig(intervalMinutes * 60_000L, settings);
 
@@ -347,7 +353,9 @@ public class MemoryController implements Controller {
                 "intervalMinutes", intervalMinutes,
                 "archiveAfterDays", archiveDays,
                 "expireAfterDays", expireDays,
-                "pruneExpiredR5", pruneExpiredR5
+                "pruneExpiredR5", pruneExpiredR5,
+                "dryRun", dryRun,
+                "notifyOnRun", notify
             ));
         } catch (Exception e) {
             logger.error("Error updating decay config: " + e.getMessage());

@@ -7875,6 +7875,7 @@
         const intervalInput = document.getElementById('decay-interval-min');
         const dryRunCheckbox = document.getElementById('decay-dry-run');
         const decayReport = document.getElementById('decay-report');
+        const notifyCheckbox = document.getElementById('decay-notify-on-run');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
@@ -7915,6 +7916,12 @@
                 if (archiveInput && status.archiveAfterMs) archiveInput.value = Math.round(status.archiveAfterMs / (24 * 60 * 60 * 1000));
                 if (expireInput && status.expireAfterMs) expireInput.value = Math.round(status.expireAfterMs / (24 * 60 * 60 * 1000));
                 if (pruneCheckbox) pruneCheckbox.checked = Boolean(status.pruneExpiredR5);
+                if (notifyCheckbox && status.settings && typeof status.settings.notifyOnRun === 'boolean') {
+                    notifyCheckbox.checked = status.settings.notifyOnRun;
+                }
+                if (dryRunCheckbox && status.settings && typeof status.settings.dryRun === 'boolean') {
+                    dryRunCheckbox.checked = status.settings.dryRun;
+                }
             } catch (err) {
                 setDecayStatus(`Failed to load decay status: ${err.message}`);
             }
@@ -7988,12 +7995,14 @@
                 const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
                 const dryRun = dryRunCheckbox ? dryRunCheckbox.checked : false;
+                const notifyOnRun = notifyCheckbox ? notifyCheckbox.checked : true;
                 try {
                     const res = await memoryApi.decay({
                         archiveAfterDays: archiveDays,
                         expireAfterDays: expireDays,
                         pruneExpiredR5: pruneR5,
-                        dryRun
+                        dryRun,
+                        notifyOnRun
                     });
                     const msg = `Decay ${dryRun ? '(dry run)' : ''} done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
                     setFeedback(msg, dryRun ? 'info' : 'success');
@@ -8016,12 +8025,16 @@
                 const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
                 const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                const notifyOnRun = notifyCheckbox ? notifyCheckbox.checked : true;
+                const dryRunScheduled = dryRunCheckbox ? dryRunCheckbox.checked : false;
                 try {
                     await memoryApi.saveDecayConfig({
                         intervalMinutes: interval,
                         archiveAfterDays: archiveDays,
                         expireAfterDays: expireDays,
-                        pruneExpiredR5: pruneR5
+                        pruneExpiredR5: pruneR5,
+                        notifyOnRun,
+                        dryRun: dryRunScheduled
                     });
                     const msg = `Decay config saved. Interval: ${interval}m, archive: ${archiveDays}d, expire: ${expireDays}d, prune R5: ${pruneR5}`;
                     setFeedback(msg, 'success');

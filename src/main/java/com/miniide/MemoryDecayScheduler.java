@@ -54,14 +54,16 @@ public class MemoryDecayScheduler {
 
     private void runOnce() {
         try {
-            MemoryService.DecayResult result = memoryService.runDecay(settings);
+            MemoryService.DecayResult result = memoryService.runDecay(settings, settings.isDryRun());
             lastRunAt = System.currentTimeMillis();
             lastResult = result;
             log("Decay run: archived=" + result.getArchivedIds().size()
                 + ", expired=" + result.getExpiredIds().size()
                 + ", prunedEvents=" + result.getPrunedEvents()
                 + ", lockedSkipped=" + result.getLockedItems());
-            sendNotification(result);
+            if (!settings.isDryRun() && settings.isNotifyOnRun()) {
+                sendNotification(result);
+            }
         } catch (Exception e) {
             logWarning("Memory decay failed: " + e.getMessage());
         }
@@ -105,7 +107,7 @@ public class MemoryDecayScheduler {
     }
 
     private void sendNotification(MemoryService.DecayResult result) {
-        if (notificationStore == null) return;
+        if (notificationStore == null || settings.isDryRun()) return;
         String msg = "Memory decay: archived " + result.getArchivedIds().size()
             + ", expired " + result.getExpiredIds().size()
             + ", pruned events " + result.getPrunedEvents()

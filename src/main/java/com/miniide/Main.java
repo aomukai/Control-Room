@@ -186,6 +186,7 @@ public class Main {
         settings.setExpireAfterMs(parseDaysEnv("CR_DECAY_EXPIRE_DAYS", 30));
         settings.setPruneExpiredR5(parseBoolEnv("CR_DECAY_PRUNE_R5", false));
         settings.setCollectReport(parseBoolEnv("CR_DECAY_REPORT", false));
+        settings.setDryRun(parseBoolEnv("CR_DECAY_DRY_RUN", false));
         return settings;
     }
 
