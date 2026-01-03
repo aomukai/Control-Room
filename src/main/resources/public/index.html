@@ -238,6 +238,12 @@
                             </select>
                         </div>
                     </div>
+                    <div class="chat-meta-bar">
+                        <input id="chat-memory-id" type="text" placeholder="Memory ID (optional)" aria-label="Memory ID">
+                        <button id="chat-memory-set" type="button">Bind</button>
+                        <span id="chat-memory-badge" class="chat-badge hidden" title="Current memory level">R3</span>
+                        <button id="chat-escalate" type="button" class="chat-escalate-btn" title="Fetch more evidence">More evidence</button>
+                    </div>
                     <div id="chat-history"></div>
                     <div class="chat-input-container">
                         <textarea id="chat-input" placeholder="Ask the AI assistant..."></textarea>
@@ -298,9 +304,23 @@
                 <!-- Settings View (placeholder) -->
                 <div id="settings-view" class="view-panel">
                     <div id="settings-content">
-                        <div class="settings-placeholder">
-                            <h2>Settings</h2>
-                            <p>Settings panel coming soon.</p>
+                        <div class="settings-section">
+                            <h2>Memory Moderator</h2>
+                            <p class="settings-hint">Promote/rollback, pin minimum level, or archive memory items.</p>
+                            <div class="settings-row">
+                                <label for="moderator-memory-id">Memory ID</label>
+                                <input id="moderator-memory-id" type="text" placeholder="mem-1">
+                            </div>
+                            <div class="settings-row">
+                                <label for="moderator-version-id">Version ID</label>
+                                <input id="moderator-version-id" type="text" placeholder="ver-1">
+                            </div>
+                            <div class="settings-actions">
+                                <button id="btn-promote-memory" type="button">Promote / Set Active</button>
+                                <button id="btn-pin-memory" type="button">Pin at R3</button>
+                                <button id="btn-archive-memory" type="button">Archive</button>
+                            </div>
+                            <div id="moderator-feedback" class="settings-feedback" aria-live="polite"></div>
                         </div>
                     </div>
                 </div>

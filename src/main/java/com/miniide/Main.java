@@ -77,7 +77,7 @@ public class Main {
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
                 new MemoryController(memoryService, objectMapper),
-                new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, objectMapper)
+                new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, memoryService, objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));

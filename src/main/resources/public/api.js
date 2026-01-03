@@ -309,6 +309,63 @@
         }
     };
 
+    // Memory (Librarian) API
+    const memoryApi = {
+        async create(payload) {
+            return api('/api/memory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async addVersion(id, payload) {
+            return api(`/api/memory/${encodeURIComponent(id)}/versions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async addEvent(id, payload) {
+            return api(`/api/memory/${encodeURIComponent(id)}/events`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async get(id, level = 'auto') {
+            return api(`/api/memory/${encodeURIComponent(id)}?level=${encodeURIComponent(level)}`);
+        },
+        async getVersions(id) {
+            return api(`/api/memory/${encodeURIComponent(id)}/versions`);
+        },
+        async getEvidence(id, witness) {
+            const params = new URLSearchParams({ witness });
+            return api(`/api/memory/${encodeURIComponent(id)}/evidence?${params.toString()}`);
+        },
+        async setActive(id, versionId, opts = {}) {
+            const params = new URLSearchParams();
+            if (opts.lockMinutes) params.set('lockMinutes', opts.lockMinutes);
+            if (opts.reason) params.set('reason', opts.reason);
+            return api(`/api/memory/${encodeURIComponent(id)}/active/${encodeURIComponent(versionId)}?${params.toString()}`, {
+                method: 'PUT'
+            });
+        },
+        async pin(id, pinnedMinLevel) {
+            return api(`/api/memory/${encodeURIComponent(id)}/pin`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pinnedMinLevel })
+            });
+        },
+        async setState(id, state) {
+            return api(`/api/memory/${encodeURIComponent(id)}/state`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state })
+            });
+        }
+    };
+
     // Notifications API
     const notificationsApi = {
         async list() {
@@ -340,6 +397,7 @@
     window.fileApi = fileApi;
     window.segmentsApi = segmentsApi;
     window.chatApi = chatApi;
+    window.memoryApi = memoryApi;
     window.notificationsApi = notificationsApi;
     window.workspaceActionsApi = workspaceActionsApi;
 

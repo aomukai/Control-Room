@@ -56,6 +56,10 @@
         chatHistory: document.getElementById('chat-history'),
         chatInput: document.getElementById('chat-input'),
         chatSend: document.getElementById('chat-send'),
+        chatMemoryId: document.getElementById('chat-memory-id'),
+        chatMemorySet: document.getElementById('chat-memory-set'),
+        chatMemoryBadge: document.getElementById('chat-memory-badge'),
+        chatEscalate: document.getElementById('chat-escalate'),
         agentSelect: document.getElementById('agent-select'),
         searchInput: document.getElementById('search-input'),
         searchBtn: document.getElementById('search-btn'),
@@ -6267,7 +6271,7 @@
             if (!text) return;
             chatInput.value = '';
             chatLog.push({ author: 'You', role: 'user', content: text });
-            addChatMessage('You', 'user', text);
+            addChatMessage('user', text);
         };
 
         chatSend.addEventListener('click', sendMessage);
@@ -7245,15 +7249,59 @@
     const workbenchChats = new Map();
 
     // Chat
-    function addChatMessage(role, content) {
+    async function handleWitnessClick(memoryId, witness) {
+        if (!memoryId || !witness) return;
+        try {
+            const ev = await memoryApi.getEvidence(memoryId, witness);
+            const preview = ev && ev.text ? ev.text : JSON.stringify(ev);
+            log(`Evidence ${witness}: ${preview}`, 'info');
+            notificationStore.info(`Loaded evidence ${witness}`, 'editor');
+        } catch (err) {
+            log(`Failed to load evidence ${witness}: ${err.message}`, 'error');
+            notificationStore.error(`Failed to load evidence ${witness}: ${err.message}`, 'editor');
+        }
+    }
+
+    function addChatMessage(role, content, meta = {}) {
         const msg = document.createElement('div');
         msg.className = `chat-message ${role}`;
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'chat-message-content';
         contentDiv.textContent = content;
-
         msg.appendChild(contentDiv);
+
+        const hasMeta = meta && (meta.repLevel || meta.escalated || (meta.witnesses && meta.witnesses.length));
+        if (hasMeta) {
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'chat-message-meta';
+            if (meta.repLevel) {
+                const level = document.createElement('span');
+                level.className = 'chat-badge';
+                level.textContent = `R${meta.repLevel}${meta.escalated ? ' ↑' : ''}`;
+                metaDiv.appendChild(level);
+            } else if (meta.escalated) {
+                const escalated = document.createElement('span');
+                escalated.className = 'chat-badge';
+                escalated.textContent = 'Escalated';
+                metaDiv.appendChild(escalated);
+            }
+
+            if (Array.isArray(meta.witnesses)) {
+                meta.witnesses.forEach((w) => {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'witness-chip';
+                    chip.textContent = `witness ${w}`;
+                    chip.addEventListener('click', () => {
+                        handleWitnessClick(meta.memoryId || state.chat.memoryId, w);
+                    });
+                    metaDiv.appendChild(chip);
+                });
+            }
+            msg.appendChild(metaDiv);
+        }
+
         elements.chatHistory.appendChild(msg);
         elements.chatHistory.scrollTop = elements.chatHistory.scrollHeight;
     }
@@ -7370,20 +7418,51 @@
         setTimeout(() => input.focus(), 0);
     }
 
-    async function sendChatMessage() {
-        const message = elements.chatInput.value.trim();
+    function updateChatMemoryBadge(meta) {
+        if (!elements.chatMemoryBadge) return;
+        if (meta && meta.repLevel) {
+            elements.chatMemoryBadge.textContent = `R${meta.repLevel}${meta.escalated ? ' ↑' : ''}`;
+            elements.chatMemoryBadge.classList.remove('hidden');
+        } else {
+            elements.chatMemoryBadge.classList.add('hidden');
+        }
+        if (elements.chatEscalate) {
+            elements.chatEscalate.disabled = !state.chat.lastPayload;
+        }
+    }
+
+    async function sendChatMessage(reroll = false) {
+        const draftMessage = elements.chatInput.value.trim();
+        const previous = state.chat.lastPayload;
+        const message = reroll && previous ? previous.message : draftMessage;
         if (!message) return;
 
-        elements.chatInput.value = '';
+        if (!reroll) {
+            elements.chatInput.value = '';
+            addChatMessage('user', message);
+            state.chat.lastPayload = {
+                message,
+                agentId: state.agents.selectedId || null,
+                memoryId: state.chat.memoryId
+            };
+        }
+
         elements.chatSend.disabled = true;
 
-        addChatMessage('user', message);
-        log(`Chat: User message sent`, 'info');
+        log(`Chat: User message sent${reroll ? ' (reroll)' : ''}`, 'info');
 
         try {
-            const payload = { message };
-            if (state.agents.selectedId) {
-                payload.agentId = state.agents.selectedId;
+            const payload = {
+                message,
+                memoryId: state.chat.memoryId || undefined,
+                reroll
+            };
+            const agentId = (reroll && previous ? previous.agentId : state.agents.selectedId) || null;
+            if (agentId) {
+                payload.agentId = agentId;
+            }
+            if (reroll) {
+                notificationStore.info('Requesting more evidence (reroll)...', 'editor');
             }
             const response = await api('/api/ai/chat', {
                 method: 'POST',
@@ -7391,8 +7470,18 @@
                 body: JSON.stringify(payload)
             });
 
-            addChatMessage('assistant', response.content);
-            log(`Chat: AI response received`, 'success');
+            const meta = {
+                memoryId: response.memoryId || payload.memoryId,
+                repLevel: response.repLevel,
+                escalated: !!response.escalated,
+                witnesses: response.witnesses
+            };
+            state.chat.lastResponseMeta = meta;
+            updateChatMemoryBadge(meta);
+
+            const reply = response && response.content ? response.content : 'No response.';
+            addChatMessage('assistant', reply, meta);
+            log(`Chat: AI response received${meta.escalated ? ' (escalated)' : ''}`, 'success');
         } catch (err) {
             addChatMessage('assistant', 'Sorry, I encountered an error. Please try again.');
             log(`Chat error: ${err.message}`, 'error');
@@ -7705,6 +7794,31 @@
             }
         });
 
+        if (elements.chatMemorySet) {
+            elements.chatMemorySet.addEventListener('click', () => {
+                const value = elements.chatMemoryId.value.trim();
+                state.chat.memoryId = value || null;
+                state.chat.lastPayload = null;
+                updateChatMemoryBadge(null);
+                if (value) {
+                    log(`Bound chat to memory ${value}`, 'info');
+                } else {
+                    log('Chat memory binding cleared', 'info');
+                }
+            });
+        }
+
+        if (elements.chatEscalate) {
+            elements.chatEscalate.addEventListener('click', () => {
+                if (!state.chat.lastPayload) {
+                    notificationStore.warning('Send a message first before requesting more evidence.', 'editor');
+                    return;
+                }
+                sendChatMessage(true);
+            });
+            elements.chatEscalate.disabled = true;
+        }
+
         if (elements.agentSelect) {
             elements.agentSelect.addEventListener('change', (e) => {
                 setSelectedAgentId(e.target.value);
@@ -7748,6 +7862,70 @@
         });
     }
 
+    function initMemoryModeratorControls() {
+        const memIdInput = document.getElementById('moderator-memory-id');
+        const versionInput = document.getElementById('moderator-version-id');
+        const feedback = document.getElementById('moderator-feedback');
+        const setFeedback = (text, level = 'info') => {
+            if (feedback) {
+                feedback.textContent = text;
+                feedback.dataset.level = level;
+            }
+        };
+
+        const btnPromote = document.getElementById('btn-promote-memory');
+        if (btnPromote) {
+            btnPromote.addEventListener('click', async () => {
+                const memId = memIdInput.value.trim();
+                const verId = versionInput.value.trim();
+                if (!memId || !verId) {
+                    setFeedback('Memory ID and Version ID are required to promote.', 'error');
+                    return;
+                }
+                try {
+                    const res = await memoryApi.setActive(memId, verId, { reason: 'manual-promote', lockMinutes: 90 });
+                    setFeedback(`Active set to ${verId} (lock until ${res.lockUntil || 'now'})`, 'success');
+                } catch (err) {
+                    setFeedback(`Failed to promote: ${err.message}`, 'error');
+                }
+            });
+        }
+
+        const btnPin = document.getElementById('btn-pin-memory');
+        if (btnPin) {
+            btnPin.addEventListener('click', async () => {
+                const memId = memIdInput.value.trim();
+                if (!memId) {
+                    setFeedback('Memory ID required to pin.', 'error');
+                    return;
+                }
+                try {
+                    await memoryApi.pin(memId, 3);
+                    setFeedback(`Pinned ${memId} at R3`, 'success');
+                } catch (err) {
+                    setFeedback(`Failed to pin: ${err.message}`, 'error');
+                }
+            });
+        }
+
+        const btnArchive = document.getElementById('btn-archive-memory');
+        if (btnArchive) {
+            btnArchive.addEventListener('click', async () => {
+                const memId = memIdInput.value.trim();
+                if (!memId) {
+                    setFeedback('Memory ID required to archive.', 'error');
+                    return;
+                }
+                try {
+                    await memoryApi.setState(memId, 'archived');
+                    setFeedback(`Archived ${memId}`, 'success');
+                } catch (err) {
+                    setFeedback(`Failed to archive: ${err.message}`, 'error');
+                }
+            });
+        }
+    }
+
     // Initialize
     function init() {
         log('Control Room starting...', 'info');
@@ -7758,6 +7936,7 @@
         initAIActions();
         initSidebarButtons();
         initEventListeners();
+        initMemoryModeratorControls();
         initNotifications();
         initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         loadFileTree();

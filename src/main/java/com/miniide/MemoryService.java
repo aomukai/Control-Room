@@ -204,6 +204,28 @@ public class MemoryService {
         return true;
     }
 
+    public boolean setPinnedMinLevel(String memoryId, Integer level) {
+        MemoryItem item = items.get(memoryId);
+        if (item == null) {
+            return false;
+        }
+        item.setPinnedMinLevel(level);
+        touch(item, System.currentTimeMillis());
+        saveSnapshot();
+        return true;
+    }
+
+    public boolean setState(String memoryId, String state) {
+        MemoryItem item = items.get(memoryId);
+        if (item == null) {
+            return false;
+        }
+        item.setState(state);
+        touch(item, System.currentTimeMillis());
+        saveSnapshot();
+        return true;
+    }
+
     // ----- Internal helpers -----
 
     private MemoryVersion selectAutoVersion(MemoryItem item) {

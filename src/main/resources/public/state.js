@@ -57,6 +57,11 @@
             selectedId: null,
             statusById: {}
         },
+        chat: {
+            memoryId: null,
+            lastPayload: null,
+            lastResponseMeta: null
+        },
         workspace: {
             name: '',
             path: '',

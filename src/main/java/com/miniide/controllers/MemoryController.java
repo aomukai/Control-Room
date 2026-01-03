@@ -39,6 +39,8 @@ public class MemoryController implements Controller {
         app.get("/api/memory/{id}/versions", this::getVersions);
         app.get("/api/memory/{id}/evidence", this::getEvidence);
         app.put("/api/memory/{id}/active/{versionId}", this::setActiveVersion);
+        app.put("/api/memory/{id}/pin", this::pinMemory);
+        app.put("/api/memory/{id}/state", this::setState);
     }
 
     private void createMemoryItem(Context ctx) {
@@ -211,5 +213,51 @@ public class MemoryController implements Controller {
             "lockUntil", lockUntil,
             "reason", reason
         ));
+    }
+
+    private void pinMemory(Context ctx) {
+        String memoryId = ctx.pathParam("id");
+        if (!memoryService.memoryExists(memoryId)) {
+            ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
+            return;
+        }
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            Integer pinned = json.has("pinnedMinLevel") ? json.get("pinnedMinLevel").asInt() : null;
+            boolean ok = memoryService.setPinnedMinLevel(memoryId, pinned);
+            if (!ok) {
+                ctx.status(404).json(Map.of("error", "Failed to pin memory: " + memoryId));
+                return;
+            }
+            ctx.json(Map.of("success", true, "memoryId", memoryId, "pinnedMinLevel", pinned));
+        } catch (Exception e) {
+            logger.error("Error pinning memory: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void setState(Context ctx) {
+        String memoryId = ctx.pathParam("id");
+        if (!memoryService.memoryExists(memoryId)) {
+            ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
+            return;
+        }
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String state = json.has("state") ? json.get("state").asText(null) : null;
+            if (state == null || state.isBlank()) {
+                ctx.status(400).json(Map.of("error", "state is required"));
+                return;
+            }
+            boolean ok = memoryService.setState(memoryId, state);
+            if (!ok) {
+                ctx.status(404).json(Map.of("error", "Failed to update state for memory: " + memoryId));
+                return;
+            }
+            ctx.json(Map.of("success", true, "memoryId", memoryId, "state", state));
+        } catch (Exception e) {
+            logger.error("Error setting memory state: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
     }
 }

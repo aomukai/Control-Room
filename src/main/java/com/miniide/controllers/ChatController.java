@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AgentEndpointRegistry;
 import com.miniide.AgentRegistry;
 import com.miniide.AppLogger;
+import com.miniide.MemoryService;
 import com.miniide.models.Agent;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.settings.SettingsService;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -22,16 +24,18 @@ public class ChatController implements Controller {
     private final AgentEndpointRegistry agentEndpointRegistry;
     private final SettingsService settingsService;
     private final ProviderChatService providerChatService;
+    private final MemoryService memoryService;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
     public ChatController(AgentRegistry agentRegistry, AgentEndpointRegistry agentEndpointRegistry,
                          SettingsService settingsService, ProviderChatService providerChatService,
-                         ObjectMapper objectMapper) {
+                         MemoryService memoryService, ObjectMapper objectMapper) {
         this.agentRegistry = agentRegistry;
         this.agentEndpointRegistry = agentEndpointRegistry;
         this.settingsService = settingsService;
         this.providerChatService = providerChatService;
+        this.memoryService = memoryService;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -46,6 +50,18 @@ public class ChatController implements Controller {
             JsonNode json = objectMapper.readTree(ctx.body());
             String message = json.has("message") ? json.get("message").asText() : "";
             String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
+            String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
+            boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
+            String levelParam = json.has("level") ? json.get("level").asText() : null;
+            boolean needMore = message != null && message.toUpperCase().contains("NEED_MORE_CONTEXT");
+            boolean requestMore = reroll || needMore || "more".equalsIgnoreCase(levelParam);
+
+            MemoryService.MemoryResult memoryResult = null;
+            if (memoryId != null && !memoryId.isBlank()) {
+                memoryResult = requestMore
+                    ? memoryService.getMemoryAtNextLevel(memoryId)
+                    : memoryService.getMemoryAtAutoLevel(memoryId);
+            }
 
             if (agentId != null && !agentId.isBlank()) {
                 Agent agent = agentRegistry.getAgent(agentId);
@@ -79,22 +95,40 @@ public class ChatController implements Controller {
                 }
 
                 String response = providerChatService.chat(provider, apiKey, endpoint, message);
-                ctx.json(Map.of(
-                    "role", "assistant",
-                    "content", response
-                ));
+                ctx.json(buildResponse(response, memoryResult, memoryId, requestMore));
                 return;
             }
 
             String response = generateStubResponse(message);
 
-            ctx.json(Map.of(
-                "role", "assistant",
-                "content", response
-            ));
+            ctx.json(buildResponse(response, memoryResult, memoryId, requestMore));
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private Map<String, Object> buildResponse(String content, MemoryService.MemoryResult memoryResult,
+                                              String memoryId, boolean requestMore) {
+        Map<String, Object> body = new HashMap<>();
+        String enrichedContent = content;
+
+        if (memoryResult != null && memoryResult.getVersion() != null) {
+            String snippet = memoryResult.getVersion().getContent();
+            if (snippet != null && snippet.length() > 280) {
+                snippet = snippet.substring(0, 277) + "...";
+            }
+            enrichedContent = content + "\n\n[Context R" + memoryResult.getVersion().getRepLevel()
+                + (memoryResult.isEscalated() ? "↑" : "") + "] " + (snippet != null ? snippet : "(no content)");
+            body.put("memoryId", memoryId);
+            body.put("repLevel", memoryResult.getVersion().getRepLevel());
+            body.put("escalated", memoryResult.isEscalated());
+        } else if (requestMore) {
+            body.put("escalated", true);
+        }
+
+        body.put("role", "assistant");
+        body.put("content", enrichedContent);
+        return body;
     }
 
     private boolean requiresApiKey(String provider) {
