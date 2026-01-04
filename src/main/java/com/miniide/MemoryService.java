@@ -6,6 +6,7 @@ import com.miniide.models.MemoryVersion;
 import com.miniide.models.R5Event;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -238,8 +239,18 @@ public class MemoryService {
         long expireAfterMs = settings.getExpireAfterMs();
         boolean pruneExpiredR5 = settings.isPruneExpiredR5();
         boolean collectReport = dryRun || settings.isCollectReport();
+        List<String> excludeTopicKeys = settings.getExcludeTopicKeys();
+        List<String> excludeAgentIds = settings.getExcludeAgentIds();
 
         for (MemoryItem item : items.values()) {
+            if (isExcluded(item, excludeTopicKeys, excludeAgentIds)) {
+                result.filteredItems++;
+                if (collectReport) {
+                    result.filteredIds.add(item.getId());
+                }
+                continue;
+            }
+
             long lastAccess = item.getLastAccessedAt() != null
                 ? item.getLastAccessedAt()
                 : (item.getCreatedAt() != null ? item.getCreatedAt() : now);
@@ -290,6 +301,16 @@ public class MemoryService {
             saveSnapshot();
         }
         return result;
+    }
+
+    private boolean isExcluded(MemoryItem item, Collection<String> topicKeys, Collection<String> agentIds) {
+        boolean excludedByTopic = topicKeys != null
+            && item.getTopicKey() != null
+            && topicKeys.stream().anyMatch(k -> k != null && k.equalsIgnoreCase(item.getTopicKey()));
+        boolean excludedByAgent = agentIds != null
+            && item.getAgentId() != null
+            && agentIds.stream().anyMatch(a -> a != null && a.equalsIgnoreCase(item.getAgentId()));
+        return excludedByTopic || excludedByAgent;
     }
 
     private int pruneR5(String memoryId) {
@@ -485,6 +506,8 @@ public class MemoryService {
         private boolean collectReport;
         private boolean dryRun;
         private boolean notifyOnRun = true;
+        private List<String> excludeTopicKeys = new ArrayList<>();
+        private List<String> excludeAgentIds = new ArrayList<>();
 
         public long getArchiveAfterMs() {
             return archiveAfterMs;
@@ -533,6 +556,22 @@ public class MemoryService {
         public void setNotifyOnRun(boolean notifyOnRun) {
             this.notifyOnRun = notifyOnRun;
         }
+
+        public List<String> getExcludeTopicKeys() {
+            return excludeTopicKeys;
+        }
+
+        public void setExcludeTopicKeys(List<String> excludeTopicKeys) {
+            this.excludeTopicKeys = excludeTopicKeys != null ? excludeTopicKeys : new ArrayList<>();
+        }
+
+        public List<String> getExcludeAgentIds() {
+            return excludeAgentIds;
+        }
+
+        public void setExcludeAgentIds(List<String> excludeAgentIds) {
+            this.excludeAgentIds = excludeAgentIds != null ? excludeAgentIds : new ArrayList<>();
+        }
     }
 
     public static class DecayResult {
@@ -540,9 +579,11 @@ public class MemoryService {
         private final List<String> expiredIds = new ArrayList<>();
         private final List<String> prunableIds = new ArrayList<>();
         private final List<String> lockedIds = new ArrayList<>();
+        private final List<String> filteredIds = new ArrayList<>();
         private final List<DecayItemReport> items = new ArrayList<>();
         private int prunedEvents = 0;
         private int lockedItems = 0;
+        private int filteredItems = 0;
 
         public List<String> getArchivedIds() {
             return archivedIds;
@@ -576,8 +617,16 @@ public class MemoryService {
             return lockedIds;
         }
 
+        public List<String> getFilteredIds() {
+            return filteredIds;
+        }
+
         public List<DecayItemReport> getItems() {
             return items;
+        }
+
+        public int getFilteredItems() {
+            return filteredItems;
         }
     }
 

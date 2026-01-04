@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Persists decay scheduler configuration so UI updates survive restarts.
@@ -63,7 +65,16 @@ public class DecayConfigStore {
         result.setCollectReport(stored.isCollectReport());
         result.setDryRun(stored.isDryRun());
         result.setNotifyOnRun(stored.isNotifyOnRun());
+        result.setExcludeTopicKeys(copyListOrDefault(stored.getExcludeTopicKeys(), base.getExcludeTopicKeys()));
+        result.setExcludeAgentIds(copyListOrDefault(stored.getExcludeAgentIds(), base.getExcludeAgentIds()));
         return result;
+    }
+
+    private List<String> copyListOrDefault(List<String> source, List<String> defaults) {
+        if (source != null && !source.isEmpty()) {
+            return new ArrayList<>(source);
+        }
+        return defaults != null ? new ArrayList<>(defaults) : new ArrayList<>();
     }
 
     private void log(String message) {
@@ -86,6 +97,8 @@ public class DecayConfigStore {
         private boolean collectReport;
         private boolean dryRun;
         private boolean notifyOnRun = true;
+        private List<String> excludeTopicKeys = new ArrayList<>();
+        private List<String> excludeAgentIds = new ArrayList<>();
 
         public MemoryService.DecaySettings toDecaySettings() {
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
@@ -95,6 +108,8 @@ public class DecayConfigStore {
             settings.setCollectReport(collectReport);
             settings.setDryRun(dryRun);
             settings.setNotifyOnRun(notifyOnRun);
+            settings.setExcludeTopicKeys(excludeTopicKeys);
+            settings.setExcludeAgentIds(excludeAgentIds);
             return settings;
         }
 
@@ -160,6 +175,22 @@ public class DecayConfigStore {
 
         public void setNotifyOnRun(boolean notifyOnRun) {
             this.notifyOnRun = notifyOnRun;
+        }
+
+        public List<String> getExcludeTopicKeys() {
+            return excludeTopicKeys;
+        }
+
+        public void setExcludeTopicKeys(List<String> excludeTopicKeys) {
+            this.excludeTopicKeys = excludeTopicKeys != null ? excludeTopicKeys : new ArrayList<>();
+        }
+
+        public List<String> getExcludeAgentIds() {
+            return excludeAgentIds;
+        }
+
+        public void setExcludeAgentIds(List<String> excludeAgentIds) {
+            this.excludeAgentIds = excludeAgentIds != null ? excludeAgentIds : new ArrayList<>();
         }
     }
 }

@@ -340,6 +340,14 @@
                                 <label for="decay-notify-on-run">Notify on run</label>
                                 <input id="decay-notify-on-run" type="checkbox" aria-label="Notify on run" checked>
                             </div>
+                            <div class="settings-row">
+                                <label for="decay-exclude-topics">Exclude topic keys (comma or newline)</label>
+                                <textarea id="decay-exclude-topics" rows="2" placeholder="epoch-123, onboarding, sprint-42" aria-label="Exclude topic keys"></textarea>
+                            </div>
+                            <div class="settings-row">
+                                <label for="decay-exclude-agents">Exclude agent IDs (comma or newline)</label>
+                                <textarea id="decay-exclude-agents" rows="2" placeholder="agent-1, agent-ops" aria-label="Exclude agent IDs"></textarea>
+                            </div>
                             <div class="settings-actions">
                                 <button id="btn-save-decay-config" type="button" class="primary">Save Decay Config</button>
                                 <button id="btn-run-decay" type="button">Run Decay / Compression</button>

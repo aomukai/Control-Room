@@ -13,6 +13,7 @@ import com.miniide.models.R5Event;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -281,6 +282,8 @@ public class MemoryController implements Controller {
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
             boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
             boolean collectReport = json.has("collectReport") && json.get("collectReport").asBoolean();
+            List<String> excludeTopicKeys = parseStringList(json.get("excludeTopicKeys"));
+            List<String> excludeAgentIds = parseStringList(json.get("excludeAgentIds"));
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
@@ -288,6 +291,8 @@ public class MemoryController implements Controller {
             settings.setPruneExpiredR5(pruneExpiredR5);
             settings.setCollectReport(collectReport);
             settings.setDryRun(dryRun);
+            settings.setExcludeTopicKeys(excludeTopicKeys);
+            settings.setExcludeAgentIds(excludeAgentIds);
 
             MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
@@ -298,6 +303,8 @@ public class MemoryController implements Controller {
             response.put("prunedEvents", result.getPrunedEvents());
             response.put("lockedItems", result.getLockedItems());
             response.put("lockedIds", result.getLockedIds());
+            response.put("filteredItems", result.getFilteredItems());
+            response.put("filteredIds", result.getFilteredIds());
             response.put("items", result.getItems());
             response.put("dryRun", dryRun);
             response.put("archiveAfterDays", archiveDays);
@@ -324,6 +331,8 @@ public class MemoryController implements Controller {
         body.put("pruneExpiredR5", status.settings != null && status.settings.isPruneExpiredR5());
         body.put("notifyOnRun", status.settings != null && status.settings.isNotifyOnRun());
         body.put("dryRun", status.settings != null && status.settings.isDryRun());
+        body.put("excludeTopicKeys", status.settings != null ? status.settings.getExcludeTopicKeys() : List.of());
+        body.put("excludeAgentIds", status.settings != null ? status.settings.getExcludeAgentIds() : List.of());
         body.put("settings", status.settings);
         body.put("lastRunAt", status.lastRunAt);
         if (status.lastResult != null) {
@@ -331,6 +340,7 @@ public class MemoryController implements Controller {
             body.put("expired", status.lastResult.getExpiredIds());
             body.put("prunedEvents", status.lastResult.getPrunedEvents());
             body.put("lockedItems", status.lastResult.getLockedItems());
+            body.put("filteredItems", status.lastResult.getFilteredItems());
         }
         ctx.json(body);
     }
@@ -352,6 +362,8 @@ public class MemoryController implements Controller {
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
             boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
             boolean notify = json.has("notifyOnRun") ? json.get("notifyOnRun").asBoolean(true) : true;
+            List<String> excludeTopicKeys = parseStringList(json.get("excludeTopicKeys"));
+            List<String> excludeAgentIds = parseStringList(json.get("excludeAgentIds"));
 
             if (intervalMinutes <= 0) intervalMinutes = 360;
             if (archiveDays <= 0) archiveDays = 14;
@@ -364,6 +376,8 @@ public class MemoryController implements Controller {
             settings.setDryRun(dryRun);
             settings.setCollectReport(true);
             settings.setNotifyOnRun(notify);
+            settings.setExcludeTopicKeys(excludeTopicKeys);
+            settings.setExcludeAgentIds(excludeAgentIds);
 
             decayScheduler.updateConfig(intervalMinutes * 60_000L, settings);
 
@@ -375,6 +389,8 @@ public class MemoryController implements Controller {
             config.setDryRun(dryRun);
             config.setCollectReport(true);
             config.setNotifyOnRun(notify);
+            config.setExcludeTopicKeys(excludeTopicKeys);
+            config.setExcludeAgentIds(excludeAgentIds);
             decayConfigStore.save(config);
 
             ctx.json(Map.of(
@@ -384,11 +400,42 @@ public class MemoryController implements Controller {
                 "expireAfterDays", expireDays,
                 "pruneExpiredR5", pruneExpiredR5,
                 "dryRun", dryRun,
-                "notifyOnRun", notify
+                "notifyOnRun", notify,
+                "excludeTopicKeys", excludeTopicKeys,
+                "excludeAgentIds", excludeAgentIds
             ));
         } catch (Exception e) {
             logger.error("Error updating decay config: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private List<String> parseStringList(JsonNode node) {
+        if (node == null) return List.of();
+        try {
+            if (node.isArray()) {
+                List<String> values = new ArrayList<>();
+                for (JsonNode n : node) {
+                    if (n != null && n.isTextual() && !n.asText().isBlank()) {
+                        values.add(n.asText().trim());
+                    }
+                }
+                return values;
+            }
+            if (node.isTextual()) {
+                String raw = node.asText();
+                if (raw == null || raw.isBlank()) return List.of();
+                String[] parts = raw.split("[,\\n]");
+                List<String> values = new ArrayList<>();
+                for (String p : parts) {
+                    if (p != null && !p.trim().isBlank()) {
+                        values.add(p.trim());
+                    }
+                }
+                return values;
+            }
+        } catch (Exception ignored) {
+        }
+        return List.of();
     }
 }

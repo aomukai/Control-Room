@@ -7989,6 +7989,8 @@
         const dryRunCheckbox = document.getElementById('decay-dry-run');
         const decayReport = document.getElementById('decay-report');
         const notifyCheckbox = document.getElementById('decay-notify-on-run');
+        const excludeTopicsInput = document.getElementById('decay-exclude-topics');
+        const excludeAgentsInput = document.getElementById('decay-exclude-agents');
         const setFeedback = (text, level = 'info') => {
             if (feedback) {
                 feedback.textContent = text;
@@ -8007,12 +8009,21 @@
             const archived = res.archived || [];
             const expired = res.expired || [];
             const prunable = res.prunable || [];
+            const filtered = res.filteredItems || 0;
             decayReport.innerHTML = `
                 <div><strong>Decay ${dryRun ? '(dry run)' : ''} results:</strong></div>
-                <div>Archived: ${archived.length}, Expired: ${expired.length}, Prunable R5: ${prunable.length}, Locked skipped: ${res.lockedItems || 0}</div>
+                <div>Archived: ${archived.length}, Expired: ${expired.length}, Prunable R5: ${prunable.length}, Locked skipped: ${res.lockedItems || 0}, Filtered: ${filtered}</div>
                 <div>Pruned events: ${res.prunedEvents || 0}</div>
                 ${dryRun && prunable.length ? `<div>Prunable IDs:</div><ul>${prunable.slice(0, 10).map(id => `<li>${id}</li>`).join('')}${prunable.length > 10 ? '<li>...</li>' : ''}</ul>` : ''}
             `;
+        };
+
+        const parseListInput = (input) => {
+            if (!input || !input.value) return [];
+            return input.value
+                .split(/[,\\n]/)
+                .map(s => s.trim())
+                .filter(Boolean);
         };
 
         const loadDecayStatus = async () => {
@@ -8040,6 +8051,12 @@
                     : (status.settings && typeof status.settings.dryRun === 'boolean' ? status.settings.dryRun : undefined);
                 if (dryRunCheckbox && typeof dryRunSetting === 'boolean') {
                     dryRunCheckbox.checked = dryRunSetting;
+                }
+                if (excludeTopicsInput && Array.isArray(status.excludeTopicKeys)) {
+                    excludeTopicsInput.value = status.excludeTopicKeys.join(', ');
+                }
+                if (excludeAgentsInput && Array.isArray(status.excludeAgentIds)) {
+                    excludeAgentsInput.value = status.excludeAgentIds.join(', ');
                 }
             } catch (err) {
                 setDecayStatus(`Failed to load decay status: ${err.message}`);
@@ -8115,15 +8132,19 @@
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
                 const dryRun = dryRunCheckbox ? dryRunCheckbox.checked : false;
                 const notifyOnRun = notifyCheckbox ? notifyCheckbox.checked : true;
+                const excludeTopicKeys = parseListInput(excludeTopicsInput);
+                const excludeAgentIds = parseListInput(excludeAgentsInput);
                 try {
                     const res = await memoryApi.decay({
                         archiveAfterDays: archiveDays,
                         expireAfterDays: expireDays,
                         pruneExpiredR5: pruneR5,
                         dryRun,
-                        notifyOnRun
+                        notifyOnRun,
+                        excludeTopicKeys,
+                        excludeAgentIds
                     });
-                    const msg = `Decay ${dryRun ? '(dry run)' : ''} done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}`;
+                    const msg = `Decay ${dryRun ? '(dry run)' : ''} done. Archived: ${res.archived.length}, Expired: ${res.expired.length}, Pruned events: ${res.prunedEvents}, Locked skipped: ${res.lockedItems}, Filtered: ${res.filteredItems || 0}`;
                     setFeedback(msg, dryRun ? 'info' : 'success');
                     notificationStore.success(msg, 'workbench');
                     showDecayReport(res, dryRun);
@@ -8146,6 +8167,8 @@
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
                 const notifyOnRun = notifyCheckbox ? notifyCheckbox.checked : true;
                 const dryRunScheduled = dryRunCheckbox ? dryRunCheckbox.checked : false;
+                const excludeTopicKeys = parseListInput(excludeTopicsInput);
+                const excludeAgentIds = parseListInput(excludeAgentsInput);
                 try {
                     await memoryApi.saveDecayConfig({
                         intervalMinutes: interval,
@@ -8153,7 +8176,9 @@
                         expireAfterDays: expireDays,
                         pruneExpiredR5: pruneR5,
                         notifyOnRun,
-                        dryRun: dryRunScheduled
+                        dryRun: dryRunScheduled,
+                        excludeTopicKeys,
+                        excludeAgentIds
                     });
                     const msg = `Decay config saved. Interval: ${interval}m, archive: ${archiveDays}d, expire: ${expireDays}d, prune R5: ${pruneR5}`;
                     setFeedback(msg, 'success');
@@ -8172,11 +8197,15 @@
                 const archiveDays = archiveInput && archiveInput.value ? parseInt(archiveInput.value, 10) : 14;
                 const expireDays = expireInput && expireInput.value ? parseInt(expireInput.value, 10) : 30;
                 const pruneR5 = pruneCheckbox ? pruneCheckbox.checked : false;
+                const excludeTopicKeys = parseListInput(excludeTopicsInput);
+                const excludeAgentIds = parseListInput(excludeAgentsInput);
                 try {
                     const res = await memoryApi.downloadDecayReport({
                         archiveAfterDays: archiveDays,
                         expireAfterDays: expireDays,
-                        pruneExpiredR5: pruneR5
+                        pruneExpiredR5: pruneR5,
+                        excludeTopicKeys,
+                        excludeAgentIds
                     });
                     const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
