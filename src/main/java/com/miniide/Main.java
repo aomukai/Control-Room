@@ -19,6 +19,7 @@ public class Main {
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static AppLogger logger;
     private static MemoryDecayScheduler decayScheduler;
+    private static DecayConfigStore decayConfigStore;
 
     public static void main(String[] args) {
         try {
@@ -54,6 +55,7 @@ public class Main {
             MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");
             logger.info("Memory service initialized");
+            decayConfigStore = new DecayConfigStore(objectMapper);
 
             // Initialize settings and provider services
             SettingsService settingsService = new SettingsService(AppConfig.getSettingsDirectory(), objectMapper);
@@ -71,13 +73,18 @@ public class Main {
             });
 
             // Start memory decay scheduler (runs in background)
-            MemoryService.DecaySettings decaySettings = buildDecaySettingsFromEnv();
-            long intervalMs = getIntervalFromEnv();
+            DecayConfigStore.DecayConfig defaultDecayConfig = buildDefaultDecayConfig();
+            DecayConfigStore.DecayConfig decayConfig = decayConfigStore.loadOrDefault(defaultDecayConfig);
+            MemoryService.DecaySettings decaySettings = decayConfig.toDecaySettings();
+            long intervalMs = decayConfig.toIntervalMs();
+            if (intervalMs <= 0) {
+                intervalMs = defaultDecayConfig.toIntervalMs();
+            }
             decayScheduler = new MemoryDecayScheduler(memoryService, notificationStore, intervalMs, decaySettings);
             decayScheduler.start();
 
             // Create and register controllers
-            MemoryController memoryController = new MemoryController(memoryService, decayScheduler, objectMapper);
+            MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(workspaceService, objectMapper),
                 new WorkspaceController(workspaceService, objectMapper),
@@ -166,28 +173,30 @@ public class Main {
         return Map.of("error", m);
     }
 
-    private static long getIntervalFromEnv() {
+    private static DecayConfigStore.DecayConfig buildDefaultDecayConfig() {
+        DecayConfigStore.DecayConfig config = new DecayConfigStore.DecayConfig();
+        config.setIntervalMinutes(getIntervalMinutesFromEnv());
+        config.setArchiveAfterDays(parseDaysEnv("CR_DECAY_ARCHIVE_DAYS", 14) / (24L * 60L * 60L * 1000L));
+        config.setExpireAfterDays(parseDaysEnv("CR_DECAY_EXPIRE_DAYS", 30) / (24L * 60L * 60L * 1000L));
+        config.setPruneExpiredR5(parseBoolEnv("CR_DECAY_PRUNE_R5", false));
+        config.setCollectReport(parseBoolEnv("CR_DECAY_REPORT", false));
+        config.setDryRun(parseBoolEnv("CR_DECAY_DRY_RUN", false));
+        config.setNotifyOnRun(true);
+        return config;
+    }
+
+    private static long getIntervalMinutesFromEnv() {
         String env = System.getenv("CR_DECAY_INTERVAL_MINUTES");
         if (env != null && !env.isBlank()) {
             try {
                 long minutes = Long.parseLong(env.trim());
                 if (minutes > 0) {
-                    return minutes * 60_000L;
+                    return minutes;
                 }
             } catch (NumberFormatException ignored) {
             }
         }
-        return 6 * 60 * 60 * 1000L; // default 6h
-    }
-
-    private static MemoryService.DecaySettings buildDecaySettingsFromEnv() {
-        MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
-        settings.setArchiveAfterMs(parseDaysEnv("CR_DECAY_ARCHIVE_DAYS", 14));
-        settings.setExpireAfterMs(parseDaysEnv("CR_DECAY_EXPIRE_DAYS", 30));
-        settings.setPruneExpiredR5(parseBoolEnv("CR_DECAY_PRUNE_R5", false));
-        settings.setCollectReport(parseBoolEnv("CR_DECAY_REPORT", false));
-        settings.setDryRun(parseBoolEnv("CR_DECAY_DRY_RUN", false));
-        return settings;
+        return 6 * 60; // default 6h
     }
 
     private static long parseDaysEnv(String key, int defaultDays) {

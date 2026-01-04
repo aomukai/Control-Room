@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.DecayConfigStore;
 import com.miniide.MemoryDecayScheduler;
 import com.miniide.MemoryService;
 import com.miniide.models.MemoryItem;
@@ -23,12 +24,14 @@ public class MemoryController implements Controller {
 
     private final MemoryService memoryService;
     private final MemoryDecayScheduler decayScheduler;
+    private final DecayConfigStore decayConfigStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public MemoryController(MemoryService memoryService, MemoryDecayScheduler decayScheduler, ObjectMapper objectMapper) {
+    public MemoryController(MemoryService memoryService, MemoryDecayScheduler decayScheduler, DecayConfigStore decayConfigStore, ObjectMapper objectMapper) {
         this.memoryService = memoryService;
         this.decayScheduler = decayScheduler;
+        this.decayConfigStore = decayConfigStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -319,6 +322,9 @@ public class MemoryController implements Controller {
         body.put("archiveAfterMs", status.settings != null ? status.settings.getArchiveAfterMs() : null);
         body.put("expireAfterMs", status.settings != null ? status.settings.getExpireAfterMs() : null);
         body.put("pruneExpiredR5", status.settings != null && status.settings.isPruneExpiredR5());
+        body.put("notifyOnRun", status.settings != null && status.settings.isNotifyOnRun());
+        body.put("dryRun", status.settings != null && status.settings.isDryRun());
+        body.put("settings", status.settings);
         body.put("lastRunAt", status.lastRunAt);
         if (status.lastResult != null) {
             body.put("archived", status.lastResult.getArchivedIds());
@@ -334,6 +340,10 @@ public class MemoryController implements Controller {
             ctx.status(404).json(Map.of("error", "Decay scheduler not configured"));
             return;
         }
+        if (decayConfigStore == null) {
+            ctx.status(500).json(Map.of("error", "Decay config store not available"));
+            return;
+        }
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             long intervalMinutes = json.has("intervalMinutes") ? json.get("intervalMinutes").asLong(360) : 360;
@@ -342,6 +352,10 @@ public class MemoryController implements Controller {
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
             boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
             boolean notify = json.has("notifyOnRun") ? json.get("notifyOnRun").asBoolean(true) : true;
+
+            if (intervalMinutes <= 0) intervalMinutes = 360;
+            if (archiveDays <= 0) archiveDays = 14;
+            if (expireDays <= 0) expireDays = 30;
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
@@ -352,6 +366,16 @@ public class MemoryController implements Controller {
             settings.setNotifyOnRun(notify);
 
             decayScheduler.updateConfig(intervalMinutes * 60_000L, settings);
+
+            DecayConfigStore.DecayConfig config = new DecayConfigStore.DecayConfig();
+            config.setIntervalMinutes(intervalMinutes);
+            config.setArchiveAfterDays(archiveDays);
+            config.setExpireAfterDays(expireDays);
+            config.setPruneExpiredR5(pruneExpiredR5);
+            config.setDryRun(dryRun);
+            config.setCollectReport(true);
+            config.setNotifyOnRun(notify);
+            decayConfigStore.save(config);
 
             ctx.json(Map.of(
                 "success", true,

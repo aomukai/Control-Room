@@ -8029,11 +8029,17 @@
                 if (archiveInput && status.archiveAfterMs) archiveInput.value = Math.round(status.archiveAfterMs / (24 * 60 * 60 * 1000));
                 if (expireInput && status.expireAfterMs) expireInput.value = Math.round(status.expireAfterMs / (24 * 60 * 60 * 1000));
                 if (pruneCheckbox) pruneCheckbox.checked = Boolean(status.pruneExpiredR5);
-                if (notifyCheckbox && status.settings && typeof status.settings.notifyOnRun === 'boolean') {
-                    notifyCheckbox.checked = status.settings.notifyOnRun;
+                const notifySetting = typeof status.notifyOnRun === 'boolean'
+                    ? status.notifyOnRun
+                    : (status.settings && typeof status.settings.notifyOnRun === 'boolean' ? status.settings.notifyOnRun : undefined);
+                if (notifyCheckbox && typeof notifySetting === 'boolean') {
+                    notifyCheckbox.checked = notifySetting;
                 }
-                if (dryRunCheckbox && status.settings && typeof status.settings.dryRun === 'boolean') {
-                    dryRunCheckbox.checked = status.settings.dryRun;
+                const dryRunSetting = typeof status.dryRun === 'boolean'
+                    ? status.dryRun
+                    : (status.settings && typeof status.settings.dryRun === 'boolean' ? status.settings.dryRun : undefined);
+                if (dryRunCheckbox && typeof dryRunSetting === 'boolean') {
+                    dryRunCheckbox.checked = dryRunSetting;
                 }
             } catch (err) {
                 setDecayStatus(`Failed to load decay status: ${err.message}`);
