@@ -4,6 +4,8 @@ import com.miniide.models.FileNode;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import com.miniide.models.TextEdit;
+import com.miniide.models.WorkspaceMetadata;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -22,9 +24,12 @@ import java.util.stream.Stream;
 public class WorkspaceService {
 
     private final Path workspaceRoot;
+    private final Path metadataPath;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public WorkspaceService(Path workspaceRoot) {
         this.workspaceRoot = workspaceRoot.toAbsolutePath().normalize();
+        this.metadataPath = this.workspaceRoot.resolve(".control-room").resolve("workspace.json");
         log("WorkspaceService initialized with root: " + this.workspaceRoot);
     }
 
@@ -557,5 +562,48 @@ public class WorkspaceService {
         if (logger != null) {
             logger.info("[WorkspaceService] " + message);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Metadata
+    // -------------------------------------------------------------------------
+
+    /**
+     * Load workspace metadata (display name, description, icon).
+     */
+    public WorkspaceMetadata loadMetadata() {
+        WorkspaceMetadata meta = new WorkspaceMetadata();
+        // Default displayName to folder name
+        meta.setDisplayName(workspaceRoot.getFileName() != null ? workspaceRoot.getFileName().toString() : "workspace");
+
+        if (!Files.exists(metadataPath)) {
+            return meta;
+        }
+        try {
+            WorkspaceMetadata stored = mapper.readValue(metadataPath.toFile(), WorkspaceMetadata.class);
+            if (stored.getDisplayName() == null || stored.getDisplayName().isBlank()) {
+                stored.setDisplayName(meta.getDisplayName());
+            }
+            return stored;
+        } catch (IOException e) {
+            log("Failed to read workspace metadata: " + e.getMessage());
+            return meta;
+        }
+    }
+
+    /**
+     * Save workspace metadata to disk.
+     */
+    public WorkspaceMetadata saveMetadata(WorkspaceMetadata metadata) throws IOException {
+        if (metadata == null) {
+            metadata = new WorkspaceMetadata();
+        }
+        if (metadata.getDisplayName() == null || metadata.getDisplayName().isBlank()) {
+            metadata.setDisplayName(workspaceRoot.getFileName() != null ? workspaceRoot.getFileName().toString() : "workspace");
+        }
+        Files.createDirectories(metadataPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(metadataPath.toFile(), metadata);
+        log("Saved workspace metadata to " + metadataPath);
+        return metadata;
     }
 }

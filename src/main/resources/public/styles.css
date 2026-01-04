@@ -4096,6 +4096,15 @@ input[type="password"].settings-control {
     white-space: nowrap;
 }
 
+.workspace-desc {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: 10px;
+}
+
 .workspace-caret {
     font-size: 9px;
     color: var(--text-secondary);

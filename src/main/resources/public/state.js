@@ -66,7 +66,11 @@
             name: '',
             path: '',
             root: '',
-            available: []
+            available: [],
+            displayName: '',
+            description: '',
+            icon: '',
+            accentColor: ''
         }
     };
 

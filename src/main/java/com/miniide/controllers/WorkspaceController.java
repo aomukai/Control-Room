@@ -35,6 +35,8 @@ public class WorkspaceController implements Controller {
         app.post("/api/workspace/terminal", this::openWorkspaceTerminal);
         app.get("/api/workspace/info", this::getWorkspaceInfo);
         app.post("/api/workspace/select", this::selectWorkspace);
+        app.get("/api/workspace/metadata", this::getMetadata);
+        app.put("/api/workspace/metadata", this::updateMetadata);
     }
 
     private void openWorkspace(Context ctx) {
@@ -150,7 +152,8 @@ public class WorkspaceController implements Controller {
                 "currentPath", current.toString(),
                 "rootPath", root.toString(),
                 "currentName", currentName,
-                "available", names
+                "available", names,
+                "metadata", workspaceService.loadMetadata()
             ));
         } catch (Exception e) {
             logger.error("Failed to get workspace info: " + e.getMessage(), e);
@@ -195,5 +198,53 @@ public class WorkspaceController implements Controller {
             logger.error("Failed to select workspace: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private void getMetadata(Context ctx) {
+        try {
+            ctx.json(workspaceService.loadMetadata());
+        } catch (Exception e) {
+            logger.error("Failed to load workspace metadata: " + e.getMessage(), e);
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void updateMetadata(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            var meta = workspaceService.loadMetadata();
+
+            if (json.has("displayName")) {
+                String dn = json.get("displayName").asText("");
+                meta.setDisplayName(trimToLength(dn, 80));
+            }
+            if (json.has("description")) {
+                String desc = json.get("description").asText("");
+                meta.setDescription(trimToLength(desc, 280));
+            }
+            if (json.has("icon")) {
+                String icon = json.get("icon").asText("");
+                meta.setIcon(trimToLength(icon, 16));
+            }
+            if (json.has("accentColor")) {
+                String color = json.get("accentColor").asText("");
+                meta.setAccentColor(trimToLength(color, 16));
+            }
+
+            var saved = workspaceService.saveMetadata(meta);
+            ctx.json(Map.of("ok", true, "metadata", saved));
+        } catch (Exception e) {
+            logger.error("Failed to update workspace metadata: " + e.getMessage(), e);
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private String trimToLength(String value, int maxLen) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.length() <= maxLen) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLen);
     }
 }

@@ -240,6 +240,16 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name })
             });
+        },
+        async metadata() {
+            return api('/api/workspace/metadata');
+        },
+        async saveMetadata(metadata) {
+            return api('/api/workspace/metadata', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadata || {})
+            });
         }
     };
 

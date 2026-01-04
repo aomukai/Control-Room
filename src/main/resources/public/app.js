@@ -101,7 +101,8 @@
         btnStartConference: document.getElementById('btn-start-conference'),
         btnOpenSettings: document.getElementById('btn-open-settings'),
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
-        workspaceName: document.getElementById('workspace-name')
+        workspaceName: document.getElementById('workspace-name'),
+        workspaceDesc: document.getElementById('workspace-desc')
     };
 
     // Initialize Split.js
@@ -263,6 +264,11 @@
             state.workspace.path = info.currentPath || '';
             state.workspace.root = info.rootPath || '';
             state.workspace.available = Array.isArray(info.available) ? info.available : [];
+            const meta = info.metadata || {};
+            state.workspace.displayName = meta.displayName || state.workspace.name || 'workspace';
+            state.workspace.description = meta.description || '';
+            state.workspace.icon = meta.icon || '';
+            state.workspace.accentColor = meta.accentColor || '';
             updateWorkspaceButton();
         } catch (err) {
             log(`Failed to load workspace info: ${err.message}`, 'error');
@@ -271,7 +277,13 @@
 
     function updateWorkspaceButton() {
         if (!elements.btnWorkspaceSwitch || !elements.workspaceName) return;
-        elements.workspaceName.textContent = state.workspace.name || 'Workspace';
+        const displayName = state.workspace.displayName || state.workspace.name || 'Workspace';
+        const icon = state.workspace.icon ? `${state.workspace.icon} ` : '';
+        elements.workspaceName.textContent = `${icon}${displayName}`;
+        if (elements.workspaceDesc) {
+            elements.workspaceDesc.textContent = state.workspace.description || '';
+            elements.workspaceDesc.style.display = state.workspace.description ? 'inline' : 'none';
+        }
         if (state.workspace.path) {
             elements.btnWorkspaceSwitch.title = `Switch workspace (${state.workspace.path})`;
         }
@@ -364,6 +376,90 @@
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 confirmBtn.click();
+            }
+        });
+
+        // Metadata section
+        const metaTitle = document.createElement('div');
+        metaTitle.className = 'modal-subtitle';
+        metaTitle.textContent = 'Workspace Metadata';
+        body.appendChild(metaTitle);
+
+        const metaDisplayRow = document.createElement('div');
+        metaDisplayRow.className = 'modal-row';
+        const metaDisplayLabel = document.createElement('label');
+        metaDisplayLabel.className = 'modal-label';
+        metaDisplayLabel.textContent = 'Display name';
+        const metaDisplayInput = document.createElement('input');
+        metaDisplayInput.className = 'modal-input';
+        metaDisplayInput.type = 'text';
+        metaDisplayInput.placeholder = 'Friendly workspace name';
+        metaDisplayInput.value = state.workspace.displayName || state.workspace.name || '';
+        metaDisplayRow.appendChild(metaDisplayLabel);
+        metaDisplayRow.appendChild(metaDisplayInput);
+        body.appendChild(metaDisplayRow);
+
+        const metaDescRow = document.createElement('div');
+        metaDescRow.className = 'modal-row';
+        const metaDescLabel = document.createElement('label');
+        metaDescLabel.className = 'modal-label';
+        metaDescLabel.textContent = 'Description';
+        const metaDescInput = document.createElement('textarea');
+        metaDescInput.className = 'modal-textarea';
+        metaDescInput.rows = 2;
+        metaDescInput.placeholder = 'Short description (e.g., team, sprint, repo)';
+        metaDescInput.value = state.workspace.description || '';
+        metaDescRow.appendChild(metaDescLabel);
+        metaDescRow.appendChild(metaDescInput);
+        body.appendChild(metaDescRow);
+
+        const metaIconRow = document.createElement('div');
+        metaIconRow.className = 'modal-row';
+        const metaIconLabel = document.createElement('label');
+        metaIconLabel.className = 'modal-label';
+        metaIconLabel.textContent = 'Icon (emoji)';
+        const metaIconInput = document.createElement('input');
+        metaIconInput.className = 'modal-input';
+        metaIconInput.type = 'text';
+        metaIconInput.placeholder = '🛰️';
+        metaIconInput.value = state.workspace.icon || '';
+        metaIconRow.appendChild(metaIconLabel);
+        metaIconRow.appendChild(metaIconInput);
+        body.appendChild(metaIconRow);
+
+        const metaHint = document.createElement('div');
+        metaHint.className = 'modal-hint';
+        metaHint.textContent = 'Metadata saves instantly for this workspace.';
+        body.appendChild(metaHint);
+
+        const saveMetaBtn = document.createElement('button');
+        saveMetaBtn.className = 'modal-btn modal-btn-secondary';
+        saveMetaBtn.type = 'button';
+        saveMetaBtn.textContent = 'Save Metadata';
+        body.appendChild(saveMetaBtn);
+
+        saveMetaBtn.addEventListener('click', async () => {
+            saveMetaBtn.disabled = true;
+            metaHint.textContent = '';
+            try {
+                const payload = {
+                    displayName: metaDisplayInput.value.trim(),
+                    description: metaDescInput.value.trim(),
+                    icon: metaIconInput.value.trim()
+                };
+                const result = await workspaceApi.saveMetadata(payload);
+                const meta = result.metadata || payload;
+                state.workspace.displayName = meta.displayName || state.workspace.name;
+                state.workspace.description = meta.description || '';
+                state.workspace.icon = meta.icon || '';
+                updateWorkspaceButton();
+                notificationStore.success('Workspace metadata saved.', 'global');
+                metaHint.textContent = 'Saved.';
+            } catch (err) {
+                metaHint.textContent = err.message;
+                notificationStore.error(`Failed to save metadata: ${err.message}`, 'global');
+            } finally {
+                saveMetaBtn.disabled = false;
             }
         });
     }
