@@ -481,14 +481,46 @@ public class WorkspaceService {
         if (Files.isDirectory(path)) {
             throw new IOException("Cannot apply patch to directory: " + relativePath);
         }
+        if (edits == null || edits.isEmpty()) {
+            throw new IllegalArgumentException("No edits provided");
+        }
 
-        // TODO: Implement patch application for AI-assisted editing
-        // This will need to:
-        // 1. Read file lines
-        // 2. Validate edit ranges
-        // 3. Apply edits in reverse order (to preserve line numbers)
-        // 4. Write result back
-        throw new UnsupportedOperationException("applyPatch not yet implemented");
+        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+
+        // Apply edits in reverse order to keep indices stable
+        edits.stream()
+            .sorted(Comparator.comparingInt(TextEdit::getStartLine).reversed())
+            .forEach(edit -> applyEdit(lines, edit));
+
+        Files.createDirectories(path.getParent());
+        Files.write(path, lines, StandardCharsets.UTF_8);
+        log("Applied patch to " + relativePath + " (" + edits.size() + " edits)");
+    }
+
+    private void applyEdit(List<String> lines, TextEdit edit) {
+        int start = Math.max(edit.getStartLine(), 1) - 1;
+        int end = Math.max(edit.getEndLine(), edit.getStartLine()) - 1;
+        if (start >= lines.size()) {
+            throw new IllegalArgumentException("Edit start out of range: " + edit.getStartLine());
+        }
+        if (end >= lines.size()) {
+            end = lines.size() - 1;
+        }
+        List<String> replacement = new ArrayList<>();
+        if (edit.getNewText() != null) {
+            String[] parts = edit.getNewText().split("\\r?\\n", -1);
+            for (int i = 0; i < parts.length; i++) {
+                // Preserve trailing empty line if newText ended with newline
+                if (i == parts.length - 1 && edit.getNewText().endsWith("\n") && parts[i].isEmpty()) {
+                    replacement.add("");
+                } else {
+                    replacement.add(parts[i]);
+                }
+            }
+        }
+        // Replace the range
+        lines.subList(start, end + 1).clear();
+        lines.addAll(start, replacement);
     }
 
     // -------------------------------------------------------------------------

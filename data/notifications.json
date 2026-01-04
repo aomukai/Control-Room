@@ -1,0 +1,33 @@
+[ {
+  "id" : "e50d6d7b-7f6d-48a0-99af-24670c3533fb",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767523996445,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-1",
+    "kind" : "review-patch"
+  },
+  "persistent" : true,
+  "read" : false
+}, {
+  "id" : "f28d5b3a-8d2c-4f8d-8070-cf0d1d0a0453",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767524000287,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-2",
+    "kind" : "review-patch"
+  },
+  "persistent" : true,
+  "read" : false
+} ]

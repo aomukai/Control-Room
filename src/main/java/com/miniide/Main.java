@@ -53,6 +53,7 @@ public class Main {
             NotificationStore notificationStore = new NotificationStore();
             IssueMemoryService issueService = new IssueMemoryService();
             MemoryService memoryService = new MemoryService();
+            PatchService patchService = new PatchService(workspaceService);
             logger.info("Notification and Issue services initialized");
             logger.info("Memory service initialized");
             decayConfigStore = new DecayConfigStore(objectMapper);
@@ -93,6 +94,7 @@ public class Main {
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
                 memoryController,
+                new PatchController(patchService, workspaceService, notificationStore, objectMapper),
                 new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, memoryService, objectMapper)
             );
 

@@ -102,7 +102,8 @@
         btnOpenSettings: document.getElementById('btn-open-settings'),
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
         workspaceName: document.getElementById('workspace-name'),
-        workspaceDesc: document.getElementById('workspace-desc')
+        workspaceDesc: document.getElementById('workspace-desc'),
+        btnPatchReview: document.getElementById('btn-patch-review')
     };
 
     // Initialize Split.js
@@ -273,6 +274,154 @@
         } catch (err) {
             log(`Failed to load workspace info: ${err.message}`, 'error');
         }
+    }
+
+    // ============================================
+    // PATCH REVIEW MODAL
+    // ============================================
+
+    async function showPatchReviewModal(focusId) {
+        const { overlay, modal, body, close, confirmBtn } = createModalShell(
+            'Patch Review',
+            'Close',
+            'Cancel',
+            { closeOnCancel: true }
+        );
+        modal.classList.add('patch-review-modal');
+        confirmBtn.addEventListener('click', close);
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'modal-row space-between';
+        const refreshBtn = document.createElement('button');
+        refreshBtn.className = 'modal-btn modal-btn-secondary';
+        refreshBtn.textContent = 'Refresh';
+        headerRow.appendChild(refreshBtn);
+        body.appendChild(headerRow);
+
+        const hint = document.createElement('div');
+        hint.className = 'modal-hint';
+        hint.textContent = 'Select a patch to view details.';
+        body.appendChild(hint);
+
+        const listContainer = document.createElement('div');
+        listContainer.className = 'patch-list';
+        body.appendChild(listContainer);
+
+        const detail = document.createElement('div');
+        detail.className = 'patch-detail';
+        detail.innerHTML = '<div class="patch-detail-empty">Select a patch to review</div>';
+        body.appendChild(detail);
+
+        async function loadPatches() {
+            try {
+                const res = await patchApi.list();
+                const patches = res.patches || [];
+                renderPatchList(patches);
+                if (focusId) {
+                    const match = patches.find(p => p.id === focusId);
+                    if (match) {
+                        renderPatchDetail(match);
+                    }
+                }
+            } catch (err) {
+                hint.textContent = `Failed to load patches: ${err.message}`;
+            }
+        }
+
+        function renderPatchList(patches) {
+            listContainer.innerHTML = '';
+            if (!patches.length) {
+                listContainer.innerHTML = '<div class="patch-empty">No patches</div>';
+                return;
+            }
+            patches.forEach(patch => {
+                const item = document.createElement('div');
+                item.className = 'patch-item';
+                item.innerHTML = `
+                    <div class="patch-item-title">${escapeHtml(patch.title || patch.id)}</div>
+                    <div class="patch-item-meta">${escapeHtml(patch.filePath || '')}</div>
+                    <div class="patch-item-status status-${patch.status || 'pending'}">${patch.status || 'pending'}</div>
+                    <div class="patch-item-time">${formatRelativeTime(patch.createdAt)}</div>
+                `;
+                item.addEventListener('click', async () => {
+                    try {
+                        const full = await patchApi.get(patch.id);
+                        renderPatchDetail(full);
+                    } catch (err) {
+                        notificationStore.error(`Failed to load patch: ${err.message}`, 'editor');
+                    }
+                });
+                listContainer.appendChild(item);
+            });
+        }
+
+        function renderPatchDetail(patch) {
+            detail.innerHTML = '';
+            const header = document.createElement('div');
+            header.className = 'patch-detail-header';
+            header.innerHTML = `
+                <div>
+                    <div class="patch-detail-title">${escapeHtml(patch.title || patch.id)}</div>
+                    <div class="patch-detail-path">${escapeHtml(patch.filePath || '')}</div>
+                    <div class="patch-detail-status status-${patch.status}">${patch.status}</div>
+                </div>
+                <div class="patch-detail-actions">
+                    <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
+                    <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
+                </div>
+            `;
+            detail.appendChild(header);
+
+            if (patch.description) {
+                const desc = document.createElement('div');
+                desc.className = 'patch-detail-desc';
+                desc.textContent = patch.description;
+                detail.appendChild(desc);
+            }
+
+            const preview = document.createElement('pre');
+            preview.className = 'patch-detail-preview';
+            preview.textContent = patch.preview || 'Edits: ' + JSON.stringify(patch.edits || [], null, 2);
+            detail.appendChild(preview);
+
+            const applyBtn = header.querySelector('#btn-apply-patch');
+            const rejectBtn = header.querySelector('#btn-reject-patch');
+
+            const disableActions = (disabled) => {
+                applyBtn.disabled = disabled;
+                rejectBtn.disabled = disabled;
+            };
+
+            applyBtn.addEventListener('click', async () => {
+                disableActions(true);
+                try {
+                    await patchApi.apply(patch.id);
+                    notificationStore.success(`Applied ${patch.id}`, 'editor');
+                    await loadPatches();
+                } catch (err) {
+                    notificationStore.error(`Failed to apply: ${err.message}`, 'editor');
+                } finally {
+                    disableActions(false);
+                }
+            });
+
+            rejectBtn.addEventListener('click', async () => {
+                disableActions(true);
+                try {
+                    await patchApi.reject(patch.id);
+                    notificationStore.warning(`Rejected ${patch.id}`, 'editor');
+                    await loadPatches();
+                } catch (err) {
+                    notificationStore.error(`Failed to reject: ${err.message}`, 'editor');
+                } finally {
+                    disableActions(false);
+                }
+            });
+        }
+
+        refreshBtn.addEventListener('click', loadPatches);
+
+        await loadPatches();
     }
 
     function updateWorkspaceButton() {
@@ -829,7 +978,8 @@
             case 'open-patch':
             case 'review-patch':
                 log(`Patch review requested: ${payload.patchId || 'unknown'}`, 'info');
-                openNotificationCenter(notification.id);
+                closeNotificationCenter();
+                showPatchReviewModal(payload.patchId);
                 break;
             default:
                 openNotificationCenter(notification.id);
@@ -7802,6 +7952,9 @@
             elements.btnOpenIssues.addEventListener('click', () => {
                 openIssueBoardPanel();
             });
+        }
+        if (elements.btnPatchReview) {
+            elements.btnPatchReview.addEventListener('click', () => showPatchReviewModal());
         }
 
         if (elements.btnStartConference) {

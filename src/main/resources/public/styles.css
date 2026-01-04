@@ -1520,6 +1520,18 @@ html, body {
     border-color: var(--accent-color);
 }
 
+.modal-textarea {
+    width: 100%;
+    padding: 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-bright);
+    font-size: 13px;
+    margin-bottom: 12px;
+    resize: vertical;
+}
+
 .modal-hint {
     font-size: 11px;
     color: var(--text-secondary, rgba(255, 255, 255, 0.65));
@@ -1616,6 +1628,133 @@ html, body {
 
 .modal-btn-secondary:hover {
     background: var(--bg-lighter);
+}
+
+.patch-review-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.patch-list {
+    max-height: 200px;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-medium);
+}
+
+.patch-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 2px 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+}
+
+.patch-item:last-child {
+    border-bottom: none;
+}
+
+.patch-item:hover {
+    background: var(--bg-lighter);
+}
+
+.patch-item-title {
+    font-weight: 600;
+    grid-column: 1 / span 2;
+}
+
+.patch-item-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-item-status {
+    justify-self: end;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    text-transform: capitalize;
+}
+
+.patch-item-status.status-pending {
+    background: rgba(255, 193, 7, 0.2);
+    color: #c28a00;
+}
+
+.patch-item-status.status-applied {
+    background: rgba(76, 175, 80, 0.2);
+    color: #2e7d32;
+}
+
+.patch-item-status.status-rejected {
+    background: rgba(244, 67, 54, 0.2);
+    color: #c62828;
+}
+
+.patch-item-time {
+    grid-column: 1 / span 2;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.patch-empty {
+    padding: 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-detail {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    background: var(--bg-medium);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.patch-detail-empty {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-detail-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.patch-detail-title {
+    font-weight: 700;
+}
+
+.patch-detail-path {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-detail-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.patch-detail-desc {
+    font-size: 13px;
+}
+
+.patch-detail-preview {
+    background: var(--bg-dark);
+    color: var(--text-bright);
+    padding: 10px;
+    border-radius: 6px;
+    max-height: 240px;
+    overflow: auto;
+    font-size: 12px;
 }
 
 /* Conference Invite Modal */

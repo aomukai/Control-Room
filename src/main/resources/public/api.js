@@ -253,6 +253,29 @@
         }
     };
 
+    // Patch Review API
+    const patchApi = {
+        async list() {
+            return api('/api/patches');
+        },
+        async get(id) {
+            return api(`/api/patches/${encodeURIComponent(id)}`);
+        },
+        async apply(id) {
+            return api(`/api/patches/${encodeURIComponent(id)}/apply`, { method: 'POST' });
+        },
+        async reject(id) {
+            return api(`/api/patches/${encodeURIComponent(id)}/reject`, { method: 'POST' });
+        },
+        async simulate(filePath) {
+            return api('/api/patches/simulate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath })
+            });
+        }
+    };
+
     // File API
     const fileApi = {
         async getTree() {
@@ -428,6 +451,7 @@
     window.providerApi = providerApi;
     window.roleSettingsApi = roleSettingsApi;
     window.workspaceApi = workspaceApi;
+    window.patchApi = patchApi;
     window.fileApi = fileApi;
     window.segmentsApi = segmentsApi;
     window.chatApi = chatApi;
