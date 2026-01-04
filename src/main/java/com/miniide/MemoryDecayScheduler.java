@@ -60,8 +60,9 @@ public class MemoryDecayScheduler {
             log("Decay run: archived=" + result.getArchivedIds().size()
                 + ", expired=" + result.getExpiredIds().size()
                 + ", prunedEvents=" + result.getPrunedEvents()
-                + ", lockedSkipped=" + result.getLockedItems());
-            if (!settings.isDryRun() && settings.isNotifyOnRun()) {
+                + ", lockedSkipped=" + result.getLockedItems()
+                + ", filtered=" + result.getFilteredItems());
+            if (settings.isNotifyOnRun()) {
                 sendNotification(result);
             }
         } catch (Exception e) {
@@ -107,11 +108,13 @@ public class MemoryDecayScheduler {
     }
 
     private void sendNotification(MemoryService.DecayResult result) {
-        if (notificationStore == null || settings.isDryRun()) return;
-        String msg = "Memory decay: archived " + result.getArchivedIds().size()
+        if (notificationStore == null) return;
+        String mode = settings.isDryRun() ? "Memory decay (dry run)" : "Memory decay";
+        String msg = mode + ": archived " + result.getArchivedIds().size()
             + ", expired " + result.getExpiredIds().size()
             + ", pruned events " + result.getPrunedEvents()
-            + ", locked skipped " + result.getLockedItems();
+            + ", locked skipped " + result.getLockedItems()
+            + ", filtered " + result.getFilteredItems();
         notificationStore.push(
             com.miniide.models.Notification.Level.INFO,
             com.miniide.models.Notification.Scope.GLOBAL,
