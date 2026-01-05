@@ -88,7 +88,7 @@
       "newText" : "Simulation complete.\n"
     } ],
     "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
-    "diff" : "--- README.md\n+++ README.md\n@@ -3,9 +3,12 @@\n ## Simulation Note\n This patch was generated for testing the review flow.\n \n+This patch was generated for testing the review flow.\n \n+\n ## Structure\n-- `/scenes` - Story scenes and chapters\n+Simulation complete.\n+\n - `/chars` - Character profiles\n Simulation complete.\n "
+    "diff" : "--- README.md\n+++ README.md\n@@ -5,7 +5,10 @@\n \n This patch was generated for testing the review flow.\n \n+This patch was generated for testing the review flow.\n \n+Simulation complete.\n+\n ## Structure\n Simulation complete.\n "
   } ],
   "provenance" : {
     "author" : "aomuk",
@@ -103,5 +103,58 @@
     "action" : "applied",
     "message" : "Applied 1 file(s)",
     "status" : "applied"
+  } ]
+}, {
+  "id" : "patch-3",
+  "title" : "Simulated Patch",
+  "description" : "Simulation-only patch for testing the review modal.",
+  "filePath" : "README.md",
+  "edits" : [ {
+    "startLine" : 1,
+    "endLine" : 1,
+    "newText" : "# Simulated Patch Header"
+  }, {
+    "startLine" : 3,
+    "endLine" : 3,
+    "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+  }, {
+    "startLine" : 8,
+    "endLine" : 8,
+    "newText" : "Simulation complete.\n"
+  } ],
+  "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
+  "createdAt" : 1767632031889,
+  "status" : "pending",
+  "files" : [ {
+    "filePath" : "README.md",
+    "edits" : [ {
+      "startLine" : 1,
+      "endLine" : 1,
+      "newText" : "# Simulated Patch Header"
+    }, {
+      "startLine" : 3,
+      "endLine" : 3,
+      "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+    }, {
+      "startLine" : 8,
+      "endLine" : 8,
+      "newText" : "Simulation complete.\n"
+    } ],
+    "preview" : "Simulated edits to README.md",
+    "diff" : null
+  } ],
+  "provenance" : {
+    "author" : "Control Room Test",
+    "source" : "simulation",
+    "agent" : "planner",
+    "model" : "claude-sonnet-4",
+    "notes" : null
+  },
+  "auditLog" : [ {
+    "timestamp" : 1767632031889,
+    "actor" : "aomuk",
+    "action" : "created",
+    "message" : "Simulation-only patch for testing the review modal.",
+    "status" : "pending"
   } ]
 } ]

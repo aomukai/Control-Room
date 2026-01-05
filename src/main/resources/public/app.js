@@ -299,10 +299,15 @@
         const refreshBtn = document.createElement('button');
         refreshBtn.className = 'modal-btn modal-btn-secondary';
         refreshBtn.textContent = 'Refresh';
+        const testPatchBtn = document.createElement('button');
+        testPatchBtn.className = 'modal-btn modal-btn-secondary';
+        testPatchBtn.textContent = 'Create Test Patch';
+        testPatchBtn.title = 'Create a simulated patch with agent provenance for testing';
         const cleanupBtn = document.createElement('button');
         cleanupBtn.className = 'modal-btn modal-btn-ghost';
         cleanupBtn.textContent = 'Clean applied/rejected';
         headerActions.appendChild(refreshBtn);
+        headerActions.appendChild(testPatchBtn);
         headerActions.appendChild(cleanupBtn);
         headerRow.appendChild(headerActions);
         body.appendChild(headerRow);
@@ -311,6 +316,10 @@
         hint.className = 'modal-hint';
         hint.textContent = 'Select a patch to view details.';
         body.appendChild(hint);
+
+        const agentHeaderContainer = document.createElement('div');
+        agentHeaderContainer.className = 'patch-agent-header-container';
+        body.appendChild(agentHeaderContainer);
 
         const layout = document.createElement('div');
         layout.className = 'patch-layout';
@@ -326,6 +335,18 @@
         body.appendChild(layout);
 
         refreshBtn.addEventListener('click', () => loadPatches(currentPatchId));
+        testPatchBtn.addEventListener('click', async () => {
+            testPatchBtn.disabled = true;
+            try {
+                const created = await patchApi.simulate('README.md');
+                notificationStore.success(`Created test patch: ${created.id}`, 'editor');
+                await loadPatches(created.id);
+            } catch (err) {
+                hint.textContent = `Failed to create test patch: ${err.message}`;
+            } finally {
+                testPatchBtn.disabled = false;
+            }
+        });
         cleanupBtn.addEventListener('click', async () => {
             cleanupBtn.disabled = true;
             try {
@@ -388,10 +409,83 @@
             });
         }
 
+        function renderAgentHeader(patch) {
+            agentHeaderContainer.innerHTML = '';
+            if (!patch || !patch.provenance) {
+                return;
+            }
+
+            const provenance = patch.provenance;
+            const agentName = provenance.agent || null;
+
+            if (!agentName) {
+                return;
+            }
+
+            // Find agent in state
+            const agent = (state.agents.list || []).find(a =>
+                a.id === agentName || a.name === agentName
+            );
+
+            const header = document.createElement('div');
+            header.className = 'patch-agent-header';
+
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'patch-agent-avatar';
+
+            // Render avatar
+            if (agent) {
+                if (agent.avatar && agent.avatar.startsWith('data:image')) {
+                    const img = document.createElement('img');
+                    img.src = agent.avatar;
+                    img.alt = agent.name || agentName;
+                    avatarDiv.appendChild(img);
+                } else if (agent.emoji) {
+                    const emoji = document.createElement('div');
+                    emoji.className = 'patch-agent-avatar-emoji';
+                    emoji.textContent = agent.emoji;
+                    avatarDiv.appendChild(emoji);
+                } else {
+                    const initials = document.createElement('div');
+                    initials.className = 'patch-agent-avatar-initials';
+                    const name = agent.name || agentName;
+                    initials.textContent = name.substring(0, 2).toUpperCase();
+                    avatarDiv.appendChild(initials);
+                }
+            } else {
+                // Fallback for unknown agent
+                const initials = document.createElement('div');
+                initials.className = 'patch-agent-avatar-initials';
+                initials.textContent = agentName.substring(0, 2).toUpperCase();
+                avatarDiv.appendChild(initials);
+            }
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'patch-agent-info';
+
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'patch-agent-name';
+            nameDiv.textContent = agent ? (agent.name || agentName) : agentName;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'patch-agent-message';
+            messageDiv.textContent = 'suggests the following changes...';
+
+            infoDiv.appendChild(nameDiv);
+            infoDiv.appendChild(messageDiv);
+
+            header.appendChild(avatarDiv);
+            header.appendChild(infoDiv);
+
+            agentHeaderContainer.appendChild(header);
+        }
+
         async function openPatchDetail(id) {
             detail.innerHTML = '<div class="patch-detail-empty">Loading patch…</div>';
+            agentHeaderContainer.innerHTML = '';
             try {
                 const full = await patchApi.get(id);
+                renderAgentHeader(full);
                 renderPatchDetail(full);
             } catch (err) {
                 detail.innerHTML = `<div class="patch-detail-empty">Failed to load patch: ${escapeHtml(err.message)}</div>`;

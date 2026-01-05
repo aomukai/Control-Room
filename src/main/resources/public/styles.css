@@ -1630,23 +1630,87 @@ html, body {
     background: var(--bg-lighter);
 }
 
+.patch-review-modal {
+    min-width: 85vw;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
 .patch-review-modal .modal-body {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 75vh;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.patch-agent-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.patch-agent-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.patch-agent-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.patch-agent-avatar-emoji {
+    font-size: 22px;
+}
+
+.patch-agent-avatar-initials {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.patch-agent-info {
+    flex: 1;
+}
+
+.patch-agent-name {
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.patch-agent-message {
+    font-size: 13px;
+    color: var(--text-secondary);
 }
 
 .patch-layout {
     display: flex;
     gap: 12px;
     align-items: stretch;
+    flex: 1;
+    min-height: 0;
 }
 
 .patch-list {
-    flex: 0 0 260px;
-    max-height: 70vh;
-    overflow: auto;
+    flex: 0 0 280px;
+    overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-medium);
@@ -1656,10 +1720,11 @@ html, body {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
-    gap: 2px 8px;
-    padding: 8px 10px;
+    gap: 4px 8px;
+    padding: 10px 12px;
     border-bottom: 1px solid var(--border-color);
     cursor: pointer;
+    transition: background 0.15s ease;
 }
 
 .patch-item:last-child {
@@ -1672,12 +1737,14 @@ html, body {
 
 .patch-item.is-selected {
     background: var(--bg-lighter);
-    box-shadow: inset 0 0 0 1px var(--accent-color);
+    box-shadow: inset 2px 0 0 var(--accent-color);
 }
 
 .patch-item-title {
     font-weight: 600;
     grid-column: 1 / span 2;
+    font-size: 13px;
+    color: var(--text-bright);
 }
 
 .patch-item-meta {
@@ -1723,12 +1790,14 @@ html, body {
 .patch-detail {
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 10px;
+    padding: 12px;
     background: var(--bg-medium);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     flex: 1;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .patch-detail-empty {
@@ -1740,21 +1809,28 @@ html, body {
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    align-items: center;
+    align-items: flex-start;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .patch-detail-title {
     font-weight: 700;
+    font-size: 15px;
+    color: var(--text-bright);
+    margin-bottom: 4px;
 }
 
 .patch-detail-path {
     color: var(--text-secondary);
     font-size: 12px;
+    font-family: monospace;
 }
 
 .patch-detail-actions {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
 }
 
 .patch-meta {
@@ -1764,12 +1840,12 @@ html, body {
 
 .patch-provenance {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 6px 10px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 12px;
     background: var(--bg-light);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 8px;
+    padding: 10px 12px;
     font-size: 12px;
 }
 
@@ -1783,6 +1859,9 @@ html, body {
 
 .patch-detail-desc {
     font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    padding: 8px 0;
 }
 
 .patch-detail-preview {
@@ -1892,7 +1971,8 @@ html, body {
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-dark);
-    padding: 8px;
+    padding: 10px;
+    scroll-margin-top: 20px;
 }
 
 .patch-file-header {
@@ -1900,12 +1980,16 @@ html, body {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .patch-file-path {
     font-family: monospace;
     color: var(--text-bright);
+    font-weight: 600;
+    font-size: 13px;
 }
 
 .patch-file-meta {
@@ -1938,12 +2022,15 @@ html, body {
 
 .patch-audit {
     border-top: 1px solid var(--border-color);
-    padding-top: 8px;
+    padding-top: 10px;
+    margin-top: 6px;
 }
 
 .patch-audit-title {
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--text-bright);
 }
 
 .patch-audit-list {
@@ -1987,7 +2074,7 @@ html, body {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
     background: var(--bg-lighter);
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 2px solid var(--border-color);
     font-weight: 600;
     align-items: center;
     position: sticky;
@@ -1996,18 +2083,21 @@ html, body {
 }
 
 .patch-diff-header .diff-col-label {
-    padding: 6px 8px;
+    padding: 8px 10px;
     border-right: 1px solid var(--border-color);
+    font-size: 12px;
+    color: var(--text-bright);
 }
 
-.patch-diff-header .file-label {
-    padding: 6px 8px;
+.patch-diff-header .diff-file-label {
+    padding: 8px 10px;
     border-right: none;
     color: var(--text-secondary);
+    font-size: 12px;
 }
 
 .diff-rows {
-    max-height: 320px;
+    max-height: 400px;
     overflow: auto;
     position: relative;
 }
@@ -2025,17 +2115,28 @@ html, body {
 .diff-sxs-row.hunk {
     grid-template-columns: 1fr;
     background: var(--bg-light);
-    color: #c792ea;
-    font-weight: 600;
-    padding: 4px 8px;
+    color: #82aaff;
+    font-weight: 500;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
 }
 
 .diff-sxs-row.add .diff-sxs-cell.right {
-    background: rgba(126, 213, 140, 0.08);
+    background: rgba(76, 175, 80, 0.12);
+}
+
+.diff-sxs-row.add .diff-sxs-cell.right .line-text {
+    color: #a5d6a7;
 }
 
 .diff-sxs-row.remove .diff-sxs-cell.left {
-    background: rgba(255, 138, 138, 0.08);
+    background: rgba(244, 67, 54, 0.12);
+}
+
+.diff-sxs-row.remove .diff-sxs-cell.left .line-text {
+    color: #ef9a9a;
 }
 
 .diff-sxs-row.context .diff-sxs-cell {
@@ -2050,16 +2151,21 @@ html, body {
 }
 
 .diff-sxs-cell .line-num {
-    padding: 4px 8px;
+    padding: 5px 10px;
     color: var(--text-secondary);
     border-right: 1px solid var(--border-color);
     background: var(--bg-lighter);
+    text-align: right;
+    user-select: none;
+    font-size: 11px;
 }
 
 .diff-sxs-cell .line-text {
-    padding: 4px 8px;
+    padding: 5px 10px;
     white-space: pre;
     overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 /* Conference Invite Modal */

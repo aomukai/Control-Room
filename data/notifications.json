@@ -1,4 +1,20 @@
 [ {
+  "id" : "4c3f25de-6da3-464d-9d47-964916fb943d",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767632031896,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-3",
+    "kind" : "review-patch"
+  },
+  "persistent" : true,
+  "read" : false
+}, {
   "id" : "e50d6d7b-7f6d-48a0-99af-24670c3533fb",
   "level" : "info",
   "scope" : "editor",

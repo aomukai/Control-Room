@@ -189,6 +189,15 @@ public class PatchService {
         change.setEdits(edits);
         change.setPreview("Simulated edits to " + target);
         proposal.setFiles(List.of(change));
+
+        // Add provenance with agent
+        PatchProvenance provenance = new PatchProvenance();
+        provenance.setAuthor("Control Room Test");
+        provenance.setSource("simulation");
+        provenance.setAgent("planner");
+        provenance.setModel("claude-sonnet-4");
+        proposal.setProvenance(provenance);
+
         return create(proposal);
     }
 
