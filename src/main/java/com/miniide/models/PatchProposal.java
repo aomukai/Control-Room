@@ -12,6 +12,9 @@ public class PatchProposal {
     private String preview;
     private long createdAt;
     private String status; // pending | applied | rejected
+    private List<PatchFileChange> files = new ArrayList<>();
+    private PatchProvenance provenance;
+    private List<PatchAuditEntry> auditLog = new ArrayList<>();
 
     public String getId() {
         return id;
@@ -75,5 +78,29 @@ public class PatchProposal {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public List<PatchFileChange> getFiles() {
+        return files;
+    }
+
+    public void setFiles(List<PatchFileChange> files) {
+        this.files = files != null ? files : new ArrayList<>();
+    }
+
+    public PatchProvenance getProvenance() {
+        return provenance;
+    }
+
+    public void setProvenance(PatchProvenance provenance) {
+        this.provenance = provenance;
+    }
+
+    public List<PatchAuditEntry> getAuditLog() {
+        return auditLog;
+    }
+
+    public void setAuditLog(List<PatchAuditEntry> auditLog) {
+        this.auditLog = auditLog != null ? auditLog : new ArrayList<>();
     }
 }

@@ -8,7 +8,7 @@
         return `tab-${++state.tabCounter}`;
     }
 
-    // Normalize a workspace path to canonical form:
+    // Normalize a Project path to canonical form:
     // - Forward slashes only
     // - No leading slash
     // - No duplicate slashes
@@ -261,18 +261,18 @@
     async function loadWorkspaceInfo() {
         try {
             const info = await workspaceApi.info();
-            state.workspace.name = info.currentName || 'workspace';
+            state.workspace.name = info.currentName || 'Project';
             state.workspace.path = info.currentPath || '';
             state.workspace.root = info.rootPath || '';
             state.workspace.available = Array.isArray(info.available) ? info.available : [];
             const meta = info.metadata || {};
-            state.workspace.displayName = meta.displayName || state.workspace.name || 'workspace';
+            state.workspace.displayName = meta.displayName || state.workspace.name || 'Project';
             state.workspace.description = meta.description || '';
             state.workspace.icon = meta.icon || '';
             state.workspace.accentColor = meta.accentColor || '';
             updateWorkspaceButton();
         } catch (err) {
-            log(`Failed to load workspace info: ${err.message}`, 'error');
+            log(`Failed to load Project info: ${err.message}`, 'error');
         }
     }
 
@@ -290,12 +290,21 @@
         modal.classList.add('patch-review-modal');
         confirmBtn.addEventListener('click', close);
 
+        let currentPatchId = focusId || null;
+
         const headerRow = document.createElement('div');
         headerRow.className = 'modal-row space-between';
+        const headerActions = document.createElement('div');
+        headerActions.className = 'patch-header-actions';
         const refreshBtn = document.createElement('button');
         refreshBtn.className = 'modal-btn modal-btn-secondary';
         refreshBtn.textContent = 'Refresh';
-        headerRow.appendChild(refreshBtn);
+        const cleanupBtn = document.createElement('button');
+        cleanupBtn.className = 'modal-btn modal-btn-ghost';
+        cleanupBtn.textContent = 'Clean applied/rejected';
+        headerActions.appendChild(refreshBtn);
+        headerActions.appendChild(cleanupBtn);
+        headerRow.appendChild(headerActions);
         body.appendChild(headerRow);
 
         const hint = document.createElement('div');
@@ -303,25 +312,47 @@
         hint.textContent = 'Select a patch to view details.';
         body.appendChild(hint);
 
+        const layout = document.createElement('div');
+        layout.className = 'patch-layout';
+
         const listContainer = document.createElement('div');
         listContainer.className = 'patch-list';
-        body.appendChild(listContainer);
+        layout.appendChild(listContainer);
 
         const detail = document.createElement('div');
         detail.className = 'patch-detail';
         detail.innerHTML = '<div class="patch-detail-empty">Select a patch to review</div>';
-        body.appendChild(detail);
+        layout.appendChild(detail);
+        body.appendChild(layout);
 
-        async function loadPatches() {
+        refreshBtn.addEventListener('click', () => loadPatches(currentPatchId));
+        cleanupBtn.addEventListener('click', async () => {
+            cleanupBtn.disabled = true;
+            try {
+                await patchApi.cleanup();
+                notificationStore.success('Removed applied/rejected patches.', 'editor');
+                await loadPatches();
+            } catch (err) {
+                hint.textContent = `Cleanup failed: ${err.message}`;
+            } finally {
+                cleanupBtn.disabled = false;
+            }
+        });
+
+        async function loadPatches(focusPatchId) {
             try {
                 const res = await patchApi.list();
                 const patches = res.patches || [];
                 renderPatchList(patches);
-                if (focusId) {
-                    const match = patches.find(p => p.id === focusId);
-                    if (match) {
-                        renderPatchDetail(match);
-                    }
+                if (focusPatchId && patches.some(p => p.id === focusPatchId)) {
+                    currentPatchId = focusPatchId;
+                } else if (!patches.find(p => p.id === currentPatchId)) {
+                    currentPatchId = patches.length ? patches[0].id : null;
+                }
+                if (currentPatchId) {
+                    await openPatchDetail(currentPatchId);
+                } else {
+                    detail.innerHTML = '<div class="patch-detail-empty">No patches</div>';
                 }
             } catch (err) {
                 hint.textContent = `Failed to load patches: ${err.message}`;
@@ -336,41 +367,80 @@
             }
             patches.forEach(patch => {
                 const item = document.createElement('div');
-                item.className = 'patch-item';
+                const isSelected = patch.id === currentPatchId;
+                item.className = 'patch-item' + (isSelected ? ' is-selected' : '');
+                const fileCount = Array.isArray(patch.files) ? patch.files.length : (patch.filePath ? 1 : 0);
+                const fileLabel = Array.isArray(patch.files) && patch.files[0]
+                    ? patch.files[0].filePath
+                    : (patch.filePath || '');
                 item.innerHTML = `
                     <div class="patch-item-title">${escapeHtml(patch.title || patch.id)}</div>
-                    <div class="patch-item-meta">${escapeHtml(patch.filePath || '')}</div>
+                    <div class="patch-item-meta">${escapeHtml(fileLabel)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
                     <div class="patch-item-status status-${patch.status || 'pending'}">${patch.status || 'pending'}</div>
                     <div class="patch-item-time">${formatRelativeTime(patch.createdAt)}</div>
                 `;
-                item.addEventListener('click', async () => {
-                    try {
-                        const full = await patchApi.get(patch.id);
-                        renderPatchDetail(full);
-                    } catch (err) {
-                        notificationStore.error(`Failed to load patch: ${err.message}`, 'editor');
-                    }
+                item.addEventListener('click', () => {
+                    currentPatchId = patch.id;
+                    renderPatchList(patches);
+                    openPatchDetail(patch.id);
                 });
                 listContainer.appendChild(item);
             });
         }
 
-        function renderPatchDetail(patch) {
+        async function openPatchDetail(id) {
+            detail.innerHTML = '<div class="patch-detail-empty">Loading patch…</div>';
+            try {
+                const full = await patchApi.get(id);
+                renderPatchDetail(full);
+            } catch (err) {
+                detail.innerHTML = `<div class="patch-detail-empty">Failed to load patch: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function renderPatchDetail(patch, fileErrors = new Map(), errorMessage = '') {
             detail.innerHTML = '';
             const header = document.createElement('div');
             header.className = 'patch-detail-header';
+
+            const fileCount = Array.isArray(patch.files) ? patch.files.length : (patch.filePath ? 1 : 0);
+            const primaryPath = Array.isArray(patch.files) && patch.files[0]
+                ? patch.files[0].filePath
+                : (patch.filePath || '');
+
             header.innerHTML = `
                 <div>
                     <div class="patch-detail-title">${escapeHtml(patch.title || patch.id)}</div>
-                    <div class="patch-detail-path">${escapeHtml(patch.filePath || '')}</div>
+                    <div class="patch-detail-path">${escapeHtml(primaryPath)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
                     <div class="patch-detail-status status-${patch.status}">${patch.status}</div>
                 </div>
                 <div class="patch-detail-actions">
                     <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
                     <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
+                    <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
                 </div>
             `;
             detail.appendChild(header);
+
+            const actionError = document.createElement('div');
+            actionError.className = 'patch-action-error hidden';
+            detail.appendChild(actionError);
+
+            const meta = document.createElement('div');
+            meta.className = 'patch-meta';
+            meta.textContent = `${formatRelativeTime(patch.createdAt)} • ${fileCount || 0} file${fileCount === 1 ? '' : 's'}`;
+            detail.appendChild(meta);
+
+            const provenance = patch.provenance || {};
+            const prov = document.createElement('div');
+            prov.className = 'patch-provenance';
+            prov.innerHTML = `
+                <div><span class="label">Author</span>${escapeHtml(provenance.author || 'Unknown')}</div>
+                <div><span class="label">Source</span>${escapeHtml(provenance.source || 'manual')}</div>
+                <div><span class="label">Agent</span>${escapeHtml(provenance.agent || '—')}</div>
+                <div><span class="label">Model</span>${escapeHtml(provenance.model || '—')}</div>
+            `;
+            detail.appendChild(prov);
 
             if (patch.description) {
                 const desc = document.createElement('div');
@@ -379,27 +449,99 @@
                 detail.appendChild(desc);
             }
 
-            const preview = document.createElement('pre');
-            preview.className = 'patch-detail-preview';
-            preview.textContent = patch.preview || 'Edits: ' + JSON.stringify(patch.edits || [], null, 2);
-            detail.appendChild(preview);
+            const filesSection = document.createElement('div');
+            filesSection.className = 'patch-files';
+            const files = Array.isArray(patch.files) ? patch.files : [];
+            if (!files.length) {
+                filesSection.innerHTML = '<div class="patch-detail-empty">No files in this patch</div>';
+            } else {
+                files.forEach(change => {
+                    const card = document.createElement('div');
+                    card.className = 'patch-file';
+                    card.dataset.filePath = change.filePath || '';
+
+                    const headerRow = document.createElement('div');
+                    headerRow.className = 'patch-file-header';
+                    const fileName = document.createElement('div');
+                    fileName.className = 'patch-file-path';
+                    fileName.textContent = change.filePath || 'Unknown file';
+                    const fileMeta = document.createElement('div');
+                    fileMeta.className = 'patch-file-meta';
+                    const editCount = Array.isArray(change.edits) ? change.edits.length : 0;
+                    fileMeta.textContent = `${editCount} edit${editCount === 1 ? '' : 's'}`;
+                    headerRow.appendChild(fileName);
+                    headerRow.appendChild(fileMeta);
+                    card.appendChild(headerRow);
+
+                    const diffBlock = renderDiff(change.diff || change.preview || 'No diff available');
+                    card.appendChild(diffBlock);
+
+                    const fileError = document.createElement('div');
+                    fileError.className = 'patch-file-error hidden';
+                    if (fileErrors.has(change.filePath)) {
+                        fileError.textContent = fileErrors.get(change.filePath);
+                        fileError.classList.remove('hidden');
+                        card.classList.add('has-error');
+                    }
+                    card.appendChild(fileError);
+                    filesSection.appendChild(card);
+                });
+            }
+            detail.appendChild(filesSection);
+
+            if (Array.isArray(patch.auditLog) && patch.auditLog.length) {
+                const auditWrap = document.createElement('div');
+                auditWrap.className = 'patch-audit';
+                const title = document.createElement('div');
+                title.className = 'patch-audit-title';
+                title.textContent = 'Audit trail';
+                auditWrap.appendChild(title);
+
+                const list = document.createElement('div');
+                list.className = 'patch-audit-list';
+                patch.auditLog
+                    .slice()
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+                    .forEach(entry => {
+                        const row = document.createElement('div');
+                        row.className = 'patch-audit-row';
+                        const ts = entry.timestamp ? formatRelativeTime(entry.timestamp) : '';
+                        row.innerHTML = `
+                            <div class="patch-audit-meta">${escapeHtml(entry.actor || 'user')} • ${escapeHtml(entry.action || '')}</div>
+                            <div class="patch-audit-msg">${escapeHtml(entry.message || '')}</div>
+                            <div class="patch-audit-time">${ts}</div>
+                        `;
+                        list.appendChild(row);
+                    });
+                auditWrap.appendChild(list);
+                detail.appendChild(auditWrap);
+            }
 
             const applyBtn = header.querySelector('#btn-apply-patch');
             const rejectBtn = header.querySelector('#btn-reject-patch');
+            const deleteBtn = header.querySelector('#btn-delete-patch');
 
             const disableActions = (disabled) => {
-                applyBtn.disabled = disabled;
-                rejectBtn.disabled = disabled;
+                applyBtn.disabled = disabled || patch.status !== 'pending';
+                rejectBtn.disabled = disabled || patch.status !== 'pending';
+                deleteBtn.disabled = disabled;
             };
+
+            disableActions(false);
 
             applyBtn.addEventListener('click', async () => {
                 disableActions(true);
+                actionError.classList.add('hidden');
                 try {
                     await patchApi.apply(patch.id);
                     notificationStore.success(`Applied ${patch.id}`, 'editor');
-                    await loadPatches();
+                    await loadPatches(patch.id);
                 } catch (err) {
-                    notificationStore.error(`Failed to apply: ${err.message}`, 'editor');
+                    const fileErrorsList = Array.isArray(err.data && err.data.fileErrors) ? err.data.fileErrors : [];
+                    actionError.textContent = err.message || 'Failed to apply patch';
+                    actionError.classList.remove('hidden');
+                    const fileErrorMap = new Map(fileErrorsList.map(fe => [fe.filePath, fe.message]));
+                    renderPatchDetail(patch, fileErrorMap, err.message);
                 } finally {
                     disableActions(false);
                 }
@@ -407,26 +549,71 @@
 
             rejectBtn.addEventListener('click', async () => {
                 disableActions(true);
+                actionError.classList.add('hidden');
                 try {
                     await patchApi.reject(patch.id);
                     notificationStore.warning(`Rejected ${patch.id}`, 'editor');
-                    await loadPatches();
+                    await loadPatches(patch.id);
                 } catch (err) {
-                    notificationStore.error(`Failed to reject: ${err.message}`, 'editor');
-                } finally {
+                    actionError.textContent = err.message || 'Failed to reject patch';
+                    actionError.classList.remove('hidden');
                     disableActions(false);
                 }
             });
+
+            deleteBtn.addEventListener('click', async () => {
+                const confirmed = window.confirm('Delete this patch? This cannot be undone.');
+                if (!confirmed) return;
+                disableActions(true);
+                try {
+                    await patchApi.delete(patch.id);
+                    notificationStore.info(`Deleted ${patch.id}`, 'editor');
+                    currentPatchId = null;
+                    await loadPatches();
+                } catch (err) {
+                    actionError.textContent = err.message || 'Failed to delete patch';
+                    actionError.classList.remove('hidden');
+                    disableActions(false);
+                }
+            });
+
+            if (errorMessage) {
+                actionError.textContent = errorMessage;
+                actionError.classList.remove('hidden');
+            }
         }
 
-        refreshBtn.addEventListener('click', loadPatches);
+        function renderDiff(diffText) {
+            const container = document.createElement('pre');
+            container.className = 'patch-diff';
+            const lines = (diffText || '').split('\n');
+            if (!lines.length) {
+                container.textContent = 'No diff available';
+                return container;
+            }
+            lines.forEach(line => {
+                const div = document.createElement('div');
+                div.textContent = line;
+                if (line.startsWith('+')) {
+                    div.className = 'diff-line add';
+                } else if (line.startsWith('-')) {
+                    div.className = 'diff-line remove';
+                } else if (line.startsWith('@@')) {
+                    div.className = 'diff-line hunk';
+                } else {
+                    div.className = 'diff-line';
+                }
+                container.appendChild(div);
+            });
+            return container;
+        }
 
-        await loadPatches();
+        await loadPatches(currentPatchId);
     }
 
     function updateWorkspaceButton() {
         if (!elements.btnWorkspaceSwitch || !elements.workspaceName) return;
-        const displayName = state.workspace.displayName || state.workspace.name || 'Workspace';
+        const displayName = state.workspace.displayName || state.workspace.name || 'Project';
         const icon = state.workspace.icon ? `${state.workspace.icon} ` : '';
         elements.workspaceName.textContent = `${icon}${displayName}`;
         if (elements.workspaceDesc) {
@@ -434,14 +621,14 @@
             elements.workspaceDesc.style.display = state.workspace.description ? 'inline' : 'none';
         }
         if (state.workspace.path) {
-            elements.btnWorkspaceSwitch.title = `Switch workspace (${state.workspace.path})`;
+            elements.btnWorkspaceSwitch.title = `Switch Project (${state.workspace.path})`;
         }
     }
 
     function showWorkspaceSwitcher() {
         const { overlay, modal, body, confirmBtn, close } = createModalShell(
-            'Switch Workspace',
-            'Set & Restart',
+            'Switch Project',
+            'Switch Now',
             'Cancel',
             { closeOnCancel: true }
         );
@@ -450,8 +637,8 @@
 
         const info = document.createElement('div');
         info.className = 'modal-text';
-        const rootLabel = state.workspace.root ? `under ${state.workspace.root}` : 'under the workspace root';
-        info.textContent = `Pick an existing workspace or type a new name ${rootLabel}. Restart required.`;
+        const rootLabel = state.workspace.root ? `under ${state.workspace.root}` : 'under the project root';
+        info.textContent = `Pick an existing project or type a new name ${rootLabel}. Switching applies instantly.`;
         body.appendChild(info);
 
         const error = document.createElement('div');
@@ -469,7 +656,7 @@
         if (available.length === 0) {
             const option = document.createElement('option');
             option.value = '';
-            option.textContent = 'No workspaces found';
+            option.textContent = 'No Projects found';
             select.appendChild(option);
             select.disabled = true;
         } else {
@@ -495,17 +682,42 @@
         const input = document.createElement('input');
         input.className = 'modal-input';
         input.type = 'text';
-        input.placeholder = 'e.g., whateverwonderfulprojectnametheuserwillcomeupwith';
+        input.placeholder = 'e.g., whateverwonderfulworkspaceNametheuserwillcomeupwith';
         rowInput.appendChild(inputLabel);
         rowInput.appendChild(input);
         body.appendChild(rowInput);
+
+        const recents = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(Boolean);
+        if (recents.length) {
+            const recentRow = document.createElement('div');
+            recentRow.className = 'recent-projects';
+            const recentLabel = document.createElement('label');
+            recentLabel.className = 'modal-label';
+            recentLabel.textContent = 'Recent';
+            const recentChips = document.createElement('div');
+            recentChips.className = 'recent-chip-row';
+            recents.slice(0, 6).forEach(name => {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'recent-chip';
+                chip.textContent = name;
+                chip.addEventListener('click', () => {
+                    input.value = name;
+                    select.value = name;
+                });
+                recentChips.appendChild(chip);
+            });
+            recentRow.appendChild(recentLabel);
+            recentRow.appendChild(recentChips);
+            body.appendChild(recentRow);
+        }
 
         const selectName = () => input.value.trim() || select.value;
 
         confirmBtn.addEventListener('click', async () => {
             const name = selectName();
             if (!name) {
-                error.textContent = 'Choose or enter a workspace name.';
+                error.textContent = 'Choose or enter a Project name.';
                 return;
             }
             confirmBtn.disabled = true;
@@ -513,8 +725,12 @@
             try {
                 const result = await workspaceApi.select(name);
                 const targetPath = result.targetPath || name;
-                notificationStore.success(`Workspace set to ${name}. Restart to apply.`, 'global');
-                log(`Workspace selection saved: ${targetPath}`, 'info');
+                const recent = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(Boolean);
+                const updatedRecent = [name, ...recent.filter(n => n !== name)].slice(0, 6);
+                localStorage.setItem('recent-projects', JSON.stringify(updatedRecent));
+                notificationStore.success(`Project switched to ${name}. Reloading…`, 'global');
+                log(`Project selection applied: ${targetPath}`, 'info');
+                setTimeout(() => window.location.reload(), 200);
                 close();
             } catch (err) {
                 error.textContent = err.message;
@@ -531,7 +747,7 @@
         // Metadata section
         const metaTitle = document.createElement('div');
         metaTitle.className = 'modal-subtitle';
-        metaTitle.textContent = 'Workspace Metadata';
+        metaTitle.textContent = 'Project Metadata';
         body.appendChild(metaTitle);
 
         const metaDisplayRow = document.createElement('div');
@@ -542,7 +758,7 @@
         const metaDisplayInput = document.createElement('input');
         metaDisplayInput.className = 'modal-input';
         metaDisplayInput.type = 'text';
-        metaDisplayInput.placeholder = 'Friendly workspace name';
+        metaDisplayInput.placeholder = 'Friendly Project name';
         metaDisplayInput.value = state.workspace.displayName || state.workspace.name || '';
         metaDisplayRow.appendChild(metaDisplayLabel);
         metaDisplayRow.appendChild(metaDisplayInput);
@@ -578,7 +794,7 @@
 
         const metaHint = document.createElement('div');
         metaHint.className = 'modal-hint';
-        metaHint.textContent = 'Metadata saves instantly for this workspace.';
+        metaHint.textContent = 'Metadata saves instantly for this Project.';
         body.appendChild(metaHint);
 
         const saveMetaBtn = document.createElement('button');
@@ -602,7 +818,7 @@
                 state.workspace.description = meta.description || '';
                 state.workspace.icon = meta.icon || '';
                 updateWorkspaceButton();
-                notificationStore.success('Workspace metadata saved.', 'global');
+                notificationStore.success('Project metadata saved.', 'global');
                 metaHint.textContent = 'Saved.';
             } catch (err) {
                 metaHint.textContent = err.message;
@@ -1857,7 +2073,7 @@
                                     <div class="settings-subsection">
                                         <div class="hotkey-list">
                                             <div class="hotkey-row">
-                                                <span>Search in workspace</span>
+                                                <span>Search in Project</span>
                                                 <span class="hotkey-keys"><kbd>Ctrl</kbd> <span>+</span> <kbd>Shift</kbd> <span>+</span> <kbd>F</kbd></span>
                                             </div>
                                             <div class="hotkey-row">
@@ -7014,7 +7230,7 @@
         for (const folder of folders) {
             const option = document.createElement('option');
             option.value = folder;
-            option.textContent = folder || '/ (workspace root)';
+            option.textContent = folder || '/ (Project root)';
             if (folder === oldFolder) {
                 option.selected = true;
             }
@@ -7341,7 +7557,7 @@
         elements.searchInput.focus();
         elements.searchInput.select();
 
-        log('Workspace search (Ctrl+Shift+F)', 'info');
+        log('Project search (Ctrl+Shift+F)', 'info');
     }
 
     function getStoredAgentId() {
@@ -7977,16 +8193,16 @@
         }
 
         document.getElementById('btn-open-workspace').addEventListener('click', async () => {
-            log('Opening workspace folder...', 'info');
+            log('Opening Project folder...', 'info');
             try {
                 const result = await api('/api/workspace/open', { method: 'POST' });
                 if (result.ok) {
-                    log('Workspace folder opened', 'success');
+                    log('Project folder opened', 'success');
                 } else {
-                    log(`Failed to open workspace folder: ${result.error}`, 'error');
+                    log(`Failed to open Project folder: ${result.error}`, 'error');
                 }
             } catch (err) {
-                log(`Failed to open workspace folder: ${err.message}`, 'error');
+                log(`Failed to open Project folder: ${err.message}`, 'error');
             }
         });
 
@@ -8002,7 +8218,7 @@
         });
 
         document.getElementById('btn-open-terminal').addEventListener('click', async () => {
-            log('Opening terminal at workspace...', 'info');
+            log('Opening terminal at Project...', 'info');
             try {
                 const result = await api('/api/workspace/terminal', { method: 'POST' });
                 if (result.ok) {
@@ -8076,7 +8292,7 @@
             }
         });
 
-        // Search button - opens workspace search
+        // Search button - opens Project search
         elements.btnSearch.addEventListener('click', () => {
             openWorkspaceSearch();
         });
@@ -8211,7 +8427,7 @@
                 }
             }
 
-            // E2: Find in Workspace (Ctrl+Shift+F / Cmd+Shift+F)
+            // E2: Find in Project (Ctrl+Shift+F / Cmd+Shift+F)
             if (cmdOrCtrl && e.shiftKey && e.key === 'F') {
                 e.preventDefault();
                 openWorkspaceSearch();

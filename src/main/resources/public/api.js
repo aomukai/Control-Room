@@ -8,8 +8,16 @@
         try {
             const response = await fetch(endpoint, options);
             if (!response.ok) {
-                const error = await response.json().catch(() => ({ error: response.statusText }));
-                throw new Error(error.error || 'Request failed');
+                let error = null;
+                try {
+                    error = await response.json();
+                } catch (_) {
+                    // ignore
+                }
+                const err = new Error((error && error.error) || response.statusText || 'Request failed');
+                err.data = error;
+                err.status = response.status;
+                throw err;
             }
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
@@ -266,6 +274,16 @@
         },
         async reject(id) {
             return api(`/api/patches/${encodeURIComponent(id)}/reject`, { method: 'POST' });
+        },
+        async delete(id) {
+            return api(`/api/patches/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        },
+        async cleanup(statuses) {
+            return api('/api/patches/cleanup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(statuses ? { statuses } : {})
+            });
         },
         async simulate(filePath) {
             return api('/api/patches/simulate', {

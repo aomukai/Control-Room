@@ -1634,10 +1634,18 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    max-height: 75vh;
+}
+
+.patch-layout {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
 }
 
 .patch-list {
-    max-height: 200px;
+    flex: 0 0 260px;
+    max-height: 70vh;
     overflow: auto;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -1660,6 +1668,11 @@ html, body {
 
 .patch-item:hover {
     background: var(--bg-lighter);
+}
+
+.patch-item.is-selected {
+    background: var(--bg-lighter);
+    box-shadow: inset 0 0 0 1px var(--accent-color);
 }
 
 .patch-item-title {
@@ -1715,6 +1728,7 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex: 1;
 }
 
 .patch-detail-empty {
@@ -1743,6 +1757,30 @@ html, body {
     gap: 8px;
 }
 
+.patch-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-provenance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 6px 10px;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px;
+    font-size: 12px;
+}
+
+.patch-provenance .label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .patch-detail-desc {
     font-size: 13px;
 }
@@ -1755,6 +1793,152 @@ html, body {
     max-height: 240px;
     overflow: auto;
     font-size: 12px;
+}
+
+.recent-projects {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recent-chip-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.recent-chip {
+    border: 1px solid var(--border-color);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    border-radius: 12px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.recent-chip:hover {
+    background: var(--accent-color);
+    color: var(--text-bright);
+    border-color: var(--accent-hover);
+}
+
+.patch-files {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.patch-file {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-dark);
+    padding: 8px;
+}
+
+.patch-file-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.patch-file-path {
+    font-family: monospace;
+    color: var(--text-bright);
+}
+
+.patch-file-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.patch-file-error {
+    margin-top: 6px;
+    color: var(--error-color);
+    font-size: 12px;
+}
+
+.patch-file.has-error {
+    border-color: var(--error-color);
+}
+
+.patch-diff {
+    background: var(--bg-medium);
+    border-radius: 6px;
+    padding: 8px;
+    overflow: auto;
+    max-height: 260px;
+    font-family: Consolas, Menlo, Monaco, 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.diff-line {
+    white-space: pre;
+}
+
+.diff-line.add {
+    color: #7fd58c;
+}
+
+.diff-line.remove {
+    color: #ff8a8a;
+}
+
+.diff-line.hunk {
+    color: #c792ea;
+}
+
+.patch-action-error {
+    background: rgba(241, 76, 76, 0.1);
+    border: 1px solid rgba(241, 76, 76, 0.3);
+    color: var(--error-color);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.patch-action-error.hidden {
+    display: none;
+}
+
+.patch-audit {
+    border-top: 1px solid var(--border-color);
+    padding-top: 8px;
+}
+
+.patch-audit-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.patch-audit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.patch-audit-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.patch-audit-row:last-child {
+    border-bottom: none;
+}
+
+.patch-audit-msg {
+    font-size: 13px;
+}
+
+.patch-audit-meta,
+.patch-audit-time {
+    color: var(--text-secondary);
+    font-size: 11px;
 }
 
 /* Conference Invite Modal */

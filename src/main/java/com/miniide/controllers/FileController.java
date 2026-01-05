@@ -3,7 +3,7 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
-import com.miniide.WorkspaceService;
+import com.miniide.ProjectContext;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import io.javalin.Javalin;
@@ -22,12 +22,12 @@ import java.util.Map;
  */
 public class FileController implements Controller {
 
-    private final WorkspaceService workspaceService;
+    private final ProjectContext projectContext;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public FileController(WorkspaceService workspaceService, ObjectMapper objectMapper) {
-        this.workspaceService = workspaceService;
+    public FileController(ProjectContext projectContext, ObjectMapper objectMapper) {
+        this.projectContext = projectContext;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -49,7 +49,7 @@ public class FileController implements Controller {
 
     private void getTree(Context ctx) {
         try {
-            ctx.json(workspaceService.getTree(""));
+            ctx.json(projectContext.workspace().getTree(""));
         } catch (Exception e) {
             logger.error("Error getting tree: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
@@ -63,7 +63,7 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            String content = workspaceService.readFile(path);
+            String content = projectContext.workspace().readFile(path);
             ctx.contentType("text/plain; charset=utf-8").result(content);
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Controller.errorBody(e));
@@ -80,7 +80,7 @@ public class FileController implements Controller {
                 return;
             }
             String content = ctx.body();
-            workspaceService.writeFile(path, content);
+            projectContext.workspace().writeFile(path, content);
             logger.info("File saved: " + path);
             ctx.json(Map.of("success", true, "message", "File saved: " + path));
         } catch (Exception e) {
@@ -101,9 +101,9 @@ public class FileController implements Controller {
             }
 
             if ("folder".equals(type)) {
-                workspaceService.createFolder(path);
+                projectContext.workspace().createFolder(path);
             } else {
-                workspaceService.createFile(path, initialContent);
+                projectContext.workspace().createFile(path, initialContent);
             }
             logger.info("Created " + type + ": " + path);
             ctx.json(Map.of("success", true, "message", "Created: " + path));
@@ -119,7 +119,7 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            workspaceService.deleteEntry(path);
+            projectContext.workspace().deleteEntry(path);
             logger.info("Deleted: " + path);
             ctx.json(Map.of("success", true, "message", "Deleted: " + path));
         } catch (FileNotFoundException e) {
@@ -140,7 +140,7 @@ public class FileController implements Controller {
                 return;
             }
 
-            workspaceService.renameEntry(from, to);
+            projectContext.workspace().renameEntry(from, to);
             logger.info("Renamed: " + from + " -> " + to);
             ctx.json(Map.of("success", true, "message", "Renamed: " + from + " -> " + to));
         } catch (FileNotFoundException e) {
@@ -160,7 +160,7 @@ public class FileController implements Controller {
                 return;
             }
 
-            String newPath = workspaceService.duplicateEntry(path);
+            String newPath = projectContext.workspace().duplicateEntry(path);
             logger.info("Duplicated: " + path + " -> " + newPath);
             ctx.json(Map.of("success", true, "message", "Duplicated: " + path, "newPath", newPath));
         } catch (FileNotFoundException e) {
@@ -174,7 +174,7 @@ public class FileController implements Controller {
         try {
             String query = ctx.queryParam("q");
             String pattern = ctx.queryParam("pattern");
-            List<SearchResult> results = workspaceService.search(query, pattern);
+            List<SearchResult> results = projectContext.workspace().search(query, pattern);
             ctx.json(results);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
@@ -188,7 +188,7 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            List<SceneSegment> segments = workspaceService.getSceneSegments(path);
+            List<SceneSegment> segments = projectContext.workspace().getSceneSegments(path);
             ctx.json(segments);
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Controller.errorBody(e));
@@ -207,7 +207,7 @@ public class FileController implements Controller {
                 return;
             }
 
-            Path absPath = workspaceService.resolvePath(path);
+            Path absPath = projectContext.workspace().resolvePath(path);
 
             if (!Files.exists(absPath)) {
                 ctx.json(Map.of("ok", false, "error", "File not found: " + path));
@@ -246,7 +246,7 @@ public class FileController implements Controller {
     private void openParentFolder(Path absPath, String os, Context ctx) throws IOException {
         Path parentDir = absPath.getParent();
         if (parentDir == null) {
-            parentDir = workspaceService.getWorkspaceRoot();
+            parentDir = projectContext.workspace().getWorkspaceRoot();
         }
 
         ProcessBuilder fallbackPb;
@@ -273,7 +273,7 @@ public class FileController implements Controller {
                 return;
             }
 
-            Path absPath = workspaceService.resolvePath(path);
+            Path absPath = projectContext.workspace().resolvePath(path);
 
             if (!Files.exists(absPath)) {
                 ctx.json(Map.of("ok", false, "error", "File not found: " + path));
@@ -282,7 +282,7 @@ public class FileController implements Controller {
 
             Path targetDir = Files.isDirectory(absPath) ? absPath : absPath.getParent();
             if (targetDir == null) {
-                targetDir = workspaceService.getWorkspaceRoot();
+                targetDir = projectContext.workspace().getWorkspaceRoot();
             }
 
             String os = System.getProperty("os.name").toLowerCase();

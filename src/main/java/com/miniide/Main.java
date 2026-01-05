@@ -35,25 +35,14 @@ public class Main {
             // Print startup banner
             printBanner(config);
 
-            // Initialize workspace (FileService handles initial setup/seeding)
-            new FileService(config.getWorkspacePath().toString());
-
-            // Create WorkspaceService for all runtime file operations
-            WorkspaceService workspaceService = new WorkspaceService(config.getWorkspacePath());
+            // Initialize project-scoped services
+            ProjectContext projectContext = new ProjectContext(config.getWorkspacePath(), objectMapper);
             logger.info("Workspace initialized: " + config.getWorkspacePath());
-
-            // Initialize agent registry
-            AgentRegistry agentRegistry = new AgentRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
-            logger.info("Agent registry initialized");
-
-            AgentEndpointRegistry agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
-            logger.info("Agent endpoint registry initialized");
 
             // Initialize notification and issue services
             NotificationStore notificationStore = new NotificationStore();
             IssueMemoryService issueService = new IssueMemoryService();
             MemoryService memoryService = new MemoryService();
-            PatchService patchService = new PatchService(workspaceService);
             logger.info("Notification and Issue services initialized");
             logger.info("Memory service initialized");
             decayConfigStore = new DecayConfigStore(objectMapper);
@@ -87,15 +76,15 @@ public class Main {
             // Create and register controllers
             MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
-                new FileController(workspaceService, objectMapper),
-                new WorkspaceController(workspaceService, objectMapper),
-                new AgentController(agentRegistry, agentEndpointRegistry, objectMapper),
+                new FileController(projectContext, objectMapper),
+                new WorkspaceController(projectContext, objectMapper),
+                new AgentController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
                 memoryController,
-                new PatchController(patchService, workspaceService, notificationStore, objectMapper),
-                new ChatController(agentRegistry, agentEndpointRegistry, settingsService, providerChatService, memoryService, objectMapper)
+                new PatchController(projectContext, notificationStore, objectMapper),
+                new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));

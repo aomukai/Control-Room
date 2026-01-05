@@ -474,6 +474,18 @@ public class WorkspaceService {
      * @throws UnsupportedOperationException currently not implemented
      */
     public void applyPatch(String relativePath, List<TextEdit> edits) throws IOException {
+        if (edits == null || edits.isEmpty()) {
+            throw new IllegalArgumentException("No edits provided");
+        }
+        List<String> patched = applyEditsInMemory(readFileLines(relativePath), edits);
+        writeFileLines(relativePath, patched);
+        log("Applied patch to " + relativePath + " (" + edits.size() + " edits)");
+    }
+
+    /**
+     * Reads a file and returns its lines with UTF-8 encoding.
+     */
+    public List<String> readFileLines(String relativePath) throws IOException {
         Path path = resolvePath(relativePath);
         if (!Files.exists(path)) {
             throw new FileNotFoundException("File not found: " + relativePath);
@@ -481,29 +493,48 @@ public class WorkspaceService {
         if (Files.isDirectory(path)) {
             throw new IOException("Cannot apply patch to directory: " + relativePath);
         }
+        return new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Applies edits to an in-memory list of lines and returns the new lines.
+     */
+    public List<String> applyEditsInMemory(List<String> originalLines, List<TextEdit> edits) {
+        if (originalLines == null) {
+            throw new IllegalArgumentException("Original content is required");
+        }
+        List<String> lines = new ArrayList<>(originalLines);
         if (edits == null || edits.isEmpty()) {
-            throw new IllegalArgumentException("No edits provided");
+            return lines;
         }
 
-        List<String> lines = new ArrayList<>(Files.readAllLines(path, StandardCharsets.UTF_8));
-
-        // Apply edits in reverse order to keep indices stable
         edits.stream()
             .sorted(Comparator.comparingInt(TextEdit::getStartLine).reversed())
             .forEach(edit -> applyEdit(lines, edit));
+        return lines;
+    }
 
-        Files.createDirectories(path.getParent());
+    /**
+     * Writes lines to a workspace-relative file, creating parent directories as needed.
+     */
+    public void writeFileLines(String relativePath, List<String> lines) throws IOException {
+        Path path = resolvePath(relativePath);
+        if (path.getParent() != null) {
+            Files.createDirectories(path.getParent());
+        }
         Files.write(path, lines, StandardCharsets.UTF_8);
-        log("Applied patch to " + relativePath + " (" + edits.size() + " edits)");
     }
 
     private void applyEdit(List<String> lines, TextEdit edit) {
         int start = Math.max(edit.getStartLine(), 1) - 1;
         int end = Math.max(edit.getEndLine(), edit.getStartLine()) - 1;
-        if (start >= lines.size()) {
+        if (start > lines.size()) {
             throw new IllegalArgumentException("Edit start out of range: " + edit.getStartLine());
         }
-        if (end >= lines.size()) {
+        if (start == lines.size()) {
+            // Allow appending at EOF
+            end = start - 1;
+        } else if (end >= lines.size()) {
             end = lines.size() - 1;
         }
         List<String> replacement = new ArrayList<>();
@@ -519,7 +550,9 @@ public class WorkspaceService {
             }
         }
         // Replace the range
-        lines.subList(start, end + 1).clear();
+        if (end >= start && end < lines.size()) {
+            lines.subList(start, end + 1).clear();
+        }
         lines.addAll(start, replacement);
     }
 

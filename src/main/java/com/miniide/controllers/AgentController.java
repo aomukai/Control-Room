@@ -2,9 +2,8 @@ package com.miniide.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.miniide.AgentEndpointRegistry;
-import com.miniide.AgentRegistry;
 import com.miniide.AppLogger;
+import com.miniide.ProjectContext;
 import com.miniide.models.Agent;
 import com.miniide.models.AgentEndpointConfig;
 import com.miniide.models.RoleFreedomSettings;
@@ -22,15 +21,12 @@ import java.util.Map;
  */
 public class AgentController implements Controller {
 
-    private final AgentRegistry agentRegistry;
-    private final AgentEndpointRegistry agentEndpointRegistry;
+    private final ProjectContext projectContext;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public AgentController(AgentRegistry agentRegistry, AgentEndpointRegistry agentEndpointRegistry,
-                          ObjectMapper objectMapper) {
-        this.agentRegistry = agentRegistry;
-        this.agentEndpointRegistry = agentEndpointRegistry;
+    public AgentController(ProjectContext projectContext, ObjectMapper objectMapper) {
+        this.projectContext = projectContext;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -60,7 +56,7 @@ public class AgentController implements Controller {
 
     private void getAgents(Context ctx) {
         try {
-            ctx.json(agentRegistry.listEnabledAgents());
+            ctx.json(projectContext.agents().listEnabledAgents());
         } catch (Exception e) {
             logger.error("Failed to list agents: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -69,7 +65,7 @@ public class AgentController implements Controller {
 
     private void getAllAgents(Context ctx) {
         try {
-            ctx.json(agentRegistry.listAllAgents());
+            ctx.json(projectContext.agents().listAllAgents());
         } catch (Exception e) {
             logger.error("Failed to list agents: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -79,9 +75,9 @@ public class AgentController implements Controller {
     private void createAgent(Context ctx) {
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
-            Agent created = agentRegistry.createAgent(agent);
+            Agent created = projectContext.agents().createAgent(agent);
             if (created.getEndpoint() != null) {
-                agentEndpointRegistry.upsertEndpoint(created.getId(), created.getEndpoint());
+                projectContext.agentEndpoints().upsertEndpoint(created.getId(), created.getEndpoint());
             }
             ctx.status(201).json(created);
         } catch (IllegalArgumentException e) {
@@ -97,7 +93,7 @@ public class AgentController implements Controller {
     private void getAgent(Context ctx) {
         try {
             String id = ctx.pathParam("id");
-            Agent agent = agentRegistry.getAgent(id);
+            Agent agent = projectContext.agents().getAgent(id);
             if (agent == null) {
                 ctx.status(404).json(Map.of("error", "Agent not found: " + id));
                 return;
@@ -113,13 +109,13 @@ public class AgentController implements Controller {
         try {
             String id = ctx.pathParam("id");
             Agent updates = ctx.bodyAsClass(Agent.class);
-            Agent updated = agentRegistry.updateAgent(id, updates);
+            Agent updated = projectContext.agents().updateAgent(id, updates);
             if (updated == null) {
                 ctx.status(404).json(Map.of("error", "Agent not found: " + id));
                 return;
             }
             if (updates.getEndpoint() != null) {
-                agentEndpointRegistry.upsertEndpoint(id, updates.getEndpoint());
+                projectContext.agentEndpoints().upsertEndpoint(id, updates.getEndpoint());
             }
             ctx.json(updated);
         } catch (Exception e) {
@@ -133,7 +129,7 @@ public class AgentController implements Controller {
             String id = ctx.pathParam("id");
             JsonNode json = objectMapper.readTree(ctx.body());
             boolean enabled = json.has("enabled") && json.get("enabled").asBoolean();
-            Agent updated = agentRegistry.setEnabled(id, enabled);
+            Agent updated = projectContext.agents().setEnabled(id, enabled);
             if (updated == null) {
                 ctx.status(404).json(Map.of("error", "Agent not found: " + id));
                 return;
@@ -154,7 +150,7 @@ public class AgentController implements Controller {
             }
             List<String> order = new ArrayList<>();
             json.get("order").forEach(node -> order.add(node.asText()));
-            agentRegistry.reorderAgents(order);
+            projectContext.agents().reorderAgents(order);
             ctx.json(Map.of("ok", true));
         } catch (Exception e) {
             logger.error("Failed to reorder agents: " + e.getMessage(), e);
@@ -165,7 +161,7 @@ public class AgentController implements Controller {
     private void importAgent(Context ctx) {
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
-            Agent imported = agentRegistry.importAgent(agent);
+            Agent imported = projectContext.agents().importAgent(agent);
             ctx.status(201).json(imported);
         } catch (Exception e) {
             logger.error("Failed to import agent: " + e.getMessage(), e);
@@ -174,12 +170,12 @@ public class AgentController implements Controller {
     }
 
     private void listAgentEndpoints(Context ctx) {
-        ctx.json(agentEndpointRegistry.listEndpoints());
+        ctx.json(projectContext.agentEndpoints().listEndpoints());
     }
 
     private void getAgentEndpoint(Context ctx) {
         String id = ctx.pathParam("id");
-        var endpoint = agentEndpointRegistry.getEndpoint(id);
+        var endpoint = projectContext.agentEndpoints().getEndpoint(id);
         if (endpoint == null) {
             ctx.status(404).json(Map.of("error", "Endpoint not found for agent: " + id));
             return;
@@ -191,7 +187,7 @@ public class AgentController implements Controller {
         try {
             String id = ctx.pathParam("id");
             var config = ctx.bodyAsClass(AgentEndpointConfig.class);
-            var saved = agentEndpointRegistry.upsertEndpoint(id, config);
+            var saved = projectContext.agentEndpoints().upsertEndpoint(id, config);
             if (saved == null) {
                 ctx.status(400).json(Map.of("error", "Invalid agent endpoint payload"));
                 return;
@@ -205,7 +201,7 @@ public class AgentController implements Controller {
 
     private void getRoleSettings(Context ctx) {
         try {
-            ctx.json(agentRegistry.listRoleSettings());
+            ctx.json(projectContext.agents().listRoleSettings());
         } catch (Exception e) {
             logger.error("Failed to list role settings: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -215,7 +211,7 @@ public class AgentController implements Controller {
     private void getRoleSettingsByRole(Context ctx) {
         try {
             String role = ctx.pathParam("role");
-            RoleFreedomSettings settings = agentRegistry.getRoleSettings(role);
+            RoleFreedomSettings settings = projectContext.agents().getRoleSettings(role);
             if (settings == null) {
                 RoleFreedomSettings defaults = new RoleFreedomSettings();
                 defaults.setRole(role);
@@ -241,7 +237,7 @@ public class AgentController implements Controller {
             String role = ctx.pathParam("role");
             RoleFreedomSettings settings = ctx.bodyAsClass(RoleFreedomSettings.class);
             settings.setRole(role);
-            RoleFreedomSettings saved = agentRegistry.saveRoleSettings(settings);
+            RoleFreedomSettings saved = projectContext.agents().saveRoleSettings(settings);
             ctx.json(saved);
         } catch (IllegalArgumentException e) {
             ctx.status(400).json(Controller.errorBody(e));

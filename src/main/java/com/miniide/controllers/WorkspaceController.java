@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppConfig;
 import com.miniide.AppLogger;
-import com.miniide.WorkspaceService;
+import com.miniide.ProjectContext;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -19,12 +19,12 @@ import java.util.Map;
  */
 public class WorkspaceController implements Controller {
 
-    private final WorkspaceService workspaceService;
+    private final ProjectContext projectContext;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public WorkspaceController(WorkspaceService workspaceService, ObjectMapper objectMapper) {
-        this.workspaceService = workspaceService;
+    public WorkspaceController(ProjectContext projectContext, ObjectMapper objectMapper) {
+        this.projectContext = projectContext;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -41,7 +41,7 @@ public class WorkspaceController implements Controller {
 
     private void openWorkspace(Context ctx) {
         try {
-            String workspacePath = workspaceService.getWorkspaceRoot().toString();
+            String workspacePath = projectContext.workspace().getWorkspaceRoot().toString();
             String os = System.getProperty("os.name").toLowerCase();
 
             ProcessBuilder pb;
@@ -64,7 +64,7 @@ public class WorkspaceController implements Controller {
 
     private void openWorkspaceTerminal(Context ctx) {
         try {
-            String workspacePath = workspaceService.getWorkspaceRoot().toString();
+            String workspacePath = projectContext.workspace().getWorkspaceRoot().toString();
             String os = System.getProperty("os.name").toLowerCase();
 
             ProcessBuilder pb = null;
@@ -134,7 +134,7 @@ public class WorkspaceController implements Controller {
 
     private void getWorkspaceInfo(Context ctx) {
         try {
-            Path current = workspaceService.getWorkspaceRoot();
+            Path current = projectContext.workspace().getWorkspaceRoot();
             Path root = current.getParent() != null ? current.getParent() : current;
             String currentName = current.getFileName() != null ? current.getFileName().toString() : current.toString();
 
@@ -153,7 +153,7 @@ public class WorkspaceController implements Controller {
                 "rootPath", root.toString(),
                 "currentName", currentName,
                 "available", names,
-                "metadata", workspaceService.loadMetadata()
+                "metadata", projectContext.workspace().loadMetadata()
             ));
         } catch (Exception e) {
             logger.error("Failed to get workspace info: " + e.getMessage(), e);
@@ -176,7 +176,7 @@ public class WorkspaceController implements Controller {
                 return;
             }
 
-            Path current = workspaceService.getWorkspaceRoot();
+            Path current = projectContext.workspace().getWorkspaceRoot();
             Path root = current.getParent() != null ? current.getParent() : current;
             Path target = root.resolve(trimmed).normalize();
 
@@ -187,11 +187,12 @@ public class WorkspaceController implements Controller {
 
             Files.createDirectories(target);
             AppConfig.persistWorkspaceSelection(root, trimmed);
+            projectContext.switchWorkspace(target);
 
-            logger.info("Workspace selection updated to " + target + " (restart required)");
+            logger.info("Workspace selection updated to " + target + " (live switch applied)");
             ctx.json(Map.of(
                 "ok", true,
-                "restartRequired", true,
+                "restartRequired", false,
                 "targetPath", target.toString()
             ));
         } catch (Exception e) {
@@ -202,7 +203,7 @@ public class WorkspaceController implements Controller {
 
     private void getMetadata(Context ctx) {
         try {
-            ctx.json(workspaceService.loadMetadata());
+            ctx.json(projectContext.workspace().loadMetadata());
         } catch (Exception e) {
             logger.error("Failed to load workspace metadata: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -212,7 +213,7 @@ public class WorkspaceController implements Controller {
     private void updateMetadata(Context ctx) {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
-            var meta = workspaceService.loadMetadata();
+            var meta = projectContext.workspace().loadMetadata();
 
             if (json.has("displayName")) {
                 String dn = json.get("displayName").asText("");
@@ -231,7 +232,7 @@ public class WorkspaceController implements Controller {
                 meta.setAccentColor(trimToLength(color, 16));
             }
 
-            var saved = workspaceService.saveMetadata(meta);
+            var saved = projectContext.workspace().saveMetadata(meta);
             ctx.json(Map.of("ok", true, "metadata", saved));
         } catch (Exception e) {
             logger.error("Failed to update workspace metadata: " + e.getMessage(), e);

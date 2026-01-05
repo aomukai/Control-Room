@@ -2,10 +2,9 @@ package com.miniide.controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.miniide.AgentEndpointRegistry;
-import com.miniide.AgentRegistry;
 import com.miniide.AppLogger;
 import com.miniide.MemoryService;
+import com.miniide.ProjectContext;
 import com.miniide.models.Agent;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.settings.SettingsService;
@@ -20,19 +19,17 @@ import java.util.Map;
  */
 public class ChatController implements Controller {
 
-    private final AgentRegistry agentRegistry;
-    private final AgentEndpointRegistry agentEndpointRegistry;
+    private final ProjectContext projectContext;
     private final SettingsService settingsService;
     private final ProviderChatService providerChatService;
     private final MemoryService memoryService;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public ChatController(AgentRegistry agentRegistry, AgentEndpointRegistry agentEndpointRegistry,
-                         SettingsService settingsService, ProviderChatService providerChatService,
-                         MemoryService memoryService, ObjectMapper objectMapper) {
-        this.agentRegistry = agentRegistry;
-        this.agentEndpointRegistry = agentEndpointRegistry;
+    public ChatController(ProjectContext projectContext,
+                          SettingsService settingsService, ProviderChatService providerChatService,
+                          MemoryService memoryService, ObjectMapper objectMapper) {
+        this.projectContext = projectContext;
         this.settingsService = settingsService;
         this.providerChatService = providerChatService;
         this.memoryService = memoryService;
@@ -64,12 +61,12 @@ public class ChatController implements Controller {
             }
 
             if (agentId != null && !agentId.isBlank()) {
-                Agent agent = agentRegistry.getAgent(agentId);
+                Agent agent = projectContext.agents().getAgent(agentId);
                 if (agent == null) {
                     ctx.status(404).json(Map.of("error", "Agent not found: " + agentId));
                     return;
                 }
-                var endpoint = agentEndpointRegistry.getEndpoint(agentId);
+                var endpoint = projectContext.agentEndpoints().getEndpoint(agentId);
                 if (endpoint == null) {
                     endpoint = agent.getEndpoint();
                 }

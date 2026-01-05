@@ -3,8 +3,8 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
-import com.miniide.PatchService;
-import com.miniide.WorkspaceService;
+import com.miniide.PatchService.ApplyOutcome;
+import com.miniide.ProjectContext;
 import com.miniide.models.PatchProposal;
 import com.miniide.NotificationStore;
 import io.javalin.Javalin;
@@ -13,18 +13,17 @@ import io.javalin.http.Context;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class PatchController implements Controller {
 
-    private final PatchService patchService;
-    private final WorkspaceService workspaceService;
+    private final ProjectContext projectContext;
     private final NotificationStore notificationStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public PatchController(PatchService patchService, WorkspaceService workspaceService, NotificationStore notificationStore, ObjectMapper objectMapper) {
-        this.patchService = patchService;
-        this.workspaceService = workspaceService;
+    public PatchController(ProjectContext projectContext, NotificationStore notificationStore, ObjectMapper objectMapper) {
+        this.projectContext = projectContext;
         this.notificationStore = notificationStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
@@ -37,17 +36,19 @@ public class PatchController implements Controller {
         app.post("/api/patches", this::createPatch);
         app.post("/api/patches/{id}/apply", this::applyPatch);
         app.post("/api/patches/{id}/reject", this::rejectPatch);
+        app.delete("/api/patches/{id}", this::deletePatch);
+        app.post("/api/patches/cleanup", this::cleanupPatches);
         app.post("/api/patches/simulate", this::simulatePatch);
     }
 
     private void listPatches(Context ctx) {
-        List<PatchProposal> list = patchService.list();
+        List<PatchProposal> list = projectContext.patches().list();
         ctx.json(Map.of("patches", list));
     }
 
     private void getPatch(Context ctx) {
         String id = ctx.pathParam("id");
-        PatchProposal p = patchService.get(id);
+        PatchProposal p = projectContext.patches().get(id);
         if (p == null) {
             ctx.status(404).json(Map.of("error", "Patch not found: " + id));
             return;
@@ -59,7 +60,7 @@ public class PatchController implements Controller {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             PatchProposal proposal = objectMapper.convertValue(json, PatchProposal.class);
-            PatchProposal created = patchService.create(proposal);
+            PatchProposal created = projectContext.patches().create(proposal);
             sendPatchNotification(created);
             ctx.status(201).json(created);
         } catch (Exception e) {
@@ -71,8 +72,15 @@ public class PatchController implements Controller {
     private void applyPatch(Context ctx) {
         String id = ctx.pathParam("id");
         try {
-            PatchProposal updated = patchService.apply(id);
-            ctx.json(Map.of("ok", true, "patch", updated));
+            ApplyOutcome outcome = projectContext.patches().apply(id);
+            if (!outcome.isSuccess()) {
+                ctx.status(400).json(Map.of(
+                    "error", outcome.getErrorMessage(),
+                    "fileErrors", outcome.getFileResults()
+                ));
+                return;
+            }
+            ctx.json(Map.of("ok", true, "patch", outcome.getProposal(), "fileResults", outcome.getFileResults()));
         } catch (Exception e) {
             logger.error("Failed to apply patch: " + e.getMessage(), e);
             ctx.status(400).json(Controller.errorBody(e));
@@ -82,10 +90,40 @@ public class PatchController implements Controller {
     private void rejectPatch(Context ctx) {
         String id = ctx.pathParam("id");
         try {
-            PatchProposal updated = patchService.reject(id);
+            PatchProposal updated = projectContext.patches().reject(id);
             ctx.json(Map.of("ok", true, "patch", updated));
         } catch (Exception e) {
             logger.error("Failed to reject patch: " + e.getMessage(), e);
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void deletePatch(Context ctx) {
+        String id = ctx.pathParam("id");
+        try {
+            boolean removed = projectContext.patches().delete(id);
+            if (!removed) {
+                ctx.status(404).json(Map.of("error", "Patch not found: " + id));
+                return;
+            }
+            ctx.json(Map.of("ok", true, "deleted", id));
+        } catch (Exception e) {
+            logger.error("Failed to delete patch: " + e.getMessage(), e);
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void cleanupPatches(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            Set<String> statuses = null;
+            if (json.has("statuses") && json.get("statuses").isArray()) {
+                statuses = objectMapper.convertValue(json.get("statuses"), Set.class);
+            }
+            int removed = projectContext.patches().cleanup(statuses);
+            ctx.json(Map.of("ok", true, "removed", removed));
+        } catch (Exception e) {
+            logger.error("Failed to clean up patches: " + e.getMessage(), e);
             ctx.status(400).json(Controller.errorBody(e));
         }
     }
@@ -94,7 +132,7 @@ public class PatchController implements Controller {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             String filePath = json.has("filePath") ? json.get("filePath").asText() : "README.md";
-            PatchProposal proposal = patchService.simulatePatch(filePath);
+            PatchProposal proposal = projectContext.patches().simulatePatch(filePath);
             sendPatchNotification(proposal);
             ctx.status(201).json(proposal);
         } catch (Exception e) {
@@ -105,13 +143,16 @@ public class PatchController implements Controller {
 
     private void sendPatchNotification(PatchProposal proposal) {
         if (notificationStore == null || proposal == null) return;
+        String fileLabel = proposal.getFiles() != null && !proposal.getFiles().isEmpty()
+            ? proposal.getFiles().get(0).getFilePath()
+            : proposal.getFilePath();
         Map<String, Object> payload = new HashMap<>();
         payload.put("kind", "review-patch");
         payload.put("patchId", proposal.getId());
         notificationStore.push(
             com.miniide.models.Notification.Level.INFO,
             com.miniide.models.Notification.Scope.EDITOR,
-            "Patch proposed for " + proposal.getFilePath(),
+            "Patch proposed for " + fileLabel,
             proposal.getDescription() != null ? proposal.getDescription() : "",
             com.miniide.models.Notification.Category.ATTENTION,
             true,
