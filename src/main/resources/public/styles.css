@@ -1829,6 +1829,29 @@ html, body {
     gap: 10px;
 }
 
+.patch-file-nav {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.patch-file-pill {
+    border: 1px solid var(--border-color);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.patch-file-pill:hover {
+    background: var(--accent-color);
+    color: var(--text-bright);
+    border-color: var(--accent-hover);
+}
+
 .patch-file {
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -1872,22 +1895,6 @@ html, body {
     max-height: 260px;
     font-family: Consolas, Menlo, Monaco, 'Courier New', monospace;
     font-size: 12px;
-}
-
-.diff-line {
-    white-space: pre;
-}
-
-.diff-line.add {
-    color: #7fd58c;
-}
-
-.diff-line.remove {
-    color: #ff8a8a;
-}
-
-.diff-line.hunk {
-    color: #c792ea;
 }
 
 .patch-action-error {
@@ -1939,6 +1946,77 @@ html, body {
 .patch-audit-time {
     color: var(--text-secondary);
     font-size: 11px;
+}
+
+.patch-diff-table {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-medium);
+    font-family: Consolas, Menlo, Monaco, 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.patch-diff-header {
+    display: grid;
+    grid-template-columns: 60px 60px 1fr;
+    background: var(--bg-lighter);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+}
+
+.patch-diff-header .diff-col-label {
+    padding: 6px 8px;
+    border-right: 1px solid var(--border-color);
+}
+
+.patch-diff-header .file-label {
+    border-right: none;
+}
+
+.diff-rows {
+    max-height: 320px;
+    overflow: auto;
+}
+
+.diff-row {
+    display: grid;
+    grid-template-columns: 60px 60px 1fr;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.diff-row:last-child {
+    border-bottom: none;
+}
+
+.diff-row.hunk {
+    background: var(--bg-light);
+    color: #c792ea;
+    grid-template-columns: 1fr;
+    font-weight: 600;
+    padding: 4px 8px;
+}
+
+.diff-row.add {
+    background: rgba(126, 213, 140, 0.08);
+}
+
+.diff-row.remove {
+    background: rgba(255, 138, 138, 0.08);
+}
+
+.diff-row.context {
+    background: var(--bg-dark);
+}
+
+.diff-cell {
+    padding: 4px 8px;
+    white-space: pre;
+}
+
+.diff-cell.line-num {
+    color: var(--text-secondary);
+    border-right: 1px solid var(--border-color);
 }
 
 /* Conference Invite Modal */

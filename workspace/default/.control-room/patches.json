@@ -1,0 +1,107 @@
+[ {
+  "id" : "patch-1",
+  "title" : "Simulated Patch",
+  "description" : "Simulation-only patch for testing the review modal.",
+  "filePath" : "README.md",
+  "edits" : [ {
+    "startLine" : 1,
+    "endLine" : 1,
+    "newText" : "# Simulated Patch Header"
+  }, {
+    "startLine" : 3,
+    "endLine" : 3,
+    "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+  }, {
+    "startLine" : 8,
+    "endLine" : 8,
+    "newText" : "Simulation complete.\n"
+  } ],
+  "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
+  "createdAt" : 1767523996438,
+  "status" : "applied",
+  "files" : [ {
+    "filePath" : "README.md",
+    "edits" : [ {
+      "startLine" : 1,
+      "endLine" : 1,
+      "newText" : "# Simulated Patch Header"
+    }, {
+      "startLine" : 3,
+      "endLine" : 3,
+      "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+    }, {
+      "startLine" : 8,
+      "endLine" : 8,
+      "newText" : "Simulation complete.\n"
+    } ],
+    "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
+    "diff" : "--- README.md\n+++ README.md\n@@ -3,9 +3,12 @@\n ## Simulation Note\n This patch was generated for testing the review flow.\n \n+This patch was generated for testing the review flow.\n \n+\n ## Structure\n-- `/scenes` - Story scenes and chapters\n+Simulation complete.\n+\n - `/chars` - Character profiles\n Simulation complete.\n "
+  } ],
+  "provenance" : {
+    "author" : "aomuk",
+    "source" : "manual",
+    "agent" : null,
+    "model" : null,
+    "notes" : null
+  },
+  "auditLog" : [ {
+    "timestamp" : 1767627350006,
+    "actor" : "aomuk",
+    "action" : "applied",
+    "message" : "Applied 1 file(s)",
+    "status" : "applied"
+  } ]
+}, {
+  "id" : "patch-2",
+  "title" : "Simulated Patch",
+  "description" : "Simulation-only patch for testing the review modal.",
+  "filePath" : "README.md",
+  "edits" : [ {
+    "startLine" : 1,
+    "endLine" : 1,
+    "newText" : "# Simulated Patch Header"
+  }, {
+    "startLine" : 3,
+    "endLine" : 3,
+    "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+  }, {
+    "startLine" : 8,
+    "endLine" : 8,
+    "newText" : "Simulation complete.\n"
+  } ],
+  "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
+  "createdAt" : 1767524000285,
+  "status" : "applied",
+  "files" : [ {
+    "filePath" : "README.md",
+    "edits" : [ {
+      "startLine" : 1,
+      "endLine" : 1,
+      "newText" : "# Simulated Patch Header"
+    }, {
+      "startLine" : 3,
+      "endLine" : 3,
+      "newText" : "## Simulation Note\nThis patch was generated for testing the review flow.\n"
+    }, {
+      "startLine" : 8,
+      "endLine" : 8,
+      "newText" : "Simulation complete.\n"
+    } ],
+    "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
+    "diff" : "--- README.md\n+++ README.md\n@@ -3,9 +3,12 @@\n ## Simulation Note\n This patch was generated for testing the review flow.\n \n+This patch was generated for testing the review flow.\n \n+\n ## Structure\n-- `/scenes` - Story scenes and chapters\n+Simulation complete.\n+\n - `/chars` - Character profiles\n Simulation complete.\n "
+  } ],
+  "provenance" : {
+    "author" : "aomuk",
+    "source" : "manual",
+    "agent" : null,
+    "model" : null,
+    "notes" : null
+  },
+  "auditLog" : [ {
+    "timestamp" : 1767627389767,
+    "actor" : "aomuk",
+    "action" : "applied",
+    "message" : "Applied 1 file(s)",
+    "status" : "applied"
+  } ]
+} ]

@@ -449,16 +449,41 @@
                 detail.appendChild(desc);
             }
 
+            // File navigation pills
+            const files = Array.isArray(patch.files) ? patch.files : [];
+            if (files.length > 1) {
+                const fileNav = document.createElement('div');
+                fileNav.className = 'patch-file-nav';
+                files.forEach((change, idx) => {
+                    const anchor = `patch-file-${idx}`;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'patch-file-pill';
+                    btn.textContent = change.filePath || 'Unknown file';
+                    btn.addEventListener('click', () => {
+                        const target = detail.querySelector(`.patch-file[data-anchor="${anchor}"]`);
+                        if (target) {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    });
+                    fileNav.appendChild(btn);
+                    change._anchor = anchor;
+                });
+                detail.appendChild(fileNav);
+            }
+
             const filesSection = document.createElement('div');
             filesSection.className = 'patch-files';
-            const files = Array.isArray(patch.files) ? patch.files : [];
             if (!files.length) {
                 filesSection.innerHTML = '<div class="patch-detail-empty">No files in this patch</div>';
             } else {
                 files.forEach(change => {
                     const card = document.createElement('div');
                     card.className = 'patch-file';
-                    card.dataset.filePath = change.filePath || '';
+                    card.dataset.file = change.filePath || '';
+                    if (change._anchor) {
+                        card.dataset.anchor = change._anchor;
+                    }
 
                     const headerRow = document.createElement('div');
                     headerRow.className = 'patch-file-header';
@@ -473,7 +498,7 @@
                     headerRow.appendChild(fileMeta);
                     card.appendChild(headerRow);
 
-                    const diffBlock = renderDiff(change.diff || change.preview || 'No diff available');
+                    const diffBlock = renderDiffTable(change.filePath || '', change.diff || change.preview || '');
                     card.appendChild(diffBlock);
 
                     const fileError = document.createElement('div');
@@ -583,29 +608,100 @@
             }
         }
 
-        function renderDiff(diffText) {
-            const container = document.createElement('pre');
-            container.className = 'patch-diff';
-            const lines = (diffText || '').split('\n');
-            if (!lines.length) {
+        function renderDiffTable(filePath, diffText) {
+            const container = document.createElement('div');
+            container.className = 'patch-diff-table';
+            if (!diffText) {
                 container.textContent = 'No diff available';
                 return container;
             }
-            lines.forEach(line => {
-                const div = document.createElement('div');
-                div.textContent = line;
-                if (line.startsWith('+')) {
-                    div.className = 'diff-line add';
-                } else if (line.startsWith('-')) {
-                    div.className = 'diff-line remove';
-                } else if (line.startsWith('@@')) {
-                    div.className = 'diff-line hunk';
-                } else {
-                    div.className = 'diff-line';
-                }
-                container.appendChild(div);
-            });
+
+            const header = document.createElement('div');
+            header.className = 'patch-diff-header';
+            header.innerHTML = `
+                <div class="diff-col-label">Old</div>
+                <div class="diff-col-label">New</div>
+                <div class="diff-col-label file-label">${escapeHtml(filePath || '')}</div>
+            `;
+            container.appendChild(header);
+
+            const table = document.createElement('div');
+            table.className = 'diff-rows';
+
+            const rows = parseUnifiedDiff(diffText);
+            if (!rows.length) {
+                const empty = document.createElement('div');
+                empty.className = 'patch-detail-empty';
+                empty.textContent = 'No diff available';
+                table.appendChild(empty);
+            } else {
+                rows.forEach(row => {
+                    if (row.type === 'hunk') {
+                        const hunk = document.createElement('div');
+                        hunk.className = 'diff-row hunk';
+                        hunk.textContent = row.text;
+                        table.appendChild(hunk);
+                        return;
+                    }
+                    const div = document.createElement('div');
+                    div.className = `diff-row ${row.type}`;
+
+                    const left = document.createElement('div');
+                    left.className = 'diff-cell line-num';
+                    left.textContent = row.leftLine !== null ? row.leftLine : '';
+
+                    const right = document.createElement('div');
+                    right.className = 'diff-cell line-num';
+                    right.textContent = row.rightLine !== null ? row.rightLine : '';
+
+                    const text = document.createElement('div');
+                    text.className = 'diff-cell text';
+                    text.textContent = row.text;
+
+                    div.appendChild(left);
+                    div.appendChild(right);
+                    div.appendChild(text);
+                    table.appendChild(div);
+                });
+            }
+
+            container.appendChild(table);
             return container;
+        }
+
+        function parseUnifiedDiff(diffText) {
+            const lines = diffText.split('\n');
+            const rows = [];
+            let leftLine = 0;
+            let rightLine = 0;
+            const hunkRe = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
+            lines.forEach(raw => {
+                const line = raw || '';
+                const hunkMatch = line.match(hunkRe);
+                if (hunkMatch) {
+                    leftLine = parseInt(hunkMatch[1], 10) - 1;
+                    rightLine = parseInt(hunkMatch[2], 10) - 1;
+                    rows.push({ type: 'hunk', text: line, leftLine: null, rightLine: null });
+                    return;
+                }
+
+                if (line.startsWith('+')) {
+                    rightLine += 1;
+                    rows.push({ type: 'add', text: line.substring(1), leftLine: null, rightLine });
+                } else if (line.startsWith('-')) {
+                    leftLine += 1;
+                    rows.push({ type: 'remove', text: line.substring(1), leftLine, rightLine: null });
+                } else if (line.startsWith(' ')) {
+                    leftLine += 1;
+                    rightLine += 1;
+                    rows.push({ type: 'context', text: line.substring(1), leftLine, rightLine });
+                } else {
+                    rows.push({ type: 'context', text: line, leftLine: null, rightLine: null });
+                }
+            });
+
+            return rows;
         }
 
         await loadPatches(currentPatchId);
