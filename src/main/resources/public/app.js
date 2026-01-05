@@ -449,31 +449,84 @@
                 detail.appendChild(desc);
             }
 
-            // File navigation pills
             const files = Array.isArray(patch.files) ? patch.files : [];
+            files.forEach((change, idx) => {
+                // Anchor used for nav + scroll syncing
+                change._anchor = `patch-file-${idx}`;
+            });
+
+            const fileNavPills = [];
+            let activeAnchor = files.length ? files[0]._anchor : null;
+
+            const setActiveFile = (anchor) => {
+                activeAnchor = anchor;
+                fileNavPills.forEach(pill => {
+                    pill.classList.toggle('is-active', pill.dataset.anchor === anchor);
+                });
+            };
+
+            const scrollToAnchor = (anchor) => {
+                if (!anchor) return;
+                const target = detail.querySelector(`.patch-file[data-anchor="${anchor}"]`);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setActiveFile(anchor);
+                }
+            };
+
+            // File navigation pills + prev/next controls
             if (files.length > 1) {
                 const fileNav = document.createElement('div');
                 fileNav.className = 'patch-file-nav';
-                files.forEach((change, idx) => {
-                    const anchor = `patch-file-${idx}`;
+
+                const prevBtn = document.createElement('button');
+                prevBtn.type = 'button';
+                prevBtn.className = 'patch-file-nav-btn';
+                prevBtn.textContent = 'Prev';
+
+                const pillsWrap = document.createElement('div');
+                pillsWrap.className = 'patch-file-pills';
+
+                const nextBtn = document.createElement('button');
+                nextBtn.type = 'button';
+                nextBtn.className = 'patch-file-nav-btn';
+                nextBtn.textContent = 'Next';
+
+                const activateByDelta = (delta) => {
+                    const anchors = files.map(f => f._anchor);
+                    const currentIdx = anchors.indexOf(activeAnchor);
+                    if (currentIdx === -1) return;
+                    const nextIdx = Math.min(Math.max(currentIdx + delta, 0), anchors.length - 1);
+                    scrollToAnchor(anchors[nextIdx]);
+                };
+
+                prevBtn.addEventListener('click', () => activateByDelta(-1));
+                nextBtn.addEventListener('click', () => activateByDelta(1));
+
+                files.forEach(change => {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'patch-file-pill';
                     btn.textContent = change.filePath || 'Unknown file';
-                    btn.addEventListener('click', () => {
-                        const target = detail.querySelector(`.patch-file[data-anchor="${anchor}"]`);
-                        if (target) {
-                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                    });
-                    fileNav.appendChild(btn);
-                    change._anchor = anchor;
+                    btn.dataset.anchor = change._anchor;
+                    if (fileErrors.has(change.filePath)) {
+                        btn.classList.add('has-error');
+                    }
+                    btn.addEventListener('click', () => scrollToAnchor(change._anchor));
+                    pillsWrap.appendChild(btn);
+                    fileNavPills.push(btn);
                 });
+
+                fileNav.appendChild(prevBtn);
+                fileNav.appendChild(pillsWrap);
+                fileNav.appendChild(nextBtn);
                 detail.appendChild(fileNav);
             }
 
             const filesSection = document.createElement('div');
             filesSection.className = 'patch-files';
+            const fileCards = [];
+
             if (!files.length) {
                 filesSection.innerHTML = '<div class="patch-detail-empty">No files in this patch</div>';
             } else {
@@ -510,9 +563,24 @@
                     }
                     card.appendChild(fileError);
                     filesSection.appendChild(card);
+                    fileCards.push(card);
                 });
             }
             detail.appendChild(filesSection);
+
+            // Sync nav pills to scroll position
+            if (fileNavPills.length && fileCards.length) {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting && entry.target.dataset.anchor) {
+                            setActiveFile(entry.target.dataset.anchor);
+                        }
+                    });
+                }, { root: filesSection, threshold: 0.4 });
+
+                fileCards.forEach(card => observer.observe(card));
+                setActiveFile(activeAnchor);
+            }
 
             if (Array.isArray(patch.auditLog) && patch.auditLog.length) {
                 const auditWrap = document.createElement('div');
@@ -621,7 +689,7 @@
             header.innerHTML = `
                 <div class="diff-col-label">Old</div>
                 <div class="diff-col-label">New</div>
-                <div class="diff-col-label file-label">${escapeHtml(filePath || '')}</div>
+                <div class="diff-file-label">${escapeHtml(filePath || '')}</div>
             `;
             container.appendChild(header);
 
@@ -638,29 +706,39 @@
                 rows.forEach(row => {
                     if (row.type === 'hunk') {
                         const hunk = document.createElement('div');
-                        hunk.className = 'diff-row hunk';
+                        hunk.className = 'diff-sxs-row hunk';
                         hunk.textContent = row.text;
                         table.appendChild(hunk);
                         return;
                     }
+
                     const div = document.createElement('div');
-                    div.className = `diff-row ${row.type}`;
+                    div.className = `diff-sxs-row ${row.type}`;
 
                     const left = document.createElement('div');
-                    left.className = 'diff-cell line-num';
-                    left.textContent = row.leftLine !== null ? row.leftLine : '';
+                    left.className = 'diff-sxs-cell left';
+                    const leftNum = document.createElement('div');
+                    leftNum.className = 'line-num';
+                    leftNum.textContent = row.leftLine !== null ? row.leftLine : '';
+                    const leftText = document.createElement('div');
+                    leftText.className = 'line-text';
+                    leftText.textContent = row.type === 'add' ? '' : row.text;
+                    left.appendChild(leftNum);
+                    left.appendChild(leftText);
 
                     const right = document.createElement('div');
-                    right.className = 'diff-cell line-num';
-                    right.textContent = row.rightLine !== null ? row.rightLine : '';
-
-                    const text = document.createElement('div');
-                    text.className = 'diff-cell text';
-                    text.textContent = row.text;
+                    right.className = 'diff-sxs-cell right';
+                    const rightNum = document.createElement('div');
+                    rightNum.className = 'line-num';
+                    rightNum.textContent = row.rightLine !== null ? row.rightLine : '';
+                    const rightText = document.createElement('div');
+                    rightText.className = 'line-text';
+                    rightText.textContent = row.type === 'remove' ? '' : row.text;
+                    right.appendChild(rightNum);
+                    right.appendChild(rightText);
 
                     div.appendChild(left);
                     div.appendChild(right);
-                    div.appendChild(text);
                     table.appendChild(div);
                 });
             }

@@ -1831,9 +1831,32 @@ html, body {
 
 .patch-file-nav {
     display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.patch-file-nav-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-lighter);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.patch-file-nav-btn:hover {
+    background: var(--accent-color);
+    border-color: var(--accent-hover);
+    color: var(--text-bright);
+}
+
+.patch-file-pills {
+    display: flex;
     gap: 6px;
     flex-wrap: wrap;
-    margin-bottom: 4px;
 }
 
 .patch-file-pill {
@@ -1844,6 +1867,19 @@ html, body {
     padding: 4px 10px;
     cursor: pointer;
     font-size: 12px;
+}
+
+.patch-file-pill.is-active {
+    background: var(--accent-color);
+    color: var(--text-bright);
+    border-color: var(--accent-hover);
+}
+
+.patch-file-pill.has-error::after {
+    content: '•';
+    color: var(--error-color);
+    margin-left: 6px;
+    font-weight: 700;
 }
 
 .patch-file-pill:hover {
@@ -1885,16 +1921,6 @@ html, body {
 
 .patch-file.has-error {
     border-color: var(--error-color);
-}
-
-.patch-diff {
-    background: var(--bg-medium);
-    border-radius: 6px;
-    padding: 8px;
-    overflow: auto;
-    max-height: 260px;
-    font-family: Consolas, Menlo, Monaco, 'Courier New', monospace;
-    font-size: 12px;
 }
 
 .patch-action-error {
@@ -1959,10 +1985,14 @@ html, body {
 
 .patch-diff-header {
     display: grid;
-    grid-template-columns: 60px 60px 1fr;
+    grid-template-columns: 1fr 1fr auto;
     background: var(--bg-lighter);
     border-bottom: 1px solid var(--border-color);
     font-weight: 600;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 2;
 }
 
 .patch-diff-header .diff-col-label {
@@ -1971,52 +2001,65 @@ html, body {
 }
 
 .patch-diff-header .file-label {
+    padding: 6px 8px;
     border-right: none;
+    color: var(--text-secondary);
 }
 
 .diff-rows {
     max-height: 320px;
     overflow: auto;
+    position: relative;
 }
 
-.diff-row {
+.diff-sxs-row {
     display: grid;
-    grid-template-columns: 60px 60px 1fr;
+    grid-template-columns: 1fr 1fr;
     border-bottom: 1px solid var(--border-color);
 }
 
-.diff-row:last-child {
+.diff-sxs-row:last-child {
     border-bottom: none;
 }
 
-.diff-row.hunk {
+.diff-sxs-row.hunk {
+    grid-template-columns: 1fr;
     background: var(--bg-light);
     color: #c792ea;
-    grid-template-columns: 1fr;
     font-weight: 600;
     padding: 4px 8px;
 }
 
-.diff-row.add {
+.diff-sxs-row.add .diff-sxs-cell.right {
     background: rgba(126, 213, 140, 0.08);
 }
 
-.diff-row.remove {
+.diff-sxs-row.remove .diff-sxs-cell.left {
     background: rgba(255, 138, 138, 0.08);
 }
 
-.diff-row.context {
+.diff-sxs-row.context .diff-sxs-cell {
     background: var(--bg-dark);
 }
 
-.diff-cell {
-    padding: 4px 8px;
-    white-space: pre;
+.diff-sxs-cell {
+    display: grid;
+    grid-template-columns: 60px 1fr;
+    align-items: stretch;
+    gap: 0;
 }
 
-.diff-cell.line-num {
+.diff-sxs-cell .line-num {
+    padding: 4px 8px;
     color: var(--text-secondary);
     border-right: 1px solid var(--border-color);
+    background: var(--bg-lighter);
+}
+
+.diff-sxs-cell .line-text {
+    padding: 4px 8px;
+    white-space: pre;
+    overflow-x: auto;
 }
 
 /* Conference Invite Modal */
