@@ -80,6 +80,33 @@
   "persistent" : false,
   "read" : true
 }, {
+  "id" : "8a543700-9b74-480a-9a0b-2a770a95d932",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767687653284,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-1",
+    "provenance" : {
+      "author" : "Control Room Test",
+      "source" : "simulation",
+      "agent" : "planner",
+      "model" : "claude-sonnet-4",
+      "notes" : null
+    },
+    "kind" : "review-patch",
+    "filePath" : "README.md",
+    "patchTitle" : "Simulated Patch",
+    "projectName" : "default",
+    "filePaths" : [ "README.md" ]
+  },
+  "persistent" : true,
+  "read" : false
+}, {
   "id" : "4c3f25de-6da3-464d-9d47-964916fb943d",
   "level" : "info",
   "scope" : "editor",

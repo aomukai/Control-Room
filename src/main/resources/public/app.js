@@ -280,7 +280,7 @@
     // PATCH REVIEW MODAL
     // ============================================
 
-    async function showPatchReviewModal(focusId) {
+    async function showPatchReviewModal(focusId, defaultView = 'diff') {
         const { overlay, modal, body, close, confirmBtn } = createModalShell(
             'Patch Review',
             'Close',
@@ -293,7 +293,7 @@
         let currentPatchId = focusId || null;
 
         // Track current view mode for this modal instance
-        let currentViewMode = 'editor'; // 'editor' or 'diff'
+        let currentViewMode = defaultView; // 'editor' or 'diff'
 
         const headerRow = document.createElement('div');
         headerRow.className = 'modal-row space-between patch-diff-only';
@@ -480,6 +480,17 @@
             header.appendChild(avatarDiv);
             header.appendChild(infoDiv);
 
+            // Add action buttons to header (always visible, sticky)
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'patch-agent-actions';
+            actionsDiv.innerHTML = `
+                <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
+                <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
+                <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
+                <button class="modal-btn modal-btn-ghost" id="btn-export-audit">Export Audit</button>
+            `;
+            header.appendChild(actionsDiv);
+
             agentHeaderContainer.appendChild(header);
         }
 
@@ -510,6 +521,60 @@
                 payload.projectName = projectName;
             }
             return payload;
+        }
+
+        async function createPatchFeedbackIssue(patch, action, editedFiles = null) {
+            // Only create feedback if patch has agent provenance
+            if (!patch.provenance || !patch.provenance.agent) {
+                return;
+            }
+
+            const agentName = patch.provenance.agent;
+            const patchTitle = patch.title || patch.id;
+            const filePaths = Array.isArray(patch.files)
+                ? patch.files.map(file => file && file.filePath).filter(Boolean)
+                : [];
+
+            let issueTitle;
+            let issueBody;
+
+            if (action === 'applied') {
+                const hasEdits = editedFiles && editedFiles.length > 0;
+                issueTitle = hasEdits
+                    ? `Patch applied with edits: ${patchTitle}`
+                    : `Patch applied: ${patchTitle}`;
+
+                const fileSummary = filePaths.length > 0
+                    ? filePaths.map(fp => `- ${fp}`).join('\n')
+                    : 'Unknown file';
+
+                issueBody = `User ${hasEdits ? 'applied your patch with manual edits' : 'applied your patch'}.\n\n**Patch**: ${patchTitle}\n**Files**:\n${fileSummary}`;
+
+                if (hasEdits) {
+                    issueBody += '\n\n**User edited the content** before applying. The final version may differ from your original suggestion.';
+                }
+            } else if (action === 'rejected') {
+                issueTitle = `Patch rejected: ${patchTitle}`;
+
+                const fileSummary = filePaths.length > 0
+                    ? filePaths.map(fp => `- ${fp}`).join('\n')
+                    : 'Unknown file';
+
+                issueBody = `User rejected your patch.\n\n**Patch**: ${patchTitle}\n**Files**:\n${fileSummary}\n\nThe user decided not to apply these changes.`;
+            }
+
+            try {
+                await issueApi.create({
+                    title: issueTitle,
+                    body: issueBody,
+                    openedBy: 'User',
+                    assignedTo: agentName,
+                    tags: ['patch-feedback']
+                });
+            } catch (err) {
+                console.warn('Failed to create patch feedback issue:', err);
+                // Don't throw - feedback issue creation is nice-to-have, not critical
+            }
         }
 
         function formatPatchApplyFailureDetails(errorMessage, fileErrorsList) {
@@ -572,12 +637,6 @@
                     <div class="patch-detail-title">${escapeHtml(patch.title || patch.id)}</div>
                     <div class="patch-detail-path">${escapeHtml(primaryPath)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
                     <div class="patch-detail-status status-${patch.status}">${patch.status}</div>
-                </div>
-                <div class="patch-detail-actions patch-diff-only">
-                    <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
-                    <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
-                    <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
-                    <button class="modal-btn modal-btn-ghost" id="btn-export-audit">Export Audit</button>
                 </div>
             `;
             detail.appendChild(header);
@@ -788,16 +847,6 @@
             }
             detail.appendChild(filesSection);
 
-            // Editor View action buttons (bottom of document)
-            const editorActions = document.createElement('div');
-            editorActions.className = 'patch-editor-actions patch-editor-only';
-            editorActions.innerHTML = `
-                <button class="modal-btn modal-btn-primary" id="btn-editor-apply">Apply Changes</button>
-                <button class="modal-btn modal-btn-secondary" id="btn-editor-reject">Reject Patch</button>
-                <button class="modal-btn modal-btn-ghost" id="btn-editor-delete">Delete</button>
-            `;
-            detail.appendChild(editorActions);
-
             // Sync nav pills to scroll position
             if (fileNavPills.length && fileCards.length) {
                 const observer = new IntersectionObserver((entries) => {
@@ -840,25 +889,17 @@
                 detail.appendChild(auditWrap);
             }
 
-            const applyBtn = header.querySelector('#btn-apply-patch');
-            const rejectBtn = header.querySelector('#btn-reject-patch');
-            const deleteBtn = header.querySelector('#btn-delete-patch');
-            const exportBtn = header.querySelector('#btn-export-audit');
-
-            // Editor view buttons
-            const editorApplyBtn = editorActions.querySelector('#btn-editor-apply');
-            const editorRejectBtn = editorActions.querySelector('#btn-editor-reject');
-            const editorDeleteBtn = editorActions.querySelector('#btn-editor-delete');
+            // Action buttons are now in the agent header
+            const applyBtn = agentHeaderContainer.querySelector('#btn-apply-patch');
+            const rejectBtn = agentHeaderContainer.querySelector('#btn-reject-patch');
+            const deleteBtn = agentHeaderContainer.querySelector('#btn-delete-patch');
+            const exportBtn = agentHeaderContainer.querySelector('#btn-export-audit');
 
             const disableActions = (disabled) => {
-                applyBtn.disabled = disabled || patch.status !== 'pending';
-                rejectBtn.disabled = disabled || patch.status !== 'pending';
-                deleteBtn.disabled = disabled;
-                exportBtn.disabled = disabled;
-
-                editorApplyBtn.disabled = disabled || patch.status !== 'pending';
-                editorRejectBtn.disabled = disabled || patch.status !== 'pending';
-                editorDeleteBtn.disabled = disabled;
+                if (applyBtn) applyBtn.disabled = disabled || patch.status !== 'pending';
+                if (rejectBtn) rejectBtn.disabled = disabled || patch.status !== 'pending';
+                if (deleteBtn) deleteBtn.disabled = disabled;
+                if (exportBtn) exportBtn.disabled = disabled;
             };
 
             disableActions(false);
@@ -867,6 +908,59 @@
                 disableActions(true);
                 actionError.classList.add('hidden');
                 try {
+                    // Check if we're in editor mode and content was edited
+                    if (currentViewMode === 'editor') {
+                        // Gather edited content from all editable areas
+                        const editableAreas = detail.querySelectorAll('.editor-editable-area');
+                        const editedFiles = [];
+
+                        editableAreas.forEach(area => {
+                            const filePath = area.dataset.filePath;
+                            const editedContent = area.innerText; // Get plain text content
+                            // Validate both path and content exist and are non-empty
+                            if (filePath && filePath.trim() && editedContent !== null && editedContent !== undefined) {
+                                editedFiles.push({ path: filePath.trim(), content: editedContent });
+                            }
+                        });
+
+                        if (editedFiles.length > 0) {
+                            // Save edited content directly to files
+                            for (const file of editedFiles) {
+                                // Double-check path is valid before saving
+                                if (!file.path || !file.path.trim()) {
+                                    console.error('Invalid file path:', file);
+                                    continue;
+                                }
+                                await api('/api/file', {
+                                    method: 'PUT',
+                                    body: { path: file.path, content: file.content }
+                                });
+                            }
+
+                            // Mark patch as applied
+                            await patchApi.apply(patch.id);
+
+                            // Create feedback issue for the agent
+                            await createPatchFeedbackIssue(patch, 'applied', editedFiles);
+
+                            const payload = buildPatchNotificationPayload(patch);
+                            notificationStore.push(
+                                'success',
+                                'editor',
+                                `Applied and saved edits to ${patch.id}`,
+                                '',
+                                'info',
+                                false,
+                                'Review Patch',
+                                payload,
+                                'patch'
+                            );
+                            await loadPatches(patch.id);
+                            return;
+                        }
+                    }
+
+                    // Normal apply (diff mode or no edits in editor mode)
                     await patchApi.apply(patch.id);
                     const payload = buildPatchNotificationPayload(patch);
                     notificationStore.push(
@@ -898,6 +992,10 @@
                 actionError.classList.add('hidden');
                 try {
                     await patchApi.reject(patch.id);
+
+                    // Create feedback issue for the agent
+                    await createPatchFeedbackIssue(patch, 'rejected');
+
                     const payload = buildPatchNotificationPayload(patch);
                     notificationStore.push(
                         'warning',
@@ -955,71 +1053,6 @@
                 }
             });
 
-            // Wire up editor view buttons
-            editorApplyBtn.addEventListener('click', async () => {
-                // Check if we're in editor mode and content was edited
-                if (currentViewMode === 'editor') {
-                    // Gather edited content from all editable areas
-                    const editableAreas = detail.querySelectorAll('.editor-editable-area');
-                    const editedFiles = [];
-
-                    editableAreas.forEach(area => {
-                        const filePath = area.dataset.filePath;
-                        const editedContent = area.innerText; // Get plain text content
-                        if (filePath && editedContent) {
-                            editedFiles.push({ path: filePath, content: editedContent });
-                        }
-                    });
-
-                    if (editedFiles.length > 0) {
-                        // Save edited content directly to files
-                        disableActions(true);
-                        actionError.classList.add('hidden');
-
-                        try {
-                            // Save each edited file
-                            for (const file of editedFiles) {
-                                await api('/api/file', {
-                                    method: 'PUT',
-                                    body: { path: file.path, content: file.content }
-                                });
-                            }
-
-                            // Mark patch as applied
-                            await patchApi.apply(patch.id);
-
-                            const payload = buildPatchNotificationPayload(patch);
-                            notificationStore.push(
-                                'success',
-                                'editor',
-                                `Applied and saved edits to ${patch.id}`,
-                                '',
-                                'info',
-                                false,
-                                'Review Patch',
-                                payload,
-                                'patch'
-                            );
-                            await loadPatches(patch.id);
-                        } catch (err) {
-                            actionError.textContent = err.message || 'Failed to save edited content';
-                            actionError.classList.remove('hidden');
-                        } finally {
-                            disableActions(false);
-                        }
-                    } else {
-                        // No edited content, just apply patch normally
-                        applyBtn.click();
-                    }
-                } else {
-                    // In diff mode, use normal apply
-                    applyBtn.click();
-                }
-            });
-
-            editorRejectBtn.addEventListener('click', () => rejectBtn.click());
-            editorDeleteBtn.addEventListener('click', () => deleteBtn.click());
-
             if (errorMessage) {
                 actionError.textContent = errorMessage;
                 actionError.classList.remove('hidden');
@@ -1048,7 +1081,10 @@
             editableArea.className = 'editor-editable-area';
             editableArea.contentEditable = 'true';
             editableArea.spellcheck = false;
-            editableArea.dataset.filePath = filePath;
+            // Only set filePath if it's valid
+            if (filePath && filePath.trim()) {
+                editableArea.dataset.filePath = filePath.trim();
+            }
 
             const rows = parseUnifiedDiff(diffText);
             if (!rows.length) {
@@ -1986,7 +2022,7 @@
             case 'review-patch':
                 log(`Patch review requested: ${payload.patchId || 'unknown'}`, 'info');
                 closeNotificationCenter();
-                showPatchReviewModal(payload.patchId);
+                showPatchReviewModal(payload.patchId, 'editor'); // Default to editor view from notifications
                 break;
             default:
                 openNotificationCenter(notification.id);
