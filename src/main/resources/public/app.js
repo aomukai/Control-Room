@@ -480,6 +480,56 @@
             agentHeaderContainer.appendChild(header);
         }
 
+        function getPrimaryPatchFile(patch) {
+            if (!patch) return '';
+            if (Array.isArray(patch.files) && patch.files.length > 0 && patch.files[0]) {
+                return patch.files[0].filePath || '';
+            }
+            return patch.filePath || '';
+        }
+
+        function formatPatchApplyFailureDetails(errorMessage, fileErrorsList) {
+            const parts = [];
+            if (errorMessage) {
+                parts.push(errorMessage);
+            }
+            const files = Array.isArray(fileErrorsList)
+                ? fileErrorsList.map(entry => entry && entry.filePath).filter(Boolean)
+                : [];
+            if (files.length) {
+                const preview = files.slice(0, 3).join(', ');
+                const suffix = files.length > 3 ? `, +${files.length - 3} more` : '';
+                parts.push(`Files: ${preview}${suffix}`);
+            }
+            return parts.join(' | ');
+        }
+
+        function pushPatchApplyFailureNotification(patch, errorMessage, fileErrorsList) {
+            const filePath = getPrimaryPatchFile(patch);
+            const details = formatPatchApplyFailureDetails(errorMessage, fileErrorsList);
+            const payload = {
+                kind: 'review-patch',
+                patchId: patch && patch.id ? patch.id : null,
+                filePath: filePath || null,
+                fileErrors: Array.isArray(fileErrorsList) ? fileErrorsList : []
+            };
+            const projectName = state.workspace.displayName || state.workspace.name;
+            if (projectName) {
+                payload.projectName = projectName;
+            }
+            notificationStore.push(
+                'error',
+                'editor',
+                patch && patch.id ? `Failed to apply ${patch.id}` : 'Patch apply failed',
+                details,
+                'attention',
+                true,
+                'Review Patch',
+                payload,
+                'patch'
+            );
+        }
+
         async function openPatchDetail(id) {
             detail.innerHTML = '<div class="patch-detail-empty">Loading patch…</div>';
             agentHeaderContainer.innerHTML = '';
@@ -729,6 +779,7 @@
                     actionError.classList.remove('hidden');
                     const fileErrorMap = new Map(fileErrorsList.map(fe => [fe.filePath, fe.message]));
                     renderPatchDetail(patch, fileErrorMap, err.message);
+                    pushPatchApplyFailureNotification(patch, err.message, fileErrorsList);
                 } finally {
                     disableActions(false);
                 }
@@ -1338,6 +1389,103 @@
         }
     }
 
+    function getNotificationPatchPayload(notification) {
+        const payload = notification && notification.actionPayload;
+        if (!payload || typeof payload !== 'object') return null;
+        const kind = payload.kind || payload.type;
+        const hasPatchContext = payload.patchId || payload.filePath
+            || (Array.isArray(payload.filePaths) && payload.filePaths.length > 0);
+        if (!hasPatchContext && kind !== 'review-patch' && kind !== 'open-patch') {
+            return null;
+        }
+        return payload;
+    }
+
+    function buildPatchBreadcrumbs(payload) {
+        if (!payload) return null;
+        const crumbs = [];
+        const projectName = payload.projectName || state.workspace.displayName || state.workspace.name;
+        const filePath = payload.filePath || (Array.isArray(payload.filePaths) ? payload.filePaths[0] : null);
+        if (projectName) crumbs.push({ label: projectName, action: null });
+        if (payload.patchId) crumbs.push({ label: `Patch ${payload.patchId}`, action: 'patch' });
+        if (filePath) crumbs.push({ label: filePath, action: 'file' });
+        return crumbs.length ? crumbs : null;
+    }
+
+    function renderNotificationBreadcrumbs(payload) {
+        const crumbs = buildPatchBreadcrumbs(payload);
+        if (!crumbs) return null;
+        const wrap = document.createElement('div');
+        wrap.className = 'notification-breadcrumbs';
+        const filePath = payload.filePath || (Array.isArray(payload.filePaths) ? payload.filePaths[0] : null);
+        crumbs.forEach((crumb, index) => {
+            if (index > 0) {
+                const sep = document.createElement('span');
+                sep.className = 'notification-breadcrumb-sep';
+                sep.textContent = '>';
+                wrap.appendChild(sep);
+            }
+            if (crumb.action) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'notification-breadcrumb';
+                button.textContent = crumb.label;
+                button.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (crumb.action === 'patch' && payload.patchId) {
+                        closeNotificationCenter();
+                        showPatchReviewModal(payload.patchId);
+                        return;
+                    }
+                    if (crumb.action === 'file' && filePath) {
+                        closeNotificationCenter();
+                        openFile(filePath);
+                    }
+                });
+                wrap.appendChild(button);
+            } else {
+                const span = document.createElement('span');
+                span.className = 'notification-breadcrumb is-static';
+                span.textContent = crumb.label;
+                wrap.appendChild(span);
+            }
+        });
+        return wrap;
+    }
+
+    function getNotificationFileErrors(payload) {
+        if (!payload || !Array.isArray(payload.fileErrors)) return [];
+        return payload.fileErrors.filter(entry => entry && (entry.filePath || entry.message));
+    }
+
+    function renderNotificationFileErrors(payload) {
+        const errors = getNotificationFileErrors(payload);
+        if (!errors.length) return null;
+        const wrap = document.createElement('div');
+        wrap.className = 'notification-file-errors';
+        const title = document.createElement('div');
+        title.className = 'notification-file-errors-title';
+        title.textContent = 'Apply failure details:';
+        wrap.appendChild(title);
+        const list = document.createElement('ul');
+        list.className = 'notification-file-errors-list';
+        const maxItems = 6;
+        errors.slice(0, maxItems).forEach(entry => {
+            const item = document.createElement('li');
+            const label = entry.filePath || 'File';
+            const message = entry.message || 'Failed to apply';
+            item.textContent = `${label}: ${message}`;
+            list.appendChild(item);
+        });
+        if (errors.length > maxItems) {
+            const item = document.createElement('li');
+            item.textContent = `...and ${errors.length - maxItems} more`;
+            list.appendChild(item);
+        }
+        wrap.appendChild(list);
+        return wrap;
+    }
+
     function renderNotificationCenterList() {
         if (!elements.notificationList) return;
 
@@ -1385,6 +1533,18 @@
             item.appendChild(meta);
             item.appendChild(message);
             item.appendChild(details);
+
+            const patchPayload = getNotificationPatchPayload(notification);
+            if (patchPayload) {
+                const breadcrumbs = renderNotificationBreadcrumbs(patchPayload);
+                if (breadcrumbs) {
+                    item.appendChild(breadcrumbs);
+                }
+                const errorDetails = renderNotificationFileErrors(patchPayload);
+                if (errorDetails) {
+                    item.appendChild(errorDetails);
+                }
+            }
 
             if (notification.actionLabel) {
                 const action = document.createElement('button');

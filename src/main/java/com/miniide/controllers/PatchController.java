@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 public class PatchController implements Controller {
 
@@ -146,9 +147,22 @@ public class PatchController implements Controller {
         String fileLabel = proposal.getFiles() != null && !proposal.getFiles().isEmpty()
             ? proposal.getFiles().get(0).getFilePath()
             : proposal.getFilePath();
+        String projectName = null;
+        try {
+            projectName = projectContext.workspace().loadMetadata().getDisplayName();
+        } catch (Exception ignored) {
+        }
         Map<String, Object> payload = new HashMap<>();
         payload.put("kind", "review-patch");
         payload.put("patchId", proposal.getId());
+        payload.put("filePath", fileLabel);
+        payload.put("filePaths", proposal.getFiles() != null
+            ? proposal.getFiles().stream().map(f -> f.getFilePath()).collect(Collectors.toList())
+            : List.of());
+        payload.put("patchTitle", proposal.getTitle());
+        if (projectName != null && !projectName.isBlank()) {
+            payload.put("projectName", projectName);
+        }
         notificationStore.push(
             com.miniide.models.Notification.Level.INFO,
             com.miniide.models.Notification.Scope.EDITOR,

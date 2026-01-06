@@ -124,7 +124,7 @@
   } ],
   "preview" : "Simulated edits:\n- Replace line 1 with a demo header\n- Insert a simulation note after line 3\n- Add a footer marker at line 8",
   "createdAt" : 1767632031889,
-  "status" : "pending",
+  "status" : "applied",
   "files" : [ {
     "filePath" : "README.md",
     "edits" : [ {
@@ -141,7 +141,7 @@
       "newText" : "Simulation complete.\n"
     } ],
     "preview" : "Simulated edits to README.md",
-    "diff" : null
+    "diff" : "--- README.md\n+++ README.md\n@@ -5,7 +5,10 @@\n \n This patch was generated for testing the review flow.\n \n+This patch was generated for testing the review flow.\n \n+Simulation complete.\n+\n ## Structure\n Simulation complete.\n "
   } ],
   "provenance" : {
     "author" : "Control Room Test",
@@ -156,5 +156,11 @@
     "action" : "created",
     "message" : "Simulation-only patch for testing the review modal.",
     "status" : "pending"
+  }, {
+    "timestamp" : 1767681029719,
+    "actor" : "aomuk",
+    "action" : "applied",
+    "message" : "Applied 1 file(s)",
+    "status" : "applied"
   } ]
 } ]
