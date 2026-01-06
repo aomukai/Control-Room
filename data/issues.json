@@ -251,4 +251,30 @@
   "createdAt" : 1767462656898,
   "updatedAt" : 1767462656898,
   "closedAt" : null
+}, {
+  "id" : 17,
+  "title" : "Patch rejected: Simulated Patch",
+  "body" : "User rejected your patch.\n\n**Patch**: Simulated Patch\n**Files**:\n- README.md\n\nThe user decided not to apply these changes.",
+  "openedBy" : "User",
+  "assignedTo" : "planner",
+  "tags" : [ "patch-feedback" ],
+  "priority" : "normal",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767688365617,
+  "updatedAt" : 1767688365617,
+  "closedAt" : null
+}, {
+  "id" : 18,
+  "title" : "Patch rejected: Simulated Patch",
+  "body" : "User rejected your patch.\n\n**Patch**: Simulated Patch\n**Files**:\n- README.md\n\nThe user decided not to apply these changes.",
+  "openedBy" : "User",
+  "assignedTo" : "planner",
+  "tags" : [ "patch-feedback" ],
+  "priority" : "normal",
+  "status" : "open",
+  "comments" : [ ],
+  "createdAt" : 1767688365617,
+  "updatedAt" : 1767688365617,
+  "closedAt" : null
 } ]
