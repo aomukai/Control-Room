@@ -170,6 +170,16 @@
             }
         }
 
+        function dismiss(id) {
+            if (!id) return;
+            const notification = notifications.get(id);
+            if (notification) {
+                notification.read = true;
+                notification.persistent = false;
+                emit();
+            }
+        }
+
         function markAllRead() {
             notifications.forEach(notification => {
                 notification.read = true;
@@ -231,6 +241,7 @@
             getUnreadCount,
             getUnreadCountByScope,
             markRead,
+            dismiss,
             markAllRead,
             clearNonErrors,
             clearAll,

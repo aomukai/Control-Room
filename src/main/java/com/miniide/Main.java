@@ -20,6 +20,8 @@ public class Main {
     private static AppLogger logger;
     private static MemoryDecayScheduler decayScheduler;
     private static DecayConfigStore decayConfigStore;
+    private static PatchCleanupScheduler patchCleanupScheduler;
+    private static PatchCleanupConfigStore patchCleanupConfigStore;
 
     public static void main(String[] args) {
         try {
@@ -46,6 +48,7 @@ public class Main {
             logger.info("Notification and Issue services initialized");
             logger.info("Memory service initialized");
             decayConfigStore = new DecayConfigStore(objectMapper);
+            patchCleanupConfigStore = new PatchCleanupConfigStore(objectMapper);
 
             // Initialize settings and provider services
             SettingsService settingsService = new SettingsService(AppConfig.getSettingsDirectory(), objectMapper);
@@ -72,6 +75,15 @@ public class Main {
             }
             decayScheduler = new MemoryDecayScheduler(memoryService, notificationStore, intervalMs, decaySettings);
             decayScheduler.start();
+
+            PatchCleanupConfigStore.PatchCleanupConfig defaultPatchCleanupConfig = buildDefaultPatchCleanupConfig();
+            PatchCleanupConfigStore.PatchCleanupConfig patchCleanupConfig = patchCleanupConfigStore.loadOrDefault(defaultPatchCleanupConfig);
+            long patchIntervalMs = patchCleanupConfig.toIntervalMs();
+            if (patchIntervalMs <= 0) {
+                patchIntervalMs = defaultPatchCleanupConfig.toIntervalMs();
+            }
+            patchCleanupScheduler = new PatchCleanupScheduler(projectContext, notificationStore, patchIntervalMs, patchCleanupConfig);
+            patchCleanupScheduler.start();
 
             // Create and register controllers
             MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
@@ -114,6 +126,7 @@ public class Main {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 logger.info("Shutting down...");
                 decayScheduler.stop();
+                patchCleanupScheduler.stop();
                 app.stop();
                 logger.close();
             }));
@@ -176,6 +189,16 @@ public class Main {
         return config;
     }
 
+    private static PatchCleanupConfigStore.PatchCleanupConfig buildDefaultPatchCleanupConfig() {
+        PatchCleanupConfigStore.PatchCleanupConfig config = new PatchCleanupConfigStore.PatchCleanupConfig();
+        config.setIntervalMinutes(getPatchCleanupIntervalMinutesFromEnv());
+        config.setRetainDays(getPatchCleanupRetentionDaysFromEnv());
+        config.setNotifyOnRun(parseBoolEnv("CR_PATCH_CLEANUP_NOTIFY", false));
+        config.setDryRun(parseBoolEnv("CR_PATCH_CLEANUP_DRY_RUN", false));
+        config.setStatuses(List.of("applied", "rejected"));
+        return config;
+    }
+
     private static long getIntervalMinutesFromEnv() {
         String env = System.getenv("CR_DECAY_INTERVAL_MINUTES");
         if (env != null && !env.isBlank()) {
@@ -188,6 +211,34 @@ public class Main {
             }
         }
         return 6 * 60; // default 6h
+    }
+
+    private static long getPatchCleanupIntervalMinutesFromEnv() {
+        String env = System.getenv("CR_PATCH_CLEANUP_INTERVAL_MINUTES");
+        if (env != null && !env.isBlank()) {
+            try {
+                long minutes = Long.parseLong(env.trim());
+                if (minutes > 0) {
+                    return minutes;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 24 * 60; // default 24h
+    }
+
+    private static long getPatchCleanupRetentionDaysFromEnv() {
+        String env = System.getenv("CR_PATCH_CLEANUP_RETAIN_DAYS");
+        if (env != null && !env.isBlank()) {
+            try {
+                long days = Long.parseLong(env.trim());
+                if (days > 0) {
+                    return days;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 30;
     }
 
     private static long parseDaysEnv(String key, int defaultDays) {

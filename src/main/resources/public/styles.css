@@ -1249,6 +1249,22 @@ html, body {
     cursor: pointer;
 }
 
+.toast-dismiss {
+    margin-top: 6px;
+    margin-left: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.toast-dismiss:hover {
+    color: var(--text-bright);
+}
+
 .toast-info {
     border-left-color: var(--accent-color);
 }
@@ -1441,6 +1457,17 @@ html, body {
 
 .notification-file-errors-list li {
     margin-bottom: 2px;
+}
+
+.notification-provenance {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: none;
+}
+
+.notification-item.expanded .notification-provenance {
+    display: block;
 }
 
 .notification-badge {

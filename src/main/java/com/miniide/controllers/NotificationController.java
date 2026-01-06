@@ -178,10 +178,26 @@ public class NotificationController implements Controller {
             String id = ctx.pathParam("id");
             JsonNode json = objectMapper.readTree(ctx.body());
 
+            boolean changed = false;
+
+            if (json.has("dismissed") && json.get("dismissed").asBoolean()) {
+                notificationStore.dismiss(id);
+                logger.info("Notification dismissed: " + id);
+                changed = true;
+            } else if (json.has("persistent") && !json.get("persistent").asBoolean()) {
+                notificationStore.dismiss(id);
+                logger.info("Notification persistence cleared: " + id);
+                changed = true;
+            }
+
             if (json.has("read") && json.get("read").asBoolean()) {
                 notificationStore.markRead(id);
                 logger.info("Notification marked as read: " + id);
-                ctx.json(Map.of("success", true, "message", "Notification marked as read"));
+                changed = true;
+            }
+
+            if (changed) {
+                ctx.json(Map.of("success", true, "message", "Notification updated"));
             } else {
                 ctx.json(Map.of("success", true, "message", "No changes made"));
             }

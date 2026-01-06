@@ -269,6 +269,12 @@
         async get(id) {
             return api(`/api/patches/${encodeURIComponent(id)}`);
         },
+        async exportAudit(id) {
+            return api(`/api/patches/${encodeURIComponent(id)}/audit`);
+        },
+        async exportAllAudits() {
+            return api('/api/patches/audit/export');
+        },
         async apply(id) {
             return api(`/api/patches/${encodeURIComponent(id)}/apply`, { method: 'POST' });
         },
@@ -447,6 +453,13 @@
             const response = await fetch('/api/notifications');
             if (!response.ok) throw new Error('Failed to fetch notifications');
             return response.json();
+        },
+        async update(id, payload) {
+            return api(`/api/notifications/${encodeURIComponent(id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
         }
     };
 

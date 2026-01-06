@@ -163,6 +163,45 @@ public class PatchService {
         return removed;
     }
 
+    public synchronized PatchCleanupResult cleanupOlderThan(Set<String> statuses, long olderThanMs, boolean dryRun) throws IOException {
+        if (olderThanMs <= 0) {
+            return new PatchCleanupResult(0, 0, 0L, dryRun, List.of(), List.of());
+        }
+        if (statuses == null || statuses.isEmpty()) {
+            statuses = Set.of("applied", "rejected");
+        }
+        long cutoff = System.currentTimeMillis() - olderThanMs;
+        Set<String> normalized = statuses.stream()
+            .map(s -> s == null ? "" : s.toString().toLowerCase())
+            .collect(Collectors.toSet());
+
+        List<PatchProposal> eligible = patches.stream()
+            .filter(p -> normalized.contains((p.getStatus() == null ? "" : p.getStatus().toLowerCase())))
+            .filter(p -> p.getCreatedAt() <= cutoff)
+            .collect(Collectors.toList());
+
+        List<String> eligibleIds = eligible.stream()
+            .map(PatchProposal::getId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toList());
+
+        int removed = 0;
+        if (!dryRun && !eligible.isEmpty()) {
+            removed = (int) patches.stream()
+                .filter(p -> normalized.contains((p.getStatus() == null ? "" : p.getStatus().toLowerCase())))
+                .filter(p -> p.getCreatedAt() <= cutoff)
+                .count();
+            patches.removeIf(p -> normalized.contains((p.getStatus() == null ? "" : p.getStatus().toLowerCase()))
+                && p.getCreatedAt() <= cutoff);
+            if (removed > 0) {
+                save();
+            }
+        }
+
+        List<String> statusList = normalized.stream().sorted().collect(Collectors.toList());
+        return new PatchCleanupResult(removed, eligible.size(), cutoff, dryRun, eligibleIds, statusList);
+    }
+
     public PatchProposal simulatePatch(String filePath) throws IOException {
         String target = (filePath == null || filePath.isBlank()) ? "README.md" : filePath.trim();
         List<TextEdit> edits = new ArrayList<>();
@@ -401,6 +440,49 @@ public class PatchService {
 
         public String getMessage() {
             return message;
+        }
+    }
+
+    public static class PatchCleanupResult {
+        private final int removedCount;
+        private final int eligibleCount;
+        private final long cutoffTime;
+        private final boolean dryRun;
+        private final List<String> eligibleIds;
+        private final List<String> statuses;
+
+        public PatchCleanupResult(int removedCount, int eligibleCount, long cutoffTime, boolean dryRun,
+                                  List<String> eligibleIds, List<String> statuses) {
+            this.removedCount = removedCount;
+            this.eligibleCount = eligibleCount;
+            this.cutoffTime = cutoffTime;
+            this.dryRun = dryRun;
+            this.eligibleIds = eligibleIds != null ? eligibleIds : new ArrayList<>();
+            this.statuses = statuses != null ? statuses : new ArrayList<>();
+        }
+
+        public int getRemovedCount() {
+            return removedCount;
+        }
+
+        public int getEligibleCount() {
+            return eligibleCount;
+        }
+
+        public long getCutoffTime() {
+            return cutoffTime;
+        }
+
+        public boolean isDryRun() {
+            return dryRun;
+        }
+
+        public List<String> getEligibleIds() {
+            return eligibleIds;
+        }
+
+        public List<String> getStatuses() {
+            return statuses;
         }
     }
 }

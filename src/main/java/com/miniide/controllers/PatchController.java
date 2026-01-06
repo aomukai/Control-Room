@@ -34,6 +34,8 @@ public class PatchController implements Controller {
     public void registerRoutes(Javalin app) {
         app.get("/api/patches", this::listPatches);
         app.get("/api/patches/{id}", this::getPatch);
+        app.get("/api/patches/{id}/audit", this::exportPatchAudit);
+        app.get("/api/patches/audit/export", this::exportAllPatchAudits);
         app.post("/api/patches", this::createPatch);
         app.post("/api/patches/{id}/apply", this::applyPatch);
         app.post("/api/patches/{id}/reject", this::rejectPatch);
@@ -55,6 +57,28 @@ public class PatchController implements Controller {
             return;
         }
         ctx.json(p);
+    }
+
+    private void exportPatchAudit(Context ctx) {
+        String id = ctx.pathParam("id");
+        PatchProposal patch = projectContext.patches().get(id);
+        if (patch == null) {
+            ctx.status(404).json(Map.of("error", "Patch not found: " + id));
+            return;
+        }
+        ctx.json(buildPatchAuditExport(patch));
+    }
+
+    private void exportAllPatchAudits(Context ctx) {
+        List<PatchProposal> patches = projectContext.patches().list();
+        List<Map<String, Object>> exports = patches.stream()
+            .map(this::buildPatchAuditExport)
+            .collect(Collectors.toList());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("exportedAt", System.currentTimeMillis());
+        payload.put("count", exports.size());
+        payload.put("patches", exports);
+        ctx.json(payload);
     }
 
     private void createPatch(Context ctx) {
@@ -160,6 +184,9 @@ public class PatchController implements Controller {
             ? proposal.getFiles().stream().map(f -> f.getFilePath()).collect(Collectors.toList())
             : List.of());
         payload.put("patchTitle", proposal.getTitle());
+        if (proposal.getProvenance() != null) {
+            payload.put("provenance", proposal.getProvenance());
+        }
         if (projectName != null && !projectName.isBlank()) {
             payload.put("projectName", projectName);
         }
@@ -174,5 +201,19 @@ public class PatchController implements Controller {
             payload,
             "patch"
         );
+    }
+
+    private Map<String, Object> buildPatchAuditExport(PatchProposal patch) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("patchId", patch.getId());
+        payload.put("title", patch.getTitle());
+        payload.put("status", patch.getStatus());
+        payload.put("description", patch.getDescription());
+        payload.put("createdAt", patch.getCreatedAt());
+        payload.put("provenance", patch.getProvenance());
+        payload.put("auditLog", patch.getAuditLog());
+        payload.put("files", patch.getFiles());
+        payload.put("exportedAt", System.currentTimeMillis());
+        return payload;
     }
 }

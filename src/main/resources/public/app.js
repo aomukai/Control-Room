@@ -488,6 +488,27 @@
             return patch.filePath || '';
         }
 
+        function buildPatchNotificationPayload(patch) {
+            if (!patch) return {};
+            const filePath = getPrimaryPatchFile(patch);
+            const filePaths = Array.isArray(patch.files)
+                ? patch.files.map(file => file && file.filePath).filter(Boolean)
+                : [];
+            const payload = {
+                kind: 'review-patch',
+                patchId: patch.id || null,
+                filePath: filePath || null,
+                filePaths,
+                patchTitle: patch.title || null,
+                provenance: patch.provenance || null
+            };
+            const projectName = state.workspace.displayName || state.workspace.name;
+            if (projectName) {
+                payload.projectName = projectName;
+            }
+            return payload;
+        }
+
         function formatPatchApplyFailureDetails(errorMessage, fileErrorsList) {
             const parts = [];
             if (errorMessage) {
@@ -505,18 +526,9 @@
         }
 
         function pushPatchApplyFailureNotification(patch, errorMessage, fileErrorsList) {
-            const filePath = getPrimaryPatchFile(patch);
             const details = formatPatchApplyFailureDetails(errorMessage, fileErrorsList);
-            const payload = {
-                kind: 'review-patch',
-                patchId: patch && patch.id ? patch.id : null,
-                filePath: filePath || null,
-                fileErrors: Array.isArray(fileErrorsList) ? fileErrorsList : []
-            };
-            const projectName = state.workspace.displayName || state.workspace.name;
-            if (projectName) {
-                payload.projectName = projectName;
-            }
+            const payload = buildPatchNotificationPayload(patch);
+            payload.fileErrors = Array.isArray(fileErrorsList) ? fileErrorsList : [];
             notificationStore.push(
                 'error',
                 'editor',
@@ -562,6 +574,7 @@
                     <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
                     <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
                     <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
+                    <button class="modal-btn modal-btn-ghost" id="btn-export-audit">Export Audit</button>
                 </div>
             `;
             detail.appendChild(header);
@@ -757,11 +770,13 @@
             const applyBtn = header.querySelector('#btn-apply-patch');
             const rejectBtn = header.querySelector('#btn-reject-patch');
             const deleteBtn = header.querySelector('#btn-delete-patch');
+            const exportBtn = header.querySelector('#btn-export-audit');
 
             const disableActions = (disabled) => {
                 applyBtn.disabled = disabled || patch.status !== 'pending';
                 rejectBtn.disabled = disabled || patch.status !== 'pending';
                 deleteBtn.disabled = disabled;
+                exportBtn.disabled = disabled;
             };
 
             disableActions(false);
@@ -771,7 +786,18 @@
                 actionError.classList.add('hidden');
                 try {
                     await patchApi.apply(patch.id);
-                    notificationStore.success(`Applied ${patch.id}`, 'editor');
+                    const payload = buildPatchNotificationPayload(patch);
+                    notificationStore.push(
+                        'success',
+                        'editor',
+                        `Applied ${patch.id}`,
+                        '',
+                        'info',
+                        false,
+                        'Review Patch',
+                        payload,
+                        'patch'
+                    );
                     await loadPatches(patch.id);
                 } catch (err) {
                     const fileErrorsList = Array.isArray(err.data && err.data.fileErrors) ? err.data.fileErrors : [];
@@ -790,7 +816,18 @@
                 actionError.classList.add('hidden');
                 try {
                     await patchApi.reject(patch.id);
-                    notificationStore.warning(`Rejected ${patch.id}`, 'editor');
+                    const payload = buildPatchNotificationPayload(patch);
+                    notificationStore.push(
+                        'warning',
+                        'editor',
+                        `Rejected ${patch.id}`,
+                        '',
+                        'attention',
+                        false,
+                        'Review Patch',
+                        payload,
+                        'patch'
+                    );
                     await loadPatches(patch.id);
                 } catch (err) {
                     actionError.textContent = err.message || 'Failed to reject patch';
@@ -811,6 +848,27 @@
                 } catch (err) {
                     actionError.textContent = err.message || 'Failed to delete patch';
                     actionError.classList.remove('hidden');
+                    disableActions(false);
+                }
+            });
+
+            exportBtn.addEventListener('click', async () => {
+                disableActions(true);
+                try {
+                    const audit = await patchApi.exportAudit(patch.id);
+                    const blob = new Blob([JSON.stringify(audit, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `patch-audit-${patch.id}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    notificationStore.success(`Exported audit for ${patch.id}`, 'editor');
+                } catch (err) {
+                    notificationStore.error(`Failed to export audit: ${err.message}`, 'editor');
+                } finally {
                     disableActions(false);
                 }
             });
@@ -1267,6 +1325,16 @@
         }
     }
 
+    async function dismissNotification(notification) {
+        if (!notification || !notification.id) return;
+        try {
+            await notificationsApi.update(notification.id, { dismissed: true, read: true });
+        } catch (err) {
+            log(`Failed to dismiss notification: ${err.message}`, 'warning');
+        }
+        notificationStore.dismiss(notification.id);
+    }
+
     function renderToastStack() {
         if (!elements.toastStack) return;
 
@@ -1315,6 +1383,18 @@
                     handleNotificationAction(notification);
                 });
                 toast.appendChild(action);
+            }
+
+            if (notification.persistent) {
+                const dismissBtn = document.createElement('button');
+                dismissBtn.type = 'button';
+                dismissBtn.className = 'toast-dismiss';
+                dismissBtn.textContent = 'Dismiss';
+                dismissBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dismissNotification(notification);
+                });
+                toast.appendChild(dismissBtn);
             }
 
             toast.addEventListener('click', () => {
@@ -1486,6 +1566,26 @@
         return wrap;
     }
 
+    function buildProvenanceLabel(provenance) {
+        if (!provenance) return '';
+        const parts = [];
+        if (provenance.agent) parts.push(`Agent: ${provenance.agent}`);
+        if (provenance.model) parts.push(`Model: ${provenance.model}`);
+        if (provenance.source) parts.push(`Source: ${provenance.source}`);
+        if (provenance.author) parts.push(`Author: ${provenance.author}`);
+        return parts.join(' • ');
+    }
+
+    function renderNotificationProvenance(payload) {
+        if (!payload || !payload.provenance) return null;
+        const label = buildProvenanceLabel(payload.provenance);
+        if (!label) return null;
+        const wrap = document.createElement('div');
+        wrap.className = 'notification-provenance';
+        wrap.textContent = label;
+        return wrap;
+    }
+
     function renderNotificationCenterList() {
         if (!elements.notificationList) return;
 
@@ -1543,6 +1643,10 @@
                 const errorDetails = renderNotificationFileErrors(patchPayload);
                 if (errorDetails) {
                     item.appendChild(errorDetails);
+                }
+                const provenance = renderNotificationProvenance(patchPayload);
+                if (provenance) {
+                    item.appendChild(provenance);
                 }
             }
 

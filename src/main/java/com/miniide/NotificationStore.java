@@ -153,6 +153,18 @@ public class NotificationStore {
         }
     }
 
+    public void dismiss(String id) {
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        Notification notification = notifications.get(id);
+        if (notification != null) {
+            notification.setRead(true);
+            notification.setPersistent(false);
+            saveAll();
+        }
+    }
+
     public void markAllRead() {
         for (Notification notification : notifications.values()) {
             notification.setRead(true);
