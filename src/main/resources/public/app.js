@@ -955,8 +955,68 @@
                 }
             });
 
-            // Wire up editor view buttons to same handlers
-            editorApplyBtn.addEventListener('click', () => applyBtn.click());
+            // Wire up editor view buttons
+            editorApplyBtn.addEventListener('click', async () => {
+                // Check if we're in editor mode and content was edited
+                if (currentViewMode === 'editor') {
+                    // Gather edited content from all editable areas
+                    const editableAreas = detail.querySelectorAll('.editor-editable-area');
+                    const editedFiles = [];
+
+                    editableAreas.forEach(area => {
+                        const filePath = area.dataset.filePath;
+                        const editedContent = area.innerText; // Get plain text content
+                        if (filePath && editedContent) {
+                            editedFiles.push({ path: filePath, content: editedContent });
+                        }
+                    });
+
+                    if (editedFiles.length > 0) {
+                        // Save edited content directly to files
+                        disableActions(true);
+                        actionError.classList.add('hidden');
+
+                        try {
+                            // Save each edited file
+                            for (const file of editedFiles) {
+                                await api('/api/file', {
+                                    method: 'PUT',
+                                    body: { path: file.path, content: file.content }
+                                });
+                            }
+
+                            // Mark patch as applied
+                            await patchApi.apply(patch.id);
+
+                            const payload = buildPatchNotificationPayload(patch);
+                            notificationStore.push(
+                                'success',
+                                'editor',
+                                `Applied and saved edits to ${patch.id}`,
+                                '',
+                                'info',
+                                false,
+                                'Review Patch',
+                                payload,
+                                'patch'
+                            );
+                            await loadPatches(patch.id);
+                        } catch (err) {
+                            actionError.textContent = err.message || 'Failed to save edited content';
+                            actionError.classList.remove('hidden');
+                        } finally {
+                            disableActions(false);
+                        }
+                    } else {
+                        // No edited content, just apply patch normally
+                        applyBtn.click();
+                    }
+                } else {
+                    // In diff mode, use normal apply
+                    applyBtn.click();
+                }
+            });
+
             editorRejectBtn.addEventListener('click', () => rejectBtn.click());
             editorDeleteBtn.addEventListener('click', () => deleteBtn.click());
 
@@ -982,6 +1042,13 @@
                 fileHeading.textContent = filePath;
                 container.appendChild(fileHeading);
             }
+
+            // Create editable content area
+            const editableArea = document.createElement('div');
+            editableArea.className = 'editor-editable-area';
+            editableArea.contentEditable = 'true';
+            editableArea.spellcheck = false;
+            editableArea.dataset.filePath = filePath;
 
             const rows = parseUnifiedDiff(diffText);
             if (!rows.length) {
@@ -1057,8 +1124,16 @@
                     }
                 });
 
-                container.appendChild(block);
+                editableArea.appendChild(block);
             });
+
+            container.appendChild(editableArea);
+
+            // Add hint about editability
+            const hint = document.createElement('div');
+            hint.className = 'editor-hint';
+            hint.textContent = 'Click to edit this content directly. Your changes will be saved when you click "Apply Changes".';
+            container.appendChild(hint);
 
             return container;
         }

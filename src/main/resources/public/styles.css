@@ -2359,6 +2359,34 @@ html, body {
     border-bottom: 2px solid var(--border-color);
 }
 
+.editor-editable-area {
+    min-height: 200px;
+    outline: none;
+    cursor: text;
+    transition: background 0.2s ease;
+}
+
+.editor-editable-area:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.editor-editable-area:focus {
+    background: rgba(255, 255, 255, 0.03);
+    box-shadow: inset 0 0 0 2px rgba(33, 150, 243, 0.3);
+    border-radius: 4px;
+}
+
+.editor-hint {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(33, 150, 243, 0.1);
+    border-left: 3px solid var(--accent-color);
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Editor Mode Layout Changes */
 .patch-review-modal.patch-editor-mode .patch-diff-only {
     display: none !important;
