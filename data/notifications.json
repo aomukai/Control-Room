@@ -23,8 +23,35 @@
     "projectName" : "default",
     "filePaths" : [ "README.md" ]
   },
-  "persistent" : true,
-  "read" : false
+  "persistent" : false,
+  "read" : true
+}, {
+  "id" : "2f682b0f-9685-4787-be7c-429f49f26570",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767683489699,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-7",
+    "provenance" : {
+      "author" : "Control Room Test",
+      "source" : "simulation",
+      "agent" : "planner",
+      "model" : "claude-sonnet-4",
+      "notes" : null
+    },
+    "kind" : "review-patch",
+    "filePath" : "README.md",
+    "patchTitle" : "Simulated Patch",
+    "projectName" : "default",
+    "filePaths" : [ "README.md" ]
+  },
+  "persistent" : false,
+  "read" : true
 }, {
   "id" : "057a5291-1714-4b87-bde5-b14b2b205b50",
   "level" : "info",
@@ -65,6 +92,33 @@
   "actionPayload" : {
     "patchId" : "patch-3",
     "kind" : "review-patch"
+  },
+  "persistent" : false,
+  "read" : true
+}, {
+  "id" : "bce27877-7989-49cc-b1fd-ddb83560c36f",
+  "level" : "info",
+  "scope" : "editor",
+  "category" : "attention",
+  "message" : "Patch proposed for README.md",
+  "details" : "Simulation-only patch for testing the review modal.",
+  "source" : "patch",
+  "timestamp" : 1767683157606,
+  "actionLabel" : "Review Patch",
+  "actionPayload" : {
+    "patchId" : "patch-6",
+    "provenance" : {
+      "author" : "Control Room Test",
+      "source" : "simulation",
+      "agent" : "planner",
+      "model" : "claude-sonnet-4",
+      "notes" : null
+    },
+    "kind" : "review-patch",
+    "filePath" : "README.md",
+    "patchTitle" : "Simulated Patch",
+    "projectName" : "default",
+    "filePaths" : [ "README.md" ]
   },
   "persistent" : false,
   "read" : true

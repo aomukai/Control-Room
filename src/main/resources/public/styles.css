@@ -2249,6 +2249,150 @@ html, body {
     line-height: 1.5;
 }
 
+/* Patch View Switcher */
+.patch-view-switcher {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+    padding: 4px;
+    background: var(--bg-medium);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.patch-view-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.patch-view-btn:hover {
+    color: var(--text-bright);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.patch-view-btn.active {
+    color: var(--text-bright);
+    background: var(--accent-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.patch-view-container {
+    position: relative;
+}
+
+/* Editor View (Track Changes Style) */
+.patch-editor-view {
+    display: none;
+}
+
+.patch-editor-view.active {
+    display: block;
+}
+
+.patch-diff-view {
+    display: none;
+}
+
+.patch-diff-view.active {
+    display: block;
+}
+
+.patch-editor-content {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 32px 48px;
+    max-width: 100%;
+    width: 100%;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    overflow-x: auto;
+}
+
+.editor-block {
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.editor-context {
+    color: var(--text-primary);
+}
+
+.editor-deletion {
+    background: rgba(244, 67, 54, 0.15);
+    color: #ff9999;
+    text-decoration: line-through;
+    text-decoration-color: rgba(244, 67, 54, 0.6);
+    text-decoration-thickness: 2px;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.editor-addition {
+    background: rgba(76, 175, 80, 0.15);
+    color: #a5d6a7;
+    text-decoration: underline;
+    text-decoration-color: rgba(76, 175, 80, 0.6);
+    text-decoration-thickness: 2px;
+    text-decoration-style: solid;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.editor-file-heading {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-bright);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+/* Editor Mode Layout Changes */
+.patch-review-modal.patch-editor-mode .patch-diff-only {
+    display: none !important;
+}
+
+.patch-review-modal.patch-diff-mode .patch-editor-only {
+    display: none !important;
+}
+
+.patch-review-modal.patch-editor-mode .patch-layout {
+    grid-template-columns: 1fr;
+}
+
+.patch-review-modal.patch-editor-mode .patch-detail {
+    max-width: 100%;
+    width: 100%;
+    padding: 0 40px;
+}
+
+/* Editor View Action Buttons (Bottom) */
+.patch-editor-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding: 32px 0 16px 0;
+    margin-top: 24px;
+    border-top: 2px solid var(--border-color);
+}
+
+.patch-editor-actions .modal-btn {
+    min-width: 140px;
+    font-size: 14px;
+}
+
 /* Conference Invite Modal */
 .conference-invite-modal {
     min-width: 520px;

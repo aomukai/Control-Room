@@ -292,8 +292,11 @@
 
         let currentPatchId = focusId || null;
 
+        // Track current view mode for this modal instance
+        let currentViewMode = 'editor'; // 'editor' or 'diff'
+
         const headerRow = document.createElement('div');
-        headerRow.className = 'modal-row space-between';
+        headerRow.className = 'modal-row space-between patch-diff-only';
         const headerActions = document.createElement('div');
         headerActions.className = 'patch-header-actions';
         const refreshBtn = document.createElement('button');
@@ -325,7 +328,7 @@
         layout.className = 'patch-layout';
 
         const listContainer = document.createElement('div');
-        listContainer.className = 'patch-list';
+        listContainer.className = 'patch-list patch-diff-only';
         layout.appendChild(listContainer);
 
         const detail = document.createElement('div');
@@ -570,7 +573,7 @@
                     <div class="patch-detail-path">${escapeHtml(primaryPath)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
                     <div class="patch-detail-status status-${patch.status}">${patch.status}</div>
                 </div>
-                <div class="patch-detail-actions">
+                <div class="patch-detail-actions patch-diff-only">
                     <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
                     <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
                     <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
@@ -584,13 +587,13 @@
             detail.appendChild(actionError);
 
             const meta = document.createElement('div');
-            meta.className = 'patch-meta';
+            meta.className = 'patch-meta patch-diff-only';
             meta.textContent = `${formatRelativeTime(patch.createdAt)} • ${fileCount || 0} file${fileCount === 1 ? '' : 's'}`;
             detail.appendChild(meta);
 
             const provenance = patch.provenance || {};
             const prov = document.createElement('div');
-            prov.className = 'patch-provenance';
+            prov.className = 'patch-provenance patch-diff-only';
             prov.innerHTML = `
                 <div><span class="label">Author</span>${escapeHtml(provenance.author || 'Unknown')}</div>
                 <div><span class="label">Source</span>${escapeHtml(provenance.source || 'manual')}</div>
@@ -708,8 +711,68 @@
                     headerRow.appendChild(fileMeta);
                     card.appendChild(headerRow);
 
+                    // View switcher container
+                    const viewSwitcher = document.createElement('div');
+                    viewSwitcher.className = 'patch-view-switcher';
+
+                    const editorViewBtn = document.createElement('button');
+                    editorViewBtn.className = 'patch-view-btn active';
+                    editorViewBtn.textContent = 'Editor View';
+                    editorViewBtn.dataset.view = 'editor';
+
+                    const diffViewBtn = document.createElement('button');
+                    diffViewBtn.className = 'patch-view-btn';
+                    diffViewBtn.textContent = 'Diff View';
+                    diffViewBtn.dataset.view = 'diff';
+
+                    viewSwitcher.appendChild(editorViewBtn);
+                    viewSwitcher.appendChild(diffViewBtn);
+                    card.appendChild(viewSwitcher);
+
+                    // Container for both views
+                    const viewContainer = document.createElement('div');
+                    viewContainer.className = 'patch-view-container';
+
+                    const editorView = renderEditorView(change.filePath || '', change.diff || change.preview || '');
+                    editorView.className = 'patch-editor-view active';
+
                     const diffBlock = renderDiffTable(change.filePath || '', change.diff || change.preview || '');
-                    card.appendChild(diffBlock);
+                    diffBlock.classList.add('patch-diff-view');
+
+                    viewContainer.appendChild(editorView);
+                    viewContainer.appendChild(diffBlock);
+                    card.appendChild(viewContainer);
+
+                    // View switcher logic
+                    const switchView = (viewType) => {
+                        currentViewMode = viewType;
+
+                        if (viewType === 'editor') {
+                            editorViewBtn.classList.add('active');
+                            diffViewBtn.classList.remove('active');
+                            editorView.classList.add('active');
+                            diffBlock.classList.remove('active');
+
+                            // Switch modal to editor layout
+                            modal.classList.add('patch-editor-mode');
+                            modal.classList.remove('patch-diff-mode');
+                        } else {
+                            diffViewBtn.classList.add('active');
+                            editorViewBtn.classList.remove('active');
+                            diffBlock.classList.add('active');
+                            editorView.classList.remove('active');
+
+                            // Switch modal to diff layout
+                            modal.classList.remove('patch-editor-mode');
+                            modal.classList.add('patch-diff-mode');
+                        }
+                    };
+
+                    editorViewBtn.addEventListener('click', () => switchView('editor'));
+                    diffViewBtn.addEventListener('click', () => switchView('diff'));
+
+                    // Initialize with editor mode
+                    switchView('editor');
 
                     const fileError = document.createElement('div');
                     fileError.className = 'patch-file-error hidden';
@@ -724,6 +787,16 @@
                 });
             }
             detail.appendChild(filesSection);
+
+            // Editor View action buttons (bottom of document)
+            const editorActions = document.createElement('div');
+            editorActions.className = 'patch-editor-actions patch-editor-only';
+            editorActions.innerHTML = `
+                <button class="modal-btn modal-btn-primary" id="btn-editor-apply">Apply Changes</button>
+                <button class="modal-btn modal-btn-secondary" id="btn-editor-reject">Reject Patch</button>
+                <button class="modal-btn modal-btn-ghost" id="btn-editor-delete">Delete</button>
+            `;
+            detail.appendChild(editorActions);
 
             // Sync nav pills to scroll position
             if (fileNavPills.length && fileCards.length) {
@@ -772,11 +845,20 @@
             const deleteBtn = header.querySelector('#btn-delete-patch');
             const exportBtn = header.querySelector('#btn-export-audit');
 
+            // Editor view buttons
+            const editorApplyBtn = editorActions.querySelector('#btn-editor-apply');
+            const editorRejectBtn = editorActions.querySelector('#btn-editor-reject');
+            const editorDeleteBtn = editorActions.querySelector('#btn-editor-delete');
+
             const disableActions = (disabled) => {
                 applyBtn.disabled = disabled || patch.status !== 'pending';
                 rejectBtn.disabled = disabled || patch.status !== 'pending';
                 deleteBtn.disabled = disabled;
                 exportBtn.disabled = disabled;
+
+                editorApplyBtn.disabled = disabled || patch.status !== 'pending';
+                editorRejectBtn.disabled = disabled || patch.status !== 'pending';
+                editorDeleteBtn.disabled = disabled;
             };
 
             disableActions(false);
@@ -873,10 +955,112 @@
                 }
             });
 
+            // Wire up editor view buttons to same handlers
+            editorApplyBtn.addEventListener('click', () => applyBtn.click());
+            editorRejectBtn.addEventListener('click', () => rejectBtn.click());
+            editorDeleteBtn.addEventListener('click', () => deleteBtn.click());
+
             if (errorMessage) {
                 actionError.textContent = errorMessage;
                 actionError.classList.remove('hidden');
             }
+        }
+
+        function renderEditorView(filePath, diffText) {
+            const container = document.createElement('div');
+            container.className = 'patch-editor-content';
+
+            if (!diffText) {
+                container.textContent = 'No changes to show';
+                return container;
+            }
+
+            // Add file heading for context
+            if (filePath) {
+                const fileHeading = document.createElement('div');
+                fileHeading.className = 'editor-file-heading';
+                fileHeading.textContent = filePath;
+                container.appendChild(fileHeading);
+            }
+
+            const rows = parseUnifiedDiff(diffText);
+            if (!rows.length) {
+                container.textContent = 'No changes to show';
+                return container;
+            }
+
+            // Group consecutive changes for better readability
+            const groups = [];
+            let currentGroup = [];
+
+            rows.forEach((row, idx) => {
+                if (row.type === 'hunk') {
+                    // Start new group on hunk marker
+                    if (currentGroup.length) {
+                        groups.push(currentGroup);
+                        currentGroup = [];
+                    }
+                } else {
+                    currentGroup.push(row);
+                }
+            });
+
+            if (currentGroup.length) {
+                groups.push(currentGroup);
+            }
+
+            // Render each group as a prose block
+            groups.forEach((group, groupIdx) => {
+                if (!group.length) return;
+
+                const block = document.createElement('div');
+                block.className = 'editor-block';
+
+                group.forEach(row => {
+                    if (row.type === 'context') {
+                        // Regular context text
+                        const contextSpan = document.createElement('span');
+                        contextSpan.className = 'editor-context';
+                        contextSpan.textContent = row.text;
+                        block.appendChild(contextSpan);
+
+                        // Add space or newline if text doesn't end with whitespace
+                        if (row.text && !row.text.match(/\s$/)) {
+                            block.appendChild(document.createTextNode('\n'));
+                        } else {
+                            block.appendChild(document.createTextNode('\n'));
+                        }
+                    } else if (row.type === 'remove') {
+                        // Deleted text with strikethrough
+                        const del = document.createElement('del');
+                        del.className = 'editor-deletion';
+                        del.textContent = row.text;
+                        block.appendChild(del);
+
+                        if (row.text && !row.text.match(/\s$/)) {
+                            block.appendChild(document.createTextNode('\n'));
+                        } else {
+                            block.appendChild(document.createTextNode('\n'));
+                        }
+                    } else if (row.type === 'add') {
+                        // Added text with underline/highlight
+                        const ins = document.createElement('ins');
+                        ins.className = 'editor-addition';
+                        ins.textContent = row.text;
+                        block.appendChild(ins);
+
+                        if (row.text && !row.text.match(/\s$/)) {
+                            block.appendChild(document.createTextNode('\n'));
+                        } else {
+                            block.appendChild(document.createTextNode('\n'));
+                        }
+                    }
+                });
+
+                container.appendChild(block);
+            });
+
+            return container;
         }
 
         function renderDiffTable(filePath, diffText) {
