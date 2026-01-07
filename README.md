@@ -2,6 +2,8 @@
 
 Control Room is a desktop writing IDE with an agent workbench. It combines a fast, Monaco-based editor with a strategic layer for planning, issues, and collaboration. The app is built as a Java + HTML desktop application.
 
+This is a pre-release developer build; UI elements and flows may change.
+
 ## What It Is
 
 Control Room separates writing from orchestration:
