@@ -103,7 +103,8 @@
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
         workspaceName: document.getElementById('workspace-name'),
         workspaceDesc: document.getElementById('workspace-desc'),
-        btnPatchReview: document.getElementById('btn-patch-review')
+        btnPatchReview: document.getElementById('btn-patch-review'),
+        btnDevTools: document.getElementById('btn-dev-tools')
     };
 
     // Initialize Split.js
@@ -243,6 +244,7 @@
 
     // escapeHtml is now in modals.js (window.modals.escapeHtml)
     const escapeHtml = window.modals.escapeHtml;
+    const canonicalizeRole = window.canonicalizeRole;
 
     // API objects are loaded from api.js (window.issueApi, window.agentApi, etc.)
 
@@ -3356,9 +3358,9 @@
 
     function getPlannerAgent() {
         const agents = state.agents.list || [];
-        const primaryPlanner = agents.find(agent => agent.role === 'planner' && agent.isPrimaryForRole);
+        const primaryPlanner = agents.find(agent => canonicalizeRole(agent.role) === 'planner' && agent.isPrimaryForRole);
         if (primaryPlanner) return primaryPlanner;
-        const planner = agents.find(agent => agent.role === 'planner');
+        const planner = agents.find(agent => canonicalizeRole(agent.role) === 'planner');
         if (planner) return planner;
         return agents[0] || null;
     }
@@ -5133,7 +5135,8 @@
             }
 
             const role = formState.role.trim();
-            if (!role) {
+            const roleKey = canonicalizeRole(role);
+            if (!roleKey) {
                 setNextEnabled(false);
                 return;
             }
@@ -5141,7 +5144,7 @@
             const name = formState.name.trim() || generateAgentName(role);
             const payload = {
                 name,
-                role,
+                role: roleKey,
                 avatar: formState.avatar || '',
                 skills: formState.skills,
                 goals: formState.goals,
@@ -5156,10 +5159,10 @@
                 personality: {
                     tone: 'neutral',
                     verbosity: 'normal',
-                    voiceTags: [role],
+                    voiceTags: [roleKey],
                     baseInstructions: formState.personalityInstructions ||
                         formState.instructions ||
-                        `Focus on your role: ${role}.`
+                        `Focus on your role: ${roleKey}.`
                 }
             };
 
@@ -5609,20 +5612,37 @@
         const roleSuggestions = document.createElement('div');
         roleSuggestions.className = 'agent-role-suggestions';
 
-        const existingRoles = Array.from(new Set(
-            (state.agents.list || []).map(a => a.role).filter(Boolean)
-        ));
+        const existingRoles = new Map();
+        (state.agents.list || []).forEach(agentItem => {
+            const roleKey = canonicalizeRole(agentItem.role);
+            if (roleKey && !existingRoles.has(roleKey)) {
+                existingRoles.set(roleKey, agentItem.role);
+            }
+        });
         const suggestedRoles = [
             'planner', 'writer', 'editor', 'critic', 'continuity',
             'beta reader', 'sensitivity reader', 'lore keeper', 'devil\'s advocate'
         ];
-        const allRoles = Array.from(new Set([...existingRoles, ...suggestedRoles]));
+        const suggestedRoleMap = new Map();
+        suggestedRoles.forEach(role => {
+            const roleKey = canonicalizeRole(role);
+            if (roleKey && !existingRoles.has(roleKey) && !suggestedRoleMap.has(roleKey)) {
+                suggestedRoleMap.set(roleKey, role);
+            }
+        });
+        const allRoles = [...existingRoles.values(), ...suggestedRoleMap.values()];
+        const roleKeys = new Set(allRoles.map(role => canonicalizeRole(role)).filter(Boolean));
 
         const updateRoleSuggestions = (filter = '') => {
             roleSuggestions.innerHTML = '';
-            const filtered = allRoles.filter(r =>
-                r.toLowerCase().includes(filter.toLowerCase())
-            );
+            const filterKey = canonicalizeRole(filter || '');
+            const filtered = allRoles.filter(r => {
+                if (!filterKey) {
+                    return true;
+                }
+                const roleKey = canonicalizeRole(r);
+                return roleKey ? roleKey.includes(filterKey) : false;
+            });
             filtered.forEach(role => {
                 const item = document.createElement('div');
                 item.className = 'agent-role-suggestion';
@@ -5634,10 +5654,11 @@
                 roleSuggestions.appendChild(item);
             });
             // Add "create new" option if typing something new
-            if (filter && !allRoles.includes(filter.toLowerCase())) {
+            const trimmedFilter = filter.trim();
+            if (trimmedFilter && !roleKeys.has(filterKey)) {
                 const createNew = document.createElement('div');
                 createNew.className = 'agent-role-suggestion create-new';
-                createNew.textContent = `Create "${filter}"`;
+                createNew.textContent = `Create "${trimmedFilter}"`;
                 createNew.addEventListener('click', () => {
                     roleSuggestions.classList.remove('visible');
                 });
@@ -5810,9 +5831,11 @@
 
         // === SAVE HANDLER ===
         confirmBtn.addEventListener('click', async () => {
+            const roleValue = roleInput.value.trim() || agentRole;
+            const roleKey = canonicalizeRole(roleValue);
             const updatedAgent = {
                 name: nameInput.value.trim() || agentName,
-                role: roleInput.value.trim() || agentRole,
+                role: roleKey || roleValue,
                 avatar: currentAvatarData,
                 personality: {
                     ...personality,
@@ -5859,11 +5882,12 @@
 
     async function showRoleSettingsModal(agent) {
         const role = agent?.role || 'role';
+        const roleKey = canonicalizeRole(role);
 
         // Fetch existing settings or use defaults
         let existingSettings = null;
         try {
-            existingSettings = await roleSettingsApi.get(role);
+            existingSettings = await roleSettingsApi.get(roleKey);
         } catch (err) {
             log(`Failed to fetch role settings: ${err.message}`, 'warning');
         }
@@ -5881,7 +5905,7 @@
                 error: existingSettings?.notifyUserOn?.includes('error') ?? defaultTemplate.notifyOn.error
             },
             maxActionsPerSession: existingSettings?.maxActionsPerSession ?? defaultTemplate.maxActionsPerSession,
-            roleCharter: existingSettings?.roleCharter || DEFAULT_ROLE_CHARTERS[role] || DEFAULT_ROLE_CHARTERS.default,
+            roleCharter: existingSettings?.roleCharter || DEFAULT_ROLE_CHARTERS[roleKey] || DEFAULT_ROLE_CHARTERS.default,
             collaborationGuidance: existingSettings?.collaborationGuidance || defaultTemplate.collaborationGuidance,
             toolAndSafetyNotes: existingSettings?.toolAndSafetyNotes || defaultTemplate.toolAndSafetyNotes
         };
@@ -6195,7 +6219,7 @@
                 .map(([key]) => key);
 
             const payload = {
-                role,
+                role: roleKey,
                 template: localState.template,
                 freedomLevel: localState.freedomLevel,
                 notifyUserOn,
@@ -6207,7 +6231,7 @@
             };
 
             try {
-                await roleSettingsApi.save(role, payload);
+                await roleSettingsApi.save(roleKey, payload);
                 notificationStore.success(`Role settings saved for "${role}"`, 'workbench');
                 close();
             } catch (err) {
@@ -7715,7 +7739,14 @@
             { closeOnCancel: true }
         );
 
-        const roles = Array.from(new Set((state.agents.list || []).map(item => item.role).filter(Boolean)));
+        const roleMap = new Map();
+        (state.agents.list || []).forEach(item => {
+            const roleKey = canonicalizeRole(item.role);
+            if (roleKey && !roleMap.has(roleKey)) {
+                roleMap.set(roleKey, item.role);
+            }
+        });
+        const roles = Array.from(roleMap.values());
 
         const row = document.createElement('div');
         row.className = 'modal-row';
@@ -7761,8 +7792,11 @@
             confirmBtn.disabled = !chosen;
         };
 
-        if (agent?.role && roles.includes(agent.role)) {
-            select.value = agent.role;
+        if (agent?.role) {
+            const roleKey = canonicalizeRole(agent.role);
+            if (roleKey && roleMap.has(roleKey)) {
+                select.value = roleMap.get(roleKey);
+            }
         }
 
         updateApplyState();
@@ -8399,7 +8433,7 @@
             return stored;
         }
 
-        const primaryWriter = agents.find(agent => agent.isPrimaryForRole && agent.role === 'writer');
+        const primaryWriter = agents.find(agent => agent.isPrimaryForRole && canonicalizeRole(agent.role) === 'writer');
         if (primaryWriter) return primaryWriter.id;
 
         const primary = agents.find(agent => agent.isPrimaryForRole);
@@ -8759,7 +8793,10 @@
             });
 
             // Find team lead
-            const teamLead = (state.agents.list || []).find(a => a.role && a.role.toLowerCase().includes('lead'));
+            const teamLead = (state.agents.list || []).find(a => {
+                const roleKey = canonicalizeRole(a.role);
+                return roleKey && roleKey.includes('lead');
+            });
 
             // Assign to both agent and team lead
             const assignees = [agent.id];
@@ -8998,6 +9035,9 @@
         }
         if (elements.btnPatchReview) {
             elements.btnPatchReview.addEventListener('click', () => showPatchReviewModal());
+        }
+        if (elements.btnDevTools) {
+            elements.btnDevTools.addEventListener('click', () => showDevToolsModal());
         }
 
         if (elements.btnStartConference) {
@@ -9516,6 +9556,154 @@
         }
 
         loadDecayStatus();
+    }
+
+    function showDevToolsModal() {
+        const { modal, body, confirmBtn, cancelBtn } = createModalShell(
+            'Dev Tools',
+            'Close',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        modal.classList.add('dev-tools-modal');
+        if (cancelBtn) {
+            cancelBtn.remove();
+        }
+        if (confirmBtn) {
+            confirmBtn.classList.remove('modal-btn-primary');
+            confirmBtn.classList.add('modal-btn-secondary');
+        }
+
+        const intro = document.createElement('div');
+        intro.className = 'modal-text';
+        intro.textContent = 'Quick utilities and test hooks for development.';
+        body.appendChild(intro);
+
+        const status = document.createElement('div');
+        status.className = 'dev-tools-status';
+        status.textContent = 'Status: idle';
+        body.appendChild(status);
+
+        const setStatus = (text) => {
+            status.textContent = text;
+        };
+
+        const createRow = (title, description, buttonLabel, handler) => {
+            const row = document.createElement('div');
+            row.className = 'dev-tools-row';
+
+            const textWrap = document.createElement('div');
+            const titleEl = document.createElement('div');
+            titleEl.className = 'dev-tools-item-title';
+            titleEl.textContent = title;
+            const descEl = document.createElement('div');
+            descEl.className = 'dev-tools-item-desc';
+            descEl.textContent = description;
+            textWrap.appendChild(titleEl);
+            textWrap.appendChild(descEl);
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'modal-btn modal-btn-secondary';
+            btn.textContent = buttonLabel;
+            btn.addEventListener('click', () => handler(btn));
+
+            row.appendChild(textWrap);
+            row.appendChild(btn);
+            return row;
+        };
+
+        const backendSection = document.createElement('div');
+        backendSection.className = 'dev-tools-section';
+        const backendTitle = document.createElement('div');
+        backendTitle.className = 'dev-tools-section-title';
+        backendTitle.textContent = 'Backend';
+        backendSection.appendChild(backendTitle);
+
+        backendSection.appendChild(createRow(
+            'Backend smoke test',
+            'Fetch workspace info to confirm the backend is responding.',
+            'Run',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: running backend smoke test...');
+                try {
+                    await workspaceApi.info();
+                    const time = new Date().toLocaleTimeString();
+                    setStatus(`Status: backend smoke test OK (${time})`);
+                    notificationStore.success('Backend smoke test succeeded.', 'editor');
+                } catch (err) {
+                    setStatus(`Status: backend smoke test failed (${err.message})`);
+                    notificationStore.error(`Backend smoke test failed: ${err.message}`, 'editor');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        ));
+
+        backendSection.appendChild(createRow(
+            'Create test patch',
+            'Creates a simulated patch for end-to-end patch review testing.',
+            'Run',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: creating test patch...');
+                try {
+                    const created = await patchApi.simulate('README.md');
+                    setStatus(`Status: created test patch ${created.id}`);
+                    notificationStore.success(`Created test patch: ${created.id}`, 'editor');
+                } catch (err) {
+                    setStatus(`Status: test patch failed (${err.message})`);
+                    notificationStore.error(`Test patch failed: ${err.message}`, 'editor');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        ));
+
+        const localSection = document.createElement('div');
+        localSection.className = 'dev-tools-section';
+        const localTitle = document.createElement('div');
+        localTitle.className = 'dev-tools-section-title';
+        localTitle.textContent = 'Workbench';
+        localSection.appendChild(localTitle);
+
+        localSection.appendChild(createRow(
+            'Reload agents',
+            'Fetch the agent list from disk and refresh the roster.',
+            'Reload',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: reloading agents...');
+                try {
+                    await loadAgents();
+                    setStatus('Status: agents reloaded');
+                    notificationStore.success('Agents reloaded.', 'workbench');
+                } catch (err) {
+                    setStatus(`Status: reload failed (${err.message})`);
+                    notificationStore.error(`Failed to reload agents: ${err.message}`, 'workbench');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        ));
+
+        localSection.appendChild(createRow(
+            'Clear console',
+            'Remove all console log entries.',
+            'Clear',
+            (btn) => {
+                btn.disabled = true;
+                clearLogs();
+                renderConsole();
+                setStatus('Status: console cleared');
+                btn.disabled = false;
+            }
+        ));
+
+        body.appendChild(backendSection);
+        body.appendChild(localSection);
     }
 
     // Initialize

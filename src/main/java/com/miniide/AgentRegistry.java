@@ -15,7 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class AgentRegistry {
@@ -74,8 +76,9 @@ public class AgentRegistry {
                 if (updates.getName() != null && !updates.getName().isEmpty()) {
                     existing.setName(updates.getName());
                 }
-                if (updates.getRole() != null && !updates.getRole().isEmpty()) {
-                    existing.setRole(updates.getRole());
+                String roleUpdate = RoleKey.canonicalize(updates.getRole());
+                if (roleUpdate != null && !roleUpdate.isEmpty()) {
+                    existing.setRole(roleUpdate);
                 }
                 // Avatar can be empty string (to clear it) or have value
                 if (updates.getAvatar() != null) {
@@ -185,9 +188,11 @@ public class AgentRegistry {
             agentsFile.setAgents(new ArrayList<>());
         }
 
-        if (agent.getRole() == null || agent.getRole().trim().isEmpty()) {
-            agent.setRole("writer");
+        String roleKey = RoleKey.canonicalize(agent.getRole());
+        if (roleKey == null || roleKey.isEmpty()) {
+            roleKey = "writer";
         }
+        agent.setRole(roleKey);
 
         String id = agent.getId();
         if (id == null || id.trim().isEmpty()) {
@@ -232,6 +237,7 @@ public class AgentRegistry {
             newId = generateUniqueId(agent.getName());
         }
 
+        agent.setRole(RoleKey.canonicalize(agent.getRole()));
         agent.setId(newId);
         agent.setCreatedAt(System.currentTimeMillis());
         agent.setUpdatedAt(System.currentTimeMillis());
@@ -254,19 +260,22 @@ public class AgentRegistry {
     }
 
     public RoleFreedomSettings getRoleSettings(String role) {
-        if (agentsFile == null || agentsFile.getRoleSettings() == null || role == null) {
+        String roleKey = RoleKey.canonicalize(role);
+        if (agentsFile == null || agentsFile.getRoleSettings() == null || roleKey == null) {
             return null;
         }
         return agentsFile.getRoleSettings().stream()
-            .filter(rs -> role.equalsIgnoreCase(rs.getRole()))
+            .filter(rs -> roleKey.equals(RoleKey.canonicalize(rs.getRole())))
             .findFirst()
             .orElse(null);
     }
 
     public RoleFreedomSettings saveRoleSettings(RoleFreedomSettings settings) {
-        if (settings == null || settings.getRole() == null || settings.getRole().trim().isEmpty()) {
+        String roleKey = RoleKey.canonicalize(settings != null ? settings.getRole() : null);
+        if (settings == null || roleKey == null || roleKey.isEmpty()) {
             throw new IllegalArgumentException("Role settings and role name are required");
         }
+        settings.setRole(roleKey);
 
         if (agentsFile == null) {
             agentsFile = new AgentsFile();
@@ -284,7 +293,7 @@ public class AgentRegistry {
         // Find existing or add new (upsert)
         boolean found = false;
         for (int i = 0; i < roleSettings.size(); i++) {
-            if (settings.getRole().equalsIgnoreCase(roleSettings.get(i).getRole())) {
+            if (settings.getRole().equals(RoleKey.canonicalize(roleSettings.get(i).getRole()))) {
                 roleSettings.set(i, settings);
                 found = true;
                 break;
@@ -303,15 +312,16 @@ public class AgentRegistry {
     }
 
     public boolean deleteRoleSettings(String role) {
-        if (agentsFile == null || agentsFile.getRoleSettings() == null || role == null) {
+        String roleKey = RoleKey.canonicalize(role);
+        if (agentsFile == null || agentsFile.getRoleSettings() == null || roleKey == null) {
             return false;
         }
         boolean removed = agentsFile.getRoleSettings().removeIf(
-            rs -> role.equalsIgnoreCase(rs.getRole())
+            rs -> roleKey.equals(RoleKey.canonicalize(rs.getRole()))
         );
         if (removed) {
             saveToDisk();
-            logger.info("Deleted role settings for: " + role);
+            logger.info("Deleted role settings for: " + roleKey);
         }
         return removed;
     }
@@ -365,10 +375,71 @@ public class AgentRegistry {
         try {
             agentsFile = objectMapper.readValue(registryPath.toFile(), AgentsFile.class);
             logger.info("Loaded agent registry: " + registryPath);
+            if (normalizeAgentsFile()) {
+                saveToDisk();
+            }
         } catch (IOException e) {
             logger.error("Failed to load agent registry: " + e.getMessage(), e);
             agentsFile = null;
         }
+    }
+
+    private boolean normalizeAgentsFile() {
+        if (agentsFile == null) {
+            return false;
+        }
+        boolean changed = false;
+        List<Agent> agents = agentsFile.getAgents();
+        if (agents != null) {
+            for (Agent agent : agents) {
+                if (agent == null) {
+                    continue;
+                }
+                String roleKey = RoleKey.canonicalize(agent.getRole());
+                if (roleKey == null) {
+                    if (agent.getRole() != null) {
+                        agent.setRole(null);
+                        changed = true;
+                    }
+                } else if (!roleKey.equals(agent.getRole())) {
+                    agent.setRole(roleKey);
+                    changed = true;
+                }
+            }
+        }
+
+        List<RoleFreedomSettings> roleSettings = agentsFile.getRoleSettings();
+        if (roleSettings != null) {
+            Map<String, RoleFreedomSettings> merged = new LinkedHashMap<>();
+            for (RoleFreedomSettings settings : roleSettings) {
+                if (settings == null) {
+                    continue;
+                }
+                String roleKey = RoleKey.canonicalize(settings.getRole());
+                if (roleKey == null) {
+                    if (settings.getRole() != null) {
+                        settings.setRole(null);
+                        changed = true;
+                    }
+                } else if (!roleKey.equals(settings.getRole())) {
+                    settings.setRole(roleKey);
+                    changed = true;
+                }
+                if (merged.containsKey(roleKey)) {
+                    merged.remove(roleKey);
+                    changed = true;
+                }
+                merged.put(roleKey, settings);
+            }
+            if (roleSettings.size() != merged.size()) {
+                changed = true;
+            }
+            if (changed) {
+                agentsFile.setRoleSettings(new ArrayList<>(merged.values()));
+            }
+        }
+
+        return changed;
     }
 
     private AgentsFile createDefaultAgentsFile() {

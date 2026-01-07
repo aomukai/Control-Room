@@ -1728,6 +1728,70 @@ html, body {
     overflow: hidden;
 }
 
+.dev-tools-modal {
+    min-width: 320px;
+    width: min(720px, 90vw);
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.dev-tools-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.dev-tools-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-dark);
+}
+
+.dev-tools-section-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+}
+
+.dev-tools-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.dev-tools-row .modal-text {
+    margin: 0;
+}
+
+.dev-tools-item-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.dev-tools-item-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.dev-tools-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-medium);
+    border-radius: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+}
+
 .patch-agent-header-container {
     position: sticky;
     top: 0;

@@ -3,6 +3,8 @@
 (function() {
     'use strict';
 
+    const canonicalizeRole = window.canonicalizeRole;
+
     // Base API helper function
     async function api(endpoint, options = {}) {
         try {
@@ -226,10 +228,12 @@
             return api('/api/agents/role-settings');
         },
         async get(role) {
-            return api(`/api/agents/role-settings/${encodeURIComponent(role)}`);
+            const roleKey = canonicalizeRole ? canonicalizeRole(role) : role;
+            return api(`/api/agents/role-settings/${encodeURIComponent(roleKey || '')}`);
         },
         async save(role, settings) {
-            return api(`/api/agents/role-settings/${encodeURIComponent(role)}`, {
+            const roleKey = canonicalizeRole ? canonicalizeRole(role) : role;
+            return api(`/api/agents/role-settings/${encodeURIComponent(roleKey || '')}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)

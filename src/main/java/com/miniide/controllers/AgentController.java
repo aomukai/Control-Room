@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
 import com.miniide.ProjectContext;
+import com.miniide.RoleKey;
 import com.miniide.models.Agent;
 import com.miniide.models.AgentEndpointConfig;
 import com.miniide.models.RoleFreedomSettings;
@@ -210,11 +211,11 @@ public class AgentController implements Controller {
 
     private void getRoleSettingsByRole(Context ctx) {
         try {
-            String role = ctx.pathParam("role");
-            RoleFreedomSettings settings = projectContext.agents().getRoleSettings(role);
+            String roleKey = RoleKey.canonicalize(ctx.pathParam("role"));
+            RoleFreedomSettings settings = projectContext.agents().getRoleSettings(roleKey);
             if (settings == null) {
                 RoleFreedomSettings defaults = new RoleFreedomSettings();
-                defaults.setRole(role);
+                defaults.setRole(roleKey);
                 defaults.setTemplate("balanced");
                 defaults.setFreedomLevel("semi-autonomous");
                 defaults.setNotifyUserOn(List.of("question", "conflict", "completion", "error"));
@@ -234,9 +235,9 @@ public class AgentController implements Controller {
 
     private void saveRoleSettings(Context ctx) {
         try {
-            String role = ctx.pathParam("role");
+            String roleKey = RoleKey.canonicalize(ctx.pathParam("role"));
             RoleFreedomSettings settings = ctx.bodyAsClass(RoleFreedomSettings.class);
-            settings.setRole(role);
+            settings.setRole(roleKey);
             RoleFreedomSettings saved = projectContext.agents().saveRoleSettings(settings);
             ctx.json(saved);
         } catch (IllegalArgumentException e) {

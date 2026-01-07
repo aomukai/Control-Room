@@ -121,9 +121,21 @@
         default: 'Assist with the creative process according to your specialized role. Collaborate with other agents and escalate to the user when needed.'
     };
 
+    function canonicalizeRole(role) {
+        if (role === null || role === undefined) {
+            return null;
+        }
+        const trimmed = String(role).trim();
+        if (!trimmed) {
+            return '';
+        }
+        return trimmed.toLowerCase().replace(/\s+/g, ' ');
+    }
+
     // Expose on window for app.js to use
     window.state = state;
     window.ROLE_TEMPLATES = ROLE_TEMPLATES;
     window.DEFAULT_ROLE_CHARTERS = DEFAULT_ROLE_CHARTERS;
+    window.canonicalizeRole = canonicalizeRole;
 
 })();
