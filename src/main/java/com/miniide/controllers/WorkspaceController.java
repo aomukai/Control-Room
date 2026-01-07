@@ -22,11 +22,13 @@ public class WorkspaceController implements Controller {
     private final ProjectContext projectContext;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
+    private final boolean devMode;
 
-    public WorkspaceController(ProjectContext projectContext, ObjectMapper objectMapper) {
+    public WorkspaceController(ProjectContext projectContext, ObjectMapper objectMapper, boolean devMode) {
         this.projectContext = projectContext;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
+        this.devMode = devMode;
     }
 
     @Override
@@ -153,7 +155,8 @@ public class WorkspaceController implements Controller {
                 "rootPath", root.toString(),
                 "currentName", currentName,
                 "available", names,
-                "metadata", projectContext.workspace().loadMetadata()
+                "metadata", projectContext.workspace().loadMetadata(),
+                "devMode", devMode
             ));
         } catch (Exception e) {
             logger.error("Failed to get workspace info: " + e.getMessage(), e);

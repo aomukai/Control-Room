@@ -267,6 +267,7 @@
             state.workspace.path = info.currentPath || '';
             state.workspace.root = info.rootPath || '';
             state.workspace.available = Array.isArray(info.available) ? info.available : [];
+            state.workspace.devMode = Boolean(info.devMode);
             const meta = info.metadata || {};
             state.workspace.displayName = meta.displayName || state.workspace.name || 'Project';
             state.workspace.description = meta.description || '';
@@ -304,16 +305,7 @@
         const refreshBtn = document.createElement('button');
         refreshBtn.className = 'modal-btn modal-btn-secondary';
         refreshBtn.textContent = 'Refresh';
-        const testPatchBtn = document.createElement('button');
-        testPatchBtn.className = 'modal-btn modal-btn-secondary';
-        testPatchBtn.textContent = 'Create Test Patch';
-        testPatchBtn.title = 'Create a simulated patch with agent provenance for testing';
-        const cleanupBtn = document.createElement('button');
-        cleanupBtn.className = 'modal-btn modal-btn-ghost';
-        cleanupBtn.textContent = 'Clean applied/rejected';
         headerActions.appendChild(refreshBtn);
-        headerActions.appendChild(testPatchBtn);
-        headerActions.appendChild(cleanupBtn);
         headerRow.appendChild(headerActions);
         body.appendChild(headerRow);
 
@@ -340,30 +332,6 @@
         body.appendChild(layout);
 
         refreshBtn.addEventListener('click', () => loadPatches(currentPatchId));
-        testPatchBtn.addEventListener('click', async () => {
-            testPatchBtn.disabled = true;
-            try {
-                const created = await patchApi.simulate('README.md');
-                notificationStore.success(`Created test patch: ${created.id}`, 'editor');
-                await loadPatches(created.id);
-            } catch (err) {
-                hint.textContent = `Failed to create test patch: ${err.message}`;
-            } finally {
-                testPatchBtn.disabled = false;
-            }
-        });
-        cleanupBtn.addEventListener('click', async () => {
-            cleanupBtn.disabled = true;
-            try {
-                await patchApi.cleanup();
-                notificationStore.success('Removed applied/rejected patches.', 'editor');
-                await loadPatches();
-            } catch (err) {
-                hint.textContent = `Cleanup failed: ${err.message}`;
-            } finally {
-                cleanupBtn.disabled = false;
-            }
-        });
 
         async function loadPatches(focusPatchId) {
             try {
@@ -9642,26 +9610,6 @@
             }
         ));
 
-        backendSection.appendChild(createRow(
-            'Create test patch',
-            'Creates a simulated patch for end-to-end patch review testing.',
-            'Run',
-            async (btn) => {
-                btn.disabled = true;
-                setStatus('Status: creating test patch...');
-                try {
-                    const created = await patchApi.simulate('README.md');
-                    setStatus(`Status: created test patch ${created.id}`);
-                    notificationStore.success(`Created test patch: ${created.id}`, 'editor');
-                } catch (err) {
-                    setStatus(`Status: test patch failed (${err.message})`);
-                    notificationStore.error(`Test patch failed: ${err.message}`, 'editor');
-                } finally {
-                    btn.disabled = false;
-                }
-            }
-        ));
-
         const localSection = document.createElement('div');
         localSection.className = 'dev-tools-section';
         const localTitle = document.createElement('div');
@@ -9703,6 +9651,57 @@
         ));
 
         body.appendChild(backendSection);
+        const isDevMode = state.workspace && state.workspace.devMode;
+        if (isDevMode) {
+            const patchSection = document.createElement('div');
+            patchSection.className = 'dev-tools-section';
+            const patchTitle = document.createElement('div');
+            patchTitle.className = 'dev-tools-section-title';
+            patchTitle.textContent = 'PATCH REVIEW';
+            patchSection.appendChild(patchTitle);
+
+            patchSection.appendChild(createRow(
+                'Create test patch',
+                'Creates a simulated patch for end-to-end patch review testing.',
+                'Run',
+                async (btn) => {
+                    btn.disabled = true;
+                    setStatus('Status: creating test patch...');
+                    try {
+                        const created = await patchApi.simulate('README.md');
+                        setStatus(`Status: created test patch ${created.id}`);
+                        notificationStore.success(`Created test patch: ${created.id}`, 'editor');
+                    } catch (err) {
+                        setStatus(`Status: test patch failed (${err.message})`);
+                        notificationStore.error(`Test patch failed: ${err.message}`, 'editor');
+                    } finally {
+                        btn.disabled = false;
+                    }
+                }
+            ));
+
+            patchSection.appendChild(createRow(
+                'Clean applied/rejected',
+                'Remove patches that have already been applied or rejected.',
+                'Run',
+                async (btn) => {
+                    btn.disabled = true;
+                    setStatus('Status: cleaning applied/rejected patches...');
+                    try {
+                        await patchApi.cleanup();
+                        setStatus('Status: cleaned applied/rejected patches');
+                        notificationStore.success('Removed applied/rejected patches.', 'editor');
+                    } catch (err) {
+                        setStatus(`Status: cleanup failed (${err.message})`);
+                        notificationStore.error(`Cleanup failed: ${err.message}`, 'editor');
+                    } finally {
+                        btn.disabled = false;
+                    }
+                }
+            ));
+
+            body.appendChild(patchSection);
+        }
         body.appendChild(localSection);
     }
 

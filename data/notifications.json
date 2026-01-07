@@ -50,8 +50,8 @@
     "projectName" : "default",
     "filePaths" : [ "README.md" ]
   },
-  "persistent" : true,
-  "read" : false
+  "persistent" : false,
+  "read" : true
 }, {
   "id" : "2f682b0f-9685-4787-be7c-429f49f26570",
   "level" : "info",

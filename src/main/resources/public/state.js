@@ -70,7 +70,8 @@
             displayName: '',
             description: '',
             icon: '',
-            accentColor: ''
+            accentColor: '',
+            devMode: false
         }
     };
 

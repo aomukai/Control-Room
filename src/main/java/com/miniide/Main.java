@@ -89,7 +89,7 @@ public class Main {
             MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(projectContext, objectMapper),
-                new WorkspaceController(projectContext, objectMapper),
+                new WorkspaceController(projectContext, objectMapper, config.isDevMode()),
                 new AgentController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
