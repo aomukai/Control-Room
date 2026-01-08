@@ -25,3 +25,6 @@ docs/
 
 # Local agent registry data
 workspace/**/.control-room/agents/*.json
+
+# Local runtime data
+data/*.json

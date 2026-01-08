@@ -4760,7 +4760,6 @@
         };
 
         const templates = [
-            leaderTemplate,
             {
                 id: 'creative',
                 label: 'Creative Voice',
@@ -4818,7 +4817,7 @@
         ];
 
         const hasAssistant = (state.agents.list || []).some(agent => isAssistantAgent(agent));
-        const availableTemplates = hasAssistant ? templates : [leaderTemplate];
+        const availableTemplates = hasAssistant ? templates : [leaderTemplate, ...templates];
 
         const providers = [
             'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
@@ -4855,6 +4854,12 @@
             formState.skills = [...leaderTemplate.skills];
             formState.goals = [...leaderTemplate.goals];
             formState.instructions = leaderTemplate.instructions;
+        } else if (formState.templateId === leaderTemplate.id) {
+            formState.templateId = availableTemplates[0].id;
+            formState.role = availableTemplates[0].role;
+            formState.skills = [...availableTemplates[0].skills];
+            formState.goals = [...availableTemplates[0].goals];
+            formState.instructions = availableTemplates[0].instructions;
         }
 
         let stepIndex = Number.isInteger(resumeStepIndex) ? resumeStepIndex : 0;
@@ -4971,6 +4976,12 @@
             roleRow.appendChild(roleInput);
             body.appendChild(roleRow);
 
+            const roleError = document.createElement('div');
+            roleError.className = 'modal-error-hint';
+            roleError.textContent = 'Role is required.';
+            roleError.style.display = 'none';
+            body.appendChild(roleError);
+
             const lockRole = !hasAssistant;
             if (lockRole) {
                 roleInput.value = leaderTemplate.role;
@@ -4985,7 +4996,9 @@
             const updateIdentityState = () => {
                 formState.name = nameInput.value;
                 formState.role = lockRole ? leaderTemplate.role : roleInput.value.trim();
-                setNextEnabled(Boolean(formState.role));
+                const hasRole = Boolean(formState.role);
+                roleError.style.display = hasRole ? 'none' : 'block';
+                setNextEnabled(hasRole);
             };
 
             nameInput.addEventListener('input', updateIdentityState);
@@ -4998,6 +5011,7 @@
             const info = document.createElement('div');
             info.className = 'modal-text';
             info.textContent = 'Configure the endpoint this agent will use.';
+            info.title = 'Provider and model determine how the agent responds.';
             body.appendChild(info);
 
             const summary = document.createElement('div');
@@ -5011,12 +5025,12 @@
             body.appendChild(summary);
 
             const hint = document.createElement('div');
-            hint.className = 'modal-hint';
             const wired = isEndpointWired({
                 provider: formState.provider,
                 model: formState.model,
                 keyRef: formState.keyRef
             });
+            hint.className = wired ? 'modal-hint' : 'modal-error-hint';
             hint.textContent = wired
                 ? 'Endpoint configured. You can adjust settings anytime.'
                 : 'Endpoint not wired yet. Configure provider, model, and API key if required.';
@@ -5028,8 +5042,12 @@
             configureBtn.type = 'button';
             configureBtn.className = 'modal-btn modal-btn-primary';
             configureBtn.textContent = 'Configure Endpoint';
+            configureBtn.title = 'Open provider/model settings for this agent.';
             actions.appendChild(configureBtn);
             body.appendChild(actions);
+
+            confirmBtn.textContent = wired ? 'Next' : 'Skip';
+            setNextEnabled(true);
 
             configureBtn.addEventListener('click', () => {
                 const resumeStep = stepIndex;
@@ -5068,7 +5086,7 @@
                 });
             });
 
-            setNextEnabled(wired);
+            setNextEnabled(true);
         };
 
         const renderPersonalityStep = () => {
@@ -5294,7 +5312,6 @@
                         null,
                         'agents'
                     );
-                    await createAgentIntroIssue(created, endpointSnapshot, 'initial wiring');
                 } else {
                     notificationStore.push(
                         'success',
@@ -5308,8 +5325,13 @@
                         'agents'
                     );
                 }
-                await loadAgents();
                 close();
+                showPostCreateProfilePrompt(created);
+                loadAgents().catch(err => log(`Failed to refresh agents: ${err.message}`, 'warning'));
+                if (wiredNow) {
+                    createAgentIntroIssue(created, endpointSnapshot, 'initial wiring')
+                        .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                }
             } catch (err) {
                 log(`Failed to create agent: ${err.message}`, 'error');
                 notificationStore.error(`Failed to create agent: ${err.message}`, 'workbench');
@@ -5319,6 +5341,31 @@
         });
 
         renderStep();
+    }
+
+    function showPostCreateProfilePrompt(agent) {
+        if (!agent) return;
+        const agentName = agent.name || 'Agent';
+        const { body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Agent Created',
+            'Open Profile',
+            'Skip',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        const text = document.createElement('div');
+        text.className = 'modal-text';
+        text.textContent = `Would you like to open ${agentName}'s profile now? You can skip and edit later.`;
+        body.appendChild(text);
+
+        confirmBtn.addEventListener('click', () => {
+            close();
+            showAgentProfileModal(agent);
+        });
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => close());
+        }
     }
 
     // Context Menu
