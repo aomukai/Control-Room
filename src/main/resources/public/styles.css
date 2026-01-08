@@ -5207,6 +5207,11 @@ input[type="password"].settings-control {
     transition: all 0.15s ease;
 }
 
+.agent-item.is-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .agent-item:hover {
     border-color: var(--accent-color);
     background: var(--bg-lighter);

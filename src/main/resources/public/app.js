@@ -3198,6 +3198,52 @@
         return agent.canBeTeamLead === true;
     }
 
+    function hasActiveAssistant() {
+        return (state.agents.list || []).some(agent => isAssistantAgent(agent));
+    }
+
+    function updateAgentLockState() {
+        state.agents.locked = !hasActiveAssistant();
+    }
+
+    function showChiefRequiredModal(actionLabel) {
+        const { body, confirmBtn, cancelBtn } = createModalShell(
+            'Chief of Staff Required',
+            'Create Chief of Staff',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        const text = document.createElement('div');
+        text.className = 'modal-text';
+        text.textContent = `Agents are disabled without a Chief of Staff. ${actionLabel || 'This action'} can’t run until one exists.`;
+        body.appendChild(text);
+
+        const hint = document.createElement('div');
+        hint.className = 'modal-hint';
+        hint.textContent = 'Create a Chief of Staff now, or cancel to keep agents locked.';
+        body.appendChild(hint);
+
+        confirmBtn.addEventListener('click', () => {
+            showAddAgentWizard();
+        });
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {});
+        }
+    }
+
+    function ensureChiefOfStaff(actionLabel, onProceed) {
+        if (hasActiveAssistant()) {
+            if (typeof onProceed === 'function') {
+                onProceed();
+            }
+            return true;
+        }
+        showChiefRequiredModal(actionLabel);
+        return false;
+    }
+
     function renderAgentSidebar() {
         const container = document.getElementById('agent-list');
         if (!container) return;
@@ -3252,6 +3298,10 @@
 
             if (isAssistantAgent(agent)) {
                 item.classList.add('team-lead');
+            }
+            if (state.agents.locked) {
+                item.classList.add('is-disabled');
+                item.title = 'Agents are locked until a Chief of Staff exists.';
             }
 
             const icon = document.createElement('span');
@@ -3312,6 +3362,9 @@
             }
 
             item.addEventListener('click', () => {
+                if (!ensureChiefOfStaff('Agent chat')) {
+                    return;
+                }
                 container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 log(`Selected agent: ${agent.name}`, 'info');
@@ -3320,6 +3373,9 @@
 
             item.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
+                if (!ensureChiefOfStaff('Agent actions')) {
+                    return;
+                }
                 showAgentContextMenu(e, agent);
             });
 
@@ -3415,6 +3471,7 @@
         const leader = getChiefOfStaffAgent();
         const leaderName = leader?.name || 'Chief of Staff';
         const leaderAvatar = leader?.avatar || '';
+        const agentsLocked = state.agents.locked;
 
         container.innerHTML = `
             <div class="workbench-dashboard">
@@ -3432,7 +3489,7 @@
                     </div>
                     <div class="workbench-briefing-actions">
                         <button class="workbench-link-btn" id="workbench-open-issues" type="button">Open Issues</button>
-                        <button class="workbench-link-btn" id="workbench-start-conference" type="button">Start Conference</button>
+                        <button class="workbench-link-btn" id="workbench-start-conference" type="button" ${agentsLocked ? 'disabled' : ''}>Start Conference</button>
                     </div>
                     <div class="workbench-briefing-signature">${escapeHtml(leaderName)}</div>
                 </div>
@@ -3497,8 +3554,11 @@
 
         const startConferenceBtn = document.getElementById('workbench-start-conference');
         if (startConferenceBtn) {
+            if (agentsLocked) {
+                startConferenceBtn.title = 'Agents are locked until a Chief of Staff exists.';
+            }
             startConferenceBtn.addEventListener('click', () => {
-                showConferenceInviteModal();
+                ensureChiefOfStaff('Start conference', () => showConferenceInviteModal());
             });
         }
 
@@ -4619,6 +4679,9 @@
 
     function handleAgentMenuAction(action, agent) {
         const agentName = agent && agent.name ? agent.name : 'Agent';
+        if (!ensureChiefOfStaff('Agent actions')) {
+            return;
+        }
         switch (action) {
             case 'invite-conference':
                 showConferenceInviteModal(agent);
@@ -8648,6 +8711,7 @@
             const agents = await agentApi.list();
             state.agents.list = Array.isArray(agents) ? agents : [];
             state.agents.statusById = {};
+            updateAgentLockState();
             renderAgentSidebar();
             renderAgentSelector();
             await loadAgentStatuses();
@@ -8655,6 +8719,7 @@
         } catch (err) {
             state.agents.list = [];
             state.agents.statusById = {};
+            updateAgentLockState();
             renderAgentSidebar();
             renderAgentSelector();
             log(`Failed to load agents: ${err.message}`, 'error');
@@ -8822,6 +8887,9 @@
 
     function showWorkbenchChatModal(agent) {
         if (!agent || !agent.id) return;
+        if (!ensureChiefOfStaff('Agent chat')) {
+            return;
+        }
 
         setSelectedAgentId(agent.id);
 
@@ -9213,7 +9281,7 @@
 
         if (elements.btnStartConference) {
             elements.btnStartConference.addEventListener('click', () => {
-                showConferenceInviteModal();
+                ensureChiefOfStaff('Start conference', () => showConferenceInviteModal());
             });
         }
 
@@ -10206,7 +10274,13 @@
 
             const startConfBtn = this.container.querySelector('.briefing-start-conference');
             if (startConfBtn) {
-                startConfBtn.addEventListener('click', () => showConferenceInviteModal());
+                if (state.agents.locked) {
+                    startConfBtn.disabled = true;
+                    startConfBtn.title = 'Agents are locked until a Chief of Staff exists.';
+                }
+                startConfBtn.addEventListener('click', () => {
+                    ensureChiefOfStaff('Start conference', () => showConferenceInviteModal());
+                });
             }
         }
     }
