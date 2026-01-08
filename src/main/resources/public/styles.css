@@ -6501,6 +6501,11 @@ input[type="password"].settings-control {
 }
 
 /* Widget Picker Modal */
+.widget-picker-modal {
+    max-width: 900px;
+    width: 85%;
+}
+
 .widget-picker {
     padding: 0;
     max-height: 70vh;
@@ -6509,21 +6514,21 @@ input[type="password"].settings-control {
 
 .widget-picker-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     padding: 20px;
     align-items: start;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1200px) {
     .widget-picker-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
     }
 }
 
-@media (min-width: 1024px) {
+@media (max-width: 768px) {
     .widget-picker-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
@@ -6539,6 +6544,8 @@ input[type="password"].settings-control {
     text-align: center;
     transition: all 0.2s ease;
     cursor: pointer;
+    min-height: 180px;
+    justify-content: space-between;
 }
 
 .widget-picker-card:hover {

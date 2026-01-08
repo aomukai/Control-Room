@@ -10487,6 +10487,11 @@
     function showWidgetPicker() {
         const modal = createModalShell('Add Widget');
 
+        // Make modal wider for grid layout
+        if (modal.container) {
+            modal.container.classList.add('widget-picker-modal');
+        }
+
         const availableWidgets = widgetRegistry.list();
 
         modal.body.innerHTML = `
