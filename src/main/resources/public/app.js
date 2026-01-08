@@ -2283,19 +2283,27 @@
     // ============================================
 
     function updateModeControls(mode) {
+        const isEditor = mode === 'editor';
+        const isWorkbench = mode === 'workbench';
+        const isSettings = mode === 'settings';
+
+        // Sidebar toggle mode button - always visible, label changes
         if (elements.btnToggleMode) {
-            const isWorkbench = mode === 'workbench';
-            const toggleLabel = mode === 'settings' ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
+            const toggleLabel = isSettings ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
             elements.btnToggleMode.classList.toggle('is-active', isWorkbench);
             elements.btnToggleMode.title = toggleLabel;
             elements.btnToggleMode.setAttribute('aria-label', toggleLabel);
+            const btnText = elements.btnToggleMode.querySelector('.btn-text');
+            if (btnText) {
+                btnText.textContent = toggleLabel;
+            }
         }
 
+        // Top bar toggle button - only show in workbench/settings
         if (elements.btnToggleModeTop) {
-            const isWorkbench = mode === 'workbench';
-            const toggleLabel = mode === 'settings' ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
+            const toggleLabel = isSettings ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
             elements.btnToggleModeTop.classList.toggle('active', isWorkbench);
-            elements.btnToggleModeTop.style.display = mode === 'editor' ? 'none' : 'flex';
+            elements.btnToggleModeTop.style.display = isEditor ? 'none' : 'flex';
             const label = elements.btnToggleModeTop.querySelector('.tab-label');
             if (label) {
                 label.textContent = toggleLabel;
@@ -2304,16 +2312,49 @@
             }
         }
 
+        // Editor-only sidebar buttons
+        const btnToggleExplorer = document.getElementById('btn-toggle-explorer');
+        const btnOpenWorkspace = document.getElementById('btn-open-workspace');
+        const btnSidebarSearch = document.getElementById('btn-sidebar-search');
+        const btnCommit = document.getElementById('btn-commit');
+        const btnOpenTerminal = document.getElementById('btn-open-terminal');
+
+        if (btnToggleExplorer) btnToggleExplorer.style.display = isEditor ? 'flex' : 'none';
+        if (btnOpenWorkspace) btnOpenWorkspace.style.display = isEditor ? 'flex' : 'none';
+        if (btnSidebarSearch) btnSidebarSearch.style.display = isEditor ? 'flex' : 'none';
+        if (btnCommit) btnCommit.style.display = isEditor ? 'flex' : 'none';
+        if (btnOpenTerminal) btnOpenTerminal.style.display = isEditor ? 'flex' : 'none';
+
+        // Workbench-only sidebar buttons
+        const btnSidebarIssues = document.getElementById('btn-sidebar-issues');
+        const btnSidebarWidgets = document.getElementById('btn-sidebar-widgets');
+        const btnSidebarPatchReview = document.getElementById('btn-sidebar-patch-review');
+
+        if (btnSidebarIssues) btnSidebarIssues.style.display = isWorkbench ? 'flex' : 'none';
+        if (btnSidebarWidgets) btnSidebarWidgets.style.display = isWorkbench ? 'flex' : 'none';
+        if (btnSidebarPatchReview) btnSidebarPatchReview.style.display = isWorkbench ? 'flex' : 'none';
+
+        // File tree - only show in editor mode
+        if (elements.fileTreeArea) {
+            elements.fileTreeArea.style.display = isEditor ? 'flex' : 'none';
+        }
+
+        // Top bar buttons - hide Issues, Widgets, Patch Review in workbench
         if (elements.btnOpenIssues) {
-            elements.btnOpenIssues.style.display = mode === 'workbench' ? 'flex' : 'none';
+            elements.btnOpenIssues.style.display = isEditor ? 'flex' : 'none';
         }
 
         if (elements.btnWidgets) {
-            elements.btnWidgets.style.display = mode === 'workbench' ? 'flex' : 'none';
+            elements.btnWidgets.style.display = isEditor ? 'flex' : 'none';
         }
 
+        if (elements.btnPatchReview) {
+            elements.btnPatchReview.style.display = isEditor ? 'flex' : 'none';
+        }
+
+        // Settings button
         if (elements.btnOpenSettings) {
-            elements.btnOpenSettings.classList.toggle('is-active', mode === 'settings');
+            elements.btnOpenSettings.classList.toggle('is-active', isSettings);
         }
     }
 
@@ -2329,9 +2370,7 @@
         state.viewMode.current = mode;
 
         updateModeControls(mode);
-        if (elements.leftSidebar) {
-            elements.leftSidebar.classList.toggle('workbench-hidden', mode === 'workbench');
-        }
+        // Sidebar now stays visible in all modes
 
         // Update view panels
         document.querySelectorAll('.view-panel').forEach(panel => {
@@ -9018,6 +9057,26 @@
         }
         if (elements.btnDevTools) {
             elements.btnDevTools.addEventListener('click', () => showDevToolsModal());
+        }
+
+        // Sidebar versions of workbench buttons
+        const btnSidebarIssues = document.getElementById('btn-sidebar-issues');
+        if (btnSidebarIssues) {
+            btnSidebarIssues.addEventListener('click', () => {
+                openIssueBoardPanel();
+            });
+        }
+
+        const btnSidebarWidgets = document.getElementById('btn-sidebar-widgets');
+        if (btnSidebarWidgets) {
+            btnSidebarWidgets.addEventListener('click', () => {
+                showWidgetPicker();
+            });
+        }
+
+        const btnSidebarPatchReview = document.getElementById('btn-sidebar-patch-review');
+        if (btnSidebarPatchReview) {
+            btnSidebarPatchReview.addEventListener('click', () => showPatchReviewModal());
         }
 
         if (elements.btnStartConference) {
