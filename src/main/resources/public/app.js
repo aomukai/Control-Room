@@ -9976,7 +9976,7 @@
                     .slice(0, 5);
 
                 if (recentResolved.length === 0) {
-                    digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let's get a win on the board.</div>';
+                    digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let\'s get a win on the board.</div>';
                     return;
                 }
 
