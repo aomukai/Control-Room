@@ -6502,13 +6502,29 @@ input[type="password"].settings-control {
 
 /* Widget Picker Modal */
 .widget-picker {
-    padding: 20px;
+    padding: 0;
+    max-height: 70vh;
+    overflow-y: auto;
 }
 
 .widget-picker-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 16px;
+    padding: 20px;
+    align-items: start;
+}
+
+@media (min-width: 768px) {
+    .widget-picker-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .widget-picker-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
 }
 
 .widget-picker-card {
