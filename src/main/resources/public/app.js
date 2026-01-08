@@ -10485,16 +10485,16 @@
     }
 
     function showWidgetPicker() {
-        const modal = createModalShell('Add Widget');
+        const modalShell = createModalShell('Add Widget');
 
         // Make modal wider for grid layout
-        if (modal.container) {
-            modal.container.classList.add('widget-picker-modal');
+        if (modalShell.modal) {
+            modalShell.modal.classList.add('widget-picker-modal');
         }
 
         const availableWidgets = widgetRegistry.list();
 
-        modal.body.innerHTML = `
+        modalShell.body.innerHTML = `
             <div class="widget-picker">
                 <div class="widget-picker-grid">
                     ${availableWidgets.map(manifest => `
@@ -10510,16 +10510,19 @@
         `;
 
         // Wire add buttons
-        modal.body.querySelectorAll('.widget-picker-add-btn').forEach(btn => {
+        modalShell.body.querySelectorAll('.widget-picker-add-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const card = e.target.closest('.widget-picker-card');
                 const widgetId = card.dataset.widgetId;
                 addWidgetToGrid(widgetId);
-                modal.close();
+                modalShell.close();
             });
         });
 
-        modal.open();
+        // Show modal
+        setTimeout(() => {
+            modalShell.overlay.classList.add('is-visible');
+        }, 10);
     }
 
     function addWidgetToGrid(widgetId) {
