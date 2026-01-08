@@ -47,6 +47,7 @@
     // DOM Elements
     const elements = {
         leftSidebar: document.getElementById('left-sidebar'),
+        explorerPanel: document.getElementById('explorer-panel'),
         fileTree: document.getElementById('file-tree'),
         fileTreeArea: document.getElementById('file-tree-area'),
         tabsContainer: document.getElementById('tabs-container'),
@@ -2321,14 +2322,13 @@
         if (btnSidebarWidgets) btnSidebarWidgets.style.display = isWorkbench ? 'flex' : 'none';
         if (btnSidebarPatchReview) btnSidebarPatchReview.style.display = isWorkbench ? 'flex' : 'none';
 
-        // File tree - only show in editor mode, respect explorer toggle state
-        if (elements.fileTreeArea) {
+        // Explorer panel - only show in editor mode, respect explorer toggle state
+        if (elements.explorerPanel) {
             if (isEditor) {
-                // In editor mode, restore the collapsed state (explorer toggle controls it)
-                elements.fileTreeArea.style.display = '';
+                elements.explorerPanel.style.display = 'flex';
+                setExplorerVisible(getExplorerVisible());
             } else {
-                // In workbench mode, always hide it
-                elements.fileTreeArea.style.display = 'none';
+                elements.explorerPanel.style.display = 'none';
             }
         }
 
@@ -5324,13 +5324,30 @@
     // Context Menu
     let contextMenu = null;
 
+    function positionContextMenu(menu, x, y) {
+        if (!menu) return;
+        const padding = 8;
+        const rect = menu.getBoundingClientRect();
+        let left = x;
+        let top = y;
+        if (left + rect.width + padding > window.innerWidth) {
+            left = Math.max(padding, window.innerWidth - rect.width - padding);
+        }
+        if (top + rect.height + padding > window.innerHeight) {
+            top = Math.max(padding, window.innerHeight - rect.height - padding);
+        }
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+        requestAnimationFrame(() => {
+            menu.classList.add('is-open');
+        });
+    }
+
     function showContextMenu(e, node) {
         hideContextMenu();
 
         contextMenu = document.createElement('div');
         contextMenu.className = 'context-menu';
-        contextMenu.style.left = `${e.clientX}px`;
-        contextMenu.style.top = `${e.clientY}px`;
 
         const actions = [];
 
@@ -5371,6 +5388,7 @@
         });
 
         document.body.appendChild(contextMenu);
+        positionContextMenu(contextMenu, e.clientX, e.clientY);
     }
 
     function showAgentContextMenu(e, agent) {
@@ -5378,8 +5396,6 @@
 
         contextMenu = document.createElement('div');
         contextMenu.className = 'context-menu';
-        contextMenu.style.left = `${e.clientX}px`;
-        contextMenu.style.top = `${e.clientY}px`;
 
         const actions = [
             { label: 'Invite to Conference', action: () => handleAgentMenuAction('invite-conference', agent) },
@@ -5414,6 +5430,7 @@
         });
 
         document.body.appendChild(contextMenu);
+        positionContextMenu(contextMenu, e.clientX, e.clientY);
     }
 
     function hideContextMenu() {
@@ -7708,8 +7725,6 @@
 
         const menu = document.createElement('div');
         menu.className = 'context-menu';
-        menu.style.top = `${event.clientY}px`;
-        menu.style.left = `${event.clientX}px`;
 
         const isMuted = mutedIds.has(agent.id);
         const isModerator = moderators.some(item => item.id === agent.id);
@@ -7761,6 +7776,7 @@
         });
 
         document.body.appendChild(menu);
+        positionContextMenu(menu, event.clientX, event.clientY);
         contextMenu = menu;
     }
 
@@ -7912,20 +7928,19 @@
         body.appendChild(info);
 
         confirmBtn.addEventListener('click', async () => {
+            close();
             try {
                 await agentApi.setStatus(agent.id, false);
                 log(`Retired ${name}`, 'warning');
                 await loadAgents();
             } catch (err) {
                 log(`Failed to retire ${name}: ${err.message}`, 'error');
-            } finally {
-                close();
             }
         });
     }
 
     async function showRetiredAgentsModal() {
-        const { modal, body, confirmBtn, close } = createModalShell(
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             'Retired Agents',
             'Close',
             'Cancel',
@@ -7934,6 +7949,9 @@
 
         modal.classList.add('retired-agent-modal');
         confirmBtn.style.display = 'none';
+        if (cancelBtn) {
+            cancelBtn.textContent = 'Close';
+        }
 
         const info = document.createElement('div');
         info.className = 'modal-text';
@@ -7944,56 +7962,69 @@
         list.className = 'retired-agent-list';
         body.appendChild(list);
 
-        try {
-            const agents = await agentApi.listAll();
-            const retired = (agents || []).filter(agent => agent.enabled === false);
-            if (retired.length === 0) {
-                const empty = document.createElement('div');
-                empty.className = 'agent-empty';
-                empty.textContent = 'No retired agents.';
-                list.appendChild(empty);
-                return;
-            }
+        const renderRetiredList = async () => {
+            list.innerHTML = '';
+            try {
+                const agents = await agentApi.listAll();
+                const retired = (agents || []).filter(agent => agent.enabled === false);
+                if (retired.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'agent-empty';
+                    empty.textContent = 'No retired agents.';
+                    list.appendChild(empty);
+                    return;
+                }
 
-            retired.forEach(agent => {
-                const row = document.createElement('div');
-                row.className = 'retired-agent-row';
+                retired.forEach(agent => {
+                    const row = document.createElement('div');
+                    row.className = 'retired-agent-row';
 
-                const name = document.createElement('div');
-                name.className = 'retired-agent-name';
-                name.textContent = agent.name || 'Unnamed Agent';
+                    const name = document.createElement('div');
+                    name.className = 'retired-agent-name';
+                    name.textContent = agent.name || 'Unnamed Agent';
 
-                const role = document.createElement('div');
-                role.className = 'retired-agent-role';
-                role.textContent = agent.role || 'role';
+                    const role = document.createElement('div');
+                    role.className = 'retired-agent-role';
+                    role.textContent = agent.role || 'role';
 
-                const reactivate = document.createElement('button');
-                reactivate.type = 'button';
-                reactivate.className = 'modal-btn modal-btn-secondary';
-                reactivate.textContent = 'Reactivate';
-                reactivate.addEventListener('click', async () => {
-                    reactivate.disabled = true;
-                    try {
-                        await agentApi.setStatus(agent.id, true);
-                        await loadAgents();
+                    const reactivate = document.createElement('button');
+                    reactivate.type = 'button';
+                    reactivate.className = 'modal-btn modal-btn-secondary';
+                    reactivate.textContent = 'Reactivate';
+                    reactivate.addEventListener('click', async () => {
+                        reactivate.disabled = true;
                         row.remove();
-                    } catch (err) {
-                        log(`Failed to reactivate ${agent.name}: ${err.message}`, 'error');
-                        reactivate.disabled = false;
-                    }
-                });
+                        if (!list.querySelector('.retired-agent-row')) {
+                            const empty = document.createElement('div');
+                            empty.className = 'agent-empty';
+                            empty.textContent = 'No retired agents.';
+                            list.appendChild(empty);
+                        }
+                        try {
+                            await agentApi.setStatus(agent.id, true);
+                            await loadAgents();
+                            await renderRetiredList();
+                        } catch (err) {
+                            log(`Failed to reactivate ${agent.name}: ${err.message}`, 'error');
+                            await renderRetiredList();
+                            reactivate.disabled = false;
+                        }
+                    });
 
-                row.appendChild(name);
-                row.appendChild(role);
-                row.appendChild(reactivate);
-                list.appendChild(row);
-            });
-        } catch (err) {
-            const error = document.createElement('div');
-            error.className = 'modal-hint';
-            error.textContent = `Failed to load retired agents: ${err.message}`;
-            body.appendChild(error);
-        }
+                    row.appendChild(name);
+                    row.appendChild(role);
+                    row.appendChild(reactivate);
+                    list.appendChild(row);
+                });
+            } catch (err) {
+                const error = document.createElement('div');
+                error.className = 'modal-hint';
+                error.textContent = `Failed to load retired agents: ${err.message}`;
+                list.appendChild(error);
+            }
+        };
+
+        await renderRetiredList();
 
         modal.addEventListener('click', (e) => {
             if (e.target === modal) close();
@@ -8651,12 +8682,9 @@
     }
 
     function setExplorerVisible(visible) {
-        if (!elements.fileTreeArea || !elements.btnToggleExplorer) return;
-        elements.fileTreeArea.classList.toggle('collapsed', !visible);
+        if (!elements.explorerPanel || !elements.btnToggleExplorer) return;
+        elements.explorerPanel.classList.toggle('is-hidden', !visible);
         elements.btnToggleExplorer.classList.toggle('is-active', visible);
-        if (elements.leftSidebar) {
-            elements.leftSidebar.classList.toggle('explorer-collapsed', !visible);
-        }
         localStorage.setItem('explorer-visible', visible ? '1' : '0');
     }
 
@@ -9144,7 +9172,7 @@
 
         if (elements.btnToggleExplorer) {
             elements.btnToggleExplorer.addEventListener('click', () => {
-                const isVisible = !elements.fileTreeArea.classList.contains('collapsed');
+                const isVisible = elements.explorerPanel && !elements.explorerPanel.classList.contains('is-hidden');
                 setExplorerVisible(!isVisible);
             });
         }
