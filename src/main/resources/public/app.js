@@ -10039,8 +10039,6 @@
             if (addFirstBtn) {
                 addFirstBtn.addEventListener('click', () => {
                     showWidgetPicker();
-                    // Show first-time hint after adding first widget
-                    showFirstTimeWidgetHint();
                 });
             }
         } else {
@@ -10053,38 +10051,20 @@
         }
     }
 
-    // Show hint pointing to Widgets button after first widget is added
-    function showFirstTimeWidgetHint() {
-        const hasSeenHint = localStorage.getItem('widget-hint-shown');
-        if (hasSeenHint) return;
+    // Show hint pointing to Widgets button after widget is added
+    function showWidgetHint() {
+        if (!elements.btnWidgets) return;
 
-        // Wait for widget to be added
+        // Wait for widget animation to complete
         setTimeout(() => {
-            if (dashboardState.widgets.length === 1 && elements.btnWidgets) {
-                // Add pulsing class
-                elements.btnWidgets.classList.add('widget-hint-pulse');
+            // Add pulsing class
+            elements.btnWidgets.classList.add('widget-hint-pulse');
 
-                // Create hint tooltip
-                const hint = document.createElement('div');
-                hint.className = 'widget-hint-tooltip';
-                hint.textContent = 'Add more widgets here!';
-                document.body.appendChild(hint);
-
-                // Position hint near button
-                const btnRect = elements.btnWidgets.getBoundingClientRect();
-                hint.style.position = 'fixed';
-                hint.style.top = (btnRect.bottom + 10) + 'px';
-                hint.style.left = (btnRect.left + btnRect.width / 2 - hint.offsetWidth / 2) + 'px';
-
-                // Remove after 5 seconds
-                setTimeout(() => {
-                    hint.classList.add('hint-fade-out');
-                    elements.btnWidgets.classList.remove('widget-hint-pulse');
-                    setTimeout(() => hint.remove(), 300);
-                    localStorage.setItem('widget-hint-shown', 'true');
-                }, 5000);
-            }
-        }, 500);
+            // Remove pulse after 3 pulses (4.5 seconds)
+            setTimeout(() => {
+                elements.btnWidgets.classList.remove('widget-hint-pulse');
+            }, 4500);
+        }, 400);
     }
 
     function renderWidgetCard(grid, instance) {
@@ -10095,6 +10075,14 @@
         const card = document.createElement('div');
         card.className = `workbench-card widget-card widget-size-${instance.size}`;
         card.dataset.instanceId = instance.instanceId;
+
+        // Apply custom size if set
+        if (instance.settings._customWidth) {
+            card.style.width = instance.settings._customWidth + 'px';
+        }
+        if (instance.settings._customHeight) {
+            card.style.height = instance.settings._customHeight + 'px';
+        }
 
         // Widget header
         const header = document.createElement('div');
@@ -10113,8 +10101,14 @@
         const content = document.createElement('div');
         content.className = 'widget-body';
 
+        // Resize handle
+        const resizeHandle = document.createElement('div');
+        resizeHandle.className = 'widget-resize-handle';
+        resizeHandle.innerHTML = '⋰';
+
         card.appendChild(header);
         card.appendChild(content);
+        card.appendChild(resizeHandle);
         grid.appendChild(card);
 
         // Mount animation
@@ -10146,6 +10140,63 @@
                 }
             });
         }
+
+        // Wire resize handle
+        initWidgetResize(card, resizeHandle, instance);
+    }
+
+    function initWidgetResize(card, handle, instance) {
+        let isResizing = false;
+        let startX = 0;
+        let startY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
+
+        handle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+
+            const rect = card.getBoundingClientRect();
+            startWidth = rect.width;
+            startHeight = rect.height;
+
+            card.classList.add('widget-resizing');
+            document.body.style.cursor = 'nwse-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+
+            const newWidth = Math.max(200, startWidth + deltaX);
+            const newHeight = Math.max(150, startHeight + deltaY);
+
+            card.style.width = newWidth + 'px';
+            card.style.height = newHeight + 'px';
+
+            // Store custom size
+            instance.settings._customWidth = newWidth;
+            instance.settings._customHeight = newHeight;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!isResizing) return;
+
+            isResizing = false;
+            card.classList.remove('widget-resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+
+            // Save the new size
+            dashboardState.saveWidget(instance);
+        });
     }
 
     function removeWidgetCard(instanceId) {
@@ -10214,6 +10265,7 @@
         if (!grid) {
             // If we're in empty state, re-render the whole dashboard
             renderWidgetDashboard();
+            showWidgetHint();
             return;
         }
 
@@ -10224,6 +10276,7 @@
         }
 
         renderWidgetCard(grid, instance);
+        showWidgetHint();
     }
 
     // Initialize
