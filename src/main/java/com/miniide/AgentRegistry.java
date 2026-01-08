@@ -446,6 +446,11 @@ public class AgentRegistry {
         long now = System.currentTimeMillis();
         List<Agent> agents = new ArrayList<>();
 
+        agents.add(createAgent("assistant", "Chief of Staff", "assistant", true, now,
+            "coordination", "pacing", "system health",
+            "maintain team cadence", "enforce guardrails",
+            createMemoryProfile("strong", "#coordination", "#pacing", 5, true)));
+
         agents.add(createAgent("planner", "Planner", "planner", true, now,
             "structure", "beats", "timeline",
             "maintain story shape", "catch structural issues",
@@ -494,6 +499,7 @@ public class AgentRegistry {
         agent.setEnabled(true);
         agent.setAvatar("");
         agent.setIsPrimaryForRole(primary);
+        agent.setCanBeTeamLead("assistant".equals(role));
         agent.setCreatedAt(now);
         agent.setUpdatedAt(now);
 

@@ -38,10 +38,10 @@ public class AgentController implements Controller {
         app.get("/api/agents", this::getAgents);
         app.get("/api/agents/all", this::getAllAgents);
         app.post("/api/agents", this::createAgent);
+        app.put("/api/agents/order", this::reorderAgents);
         app.get("/api/agents/{id}", this::getAgent);
         app.put("/api/agents/{id}", this::updateAgent);
         app.put("/api/agents/{id}/status", this::setAgentStatus);
-        app.put("/api/agents/order", this::reorderAgents);
         app.post("/api/agents/import", this::importAgent);
 
         // Agent endpoints

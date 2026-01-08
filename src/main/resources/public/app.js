@@ -3187,6 +3187,17 @@
         renderWorkbenchNewsfeed();
     }
 
+    function isAssistantAgent(agent) {
+        if (!agent || agent.enabled === false) {
+            return false;
+        }
+        const roleKey = canonicalizeRole(agent.role);
+        if (roleKey === 'assistant' || roleKey === 'chief of staff') {
+            return true;
+        }
+        return agent.canBeTeamLead === true;
+    }
+
     function renderAgentSidebar() {
         const container = document.getElementById('agent-list');
         if (!container) return;
@@ -3202,13 +3213,44 @@
             return;
         }
 
-        agents.forEach((agent, index) => {
+        let reorderInFlight = false;
+        const persistAgentOrder = async () => {
+            if (reorderInFlight) {
+                return;
+            }
+            const orderedIds = Array.from(container.querySelectorAll('.agent-item'))
+                .map(el => el.dataset.agentId)
+                .filter(Boolean);
+            if (orderedIds.length === 0) {
+                return;
+            }
+            const currentOrder = (state.agents.list || []).map(agent => agent.id).filter(Boolean);
+            const isSameOrder = orderedIds.length === currentOrder.length
+                && orderedIds.every((id, index) => id === currentOrder[index]);
+            if (isSameOrder) {
+                return;
+            }
+            state.agents.list = orderedIds
+                .map(id => agents.find(agent => agent.id === id))
+                .filter(Boolean);
+            try {
+                reorderInFlight = true;
+                await agentApi.reorder(orderedIds);
+                await loadAgents();
+            } catch (err) {
+                log(`Failed to save agent order: ${err.message}`, 'warning');
+            } finally {
+                reorderInFlight = false;
+            }
+        };
+
+        agents.forEach(agent => {
             const item = document.createElement('div');
             item.className = 'agent-item';
             item.dataset.agentId = agent.id || '';
             item.draggable = true;
 
-            if (index === 0) {
+            if (isAssistantAgent(agent)) {
                 item.classList.add('team-lead');
             }
 
@@ -3262,7 +3304,7 @@
             item.appendChild(info);
             item.appendChild(status);
 
-            if (index === 0) {
+            if (isAssistantAgent(agent)) {
                 const badge = document.createElement('span');
                 badge.className = 'agent-lead-badge';
                 badge.textContent = 'Lead';
@@ -3287,11 +3329,21 @@
                 item.classList.add('dragging');
             });
 
-            item.addEventListener('dragend', () => {
+            item.addEventListener('dragend', async () => {
                 item.classList.remove('dragging');
+                await persistAgentOrder();
             });
 
             container.appendChild(item);
+        });
+
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        container.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            await persistAgentOrder();
         });
 
         container.querySelectorAll('.agent-item').forEach(item => {
@@ -3310,17 +3362,7 @@
 
             item.addEventListener('drop', async (e) => {
                 e.preventDefault();
-                const orderedIds = Array.from(container.querySelectorAll('.agent-item'))
-                    .map(el => el.dataset.agentId)
-                    .filter(Boolean);
-                state.agents.list = orderedIds
-                    .map(id => agents.find(agent => agent.id === id))
-                    .filter(Boolean);
-                try {
-                    await agentApi.reorder(orderedIds);
-                } catch (err) {
-                    log(`Failed to save agent order: ${err.message}`, 'warning');
-                }
+                await persistAgentOrder();
             });
         });
     }
@@ -3359,12 +3401,19 @@
         return agents[0] || null;
     }
 
+    function getChiefOfStaffAgent() {
+        const agents = state.agents.list || [];
+        const chief = agents.find(agent => isAssistantAgent(agent));
+        if (chief) return chief;
+        return agents[0] || null;
+    }
+
     function renderWorkbenchDashboard() {
         const container = document.getElementById('workbench-chat-content');
         if (!container) return;
 
-        const leader = getPlannerAgent();
-        const leaderName = leader?.name || 'Planner';
+        const leader = getChiefOfStaffAgent();
+        const leaderName = leader?.name || 'Chief of Staff';
         const leaderAvatar = leader?.avatar || '';
 
         container.innerHTML = `
@@ -3373,7 +3422,7 @@
                     <div class="workbench-briefing-header">
                         <div class="workbench-briefing-avatar" id="workbench-briefing-avatar"></div>
                         <div>
-                            <div class="workbench-card-title">Planner Briefing</div>
+                            <div class="workbench-card-title">Today's Briefing</div>
                             <div class="workbench-card-subtitle">Resolved issues and momentum check-in.</div>
                         </div>
                         <button class="workbench-briefing-dismiss" id="workbench-dismiss-briefing" type="button">Dismiss</button>
@@ -4700,7 +4749,18 @@
 
         modal.classList.add('agent-create-modal');
 
+        const leaderTemplate = {
+            id: 'assistant',
+            label: 'Chief of Staff',
+            role: 'assistant',
+            description: 'Mandatory agent who manages the rest of your team.',
+            skills: ['coordination', 'pacing', 'system health'],
+            goals: ['maintain team cadence', 'enforce guardrails'],
+            instructions: 'Coordinate the team and manage pacing. Avoid authoring creative canon unless asked.'
+        };
+
         const templates = [
+            leaderTemplate,
             {
                 id: 'creative',
                 label: 'Creative Voice',
@@ -4757,13 +4817,16 @@
             }
         ];
 
+        const hasAssistant = (state.agents.list || []).some(agent => isAssistantAgent(agent));
+        const availableTemplates = hasAssistant ? templates : [leaderTemplate];
+
         const providers = [
             'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
             'lmstudio', 'ollama', 'jan', 'koboldcpp', 'custom'
         ];
 
-        const initialTemplate = templates[0];
-        const formState = resumeState || {
+        const initialTemplate = availableTemplates[0];
+        const formState = resumeState ? { ...resumeState } : {
             templateId: initialTemplate.id,
             name: '',
             role: initialTemplate.role,
@@ -4786,6 +4849,14 @@
             avatar: ''
         };
 
+        if (!hasAssistant) {
+            formState.templateId = leaderTemplate.id;
+            formState.role = leaderTemplate.role;
+            formState.skills = [...leaderTemplate.skills];
+            formState.goals = [...leaderTemplate.goals];
+            formState.instructions = leaderTemplate.instructions;
+        }
+
         let stepIndex = Number.isInteger(resumeStepIndex) ? resumeStepIndex : 0;
         const lastStep = 4;
 
@@ -4798,8 +4869,16 @@
             confirmBtn.disabled = !enabled;
         };
 
+        const getDefaultAgentName = (role) => {
+            const roleKey = canonicalizeRole(role);
+            if (roleKey === 'assistant') {
+                return 'Chief of Staff';
+            }
+            return (role || 'agent').trim() || 'agent';
+        };
+
         const generateAgentName = (role) => {
-            const base = (role || 'agent').trim() || 'agent';
+            const base = getDefaultAgentName(role);
             const existing = (state.agents.list || []).map(item => (item.name || '').toLowerCase());
             let candidate = base;
             let counter = 2;
@@ -4821,21 +4900,22 @@
             const select = document.createElement('select');
             select.className = 'modal-select';
             select.title = 'Starting template for role, skills, and instructions.';
-            templates.forEach(template => {
+            availableTemplates.forEach(template => {
                 const option = document.createElement('option');
                 option.value = template.id;
                 option.textContent = template.label;
                 select.appendChild(option);
             });
             select.value = formState.templateId;
+            select.disabled = !hasAssistant;
 
             const description = document.createElement('div');
             description.className = 'modal-text';
-            const activeTemplate = templates.find(template => template.id === formState.templateId);
+            const activeTemplate = availableTemplates.find(template => template.id === formState.templateId);
             description.textContent = activeTemplate?.description || '';
 
             select.addEventListener('change', () => {
-                const chosen = templates.find(template => template.id === select.value);
+                const chosen = availableTemplates.find(template => template.id === select.value);
                 if (!chosen) return;
                 formState.templateId = chosen.id;
                 formState.role = chosen.role;
@@ -4891,9 +4971,20 @@
             roleRow.appendChild(roleInput);
             body.appendChild(roleRow);
 
+            const lockRole = !hasAssistant;
+            if (lockRole) {
+                roleInput.value = leaderTemplate.role;
+                roleInput.disabled = true;
+                roleInput.title = 'Role is locked until a Chief of Staff exists.';
+                const lockedHint = document.createElement('div');
+                lockedHint.className = 'modal-hint';
+                lockedHint.textContent = 'Chief of Staff is required before other roles can be created.';
+                body.appendChild(lockedHint);
+            }
+
             const updateIdentityState = () => {
                 formState.name = nameInput.value;
-                formState.role = roleInput.value.trim();
+                formState.role = lockRole ? leaderTemplate.role : roleInput.value.trim();
                 setNextEnabled(Boolean(formState.role));
             };
 
@@ -5159,6 +5250,10 @@
                         `Focus on your role: ${roleKey}.`
                 }
             };
+
+            if (roleKey === 'assistant') {
+                payload.canBeTeamLead = true;
+            }
 
             if (formState.personalityConfigured && formState.personalitySliders) {
                 payload.personalitySliders = formState.personalitySliders;
@@ -8789,10 +8884,7 @@
             });
 
             // Find team lead
-            const teamLead = (state.agents.list || []).find(a => {
-                const roleKey = canonicalizeRole(a.role);
-                return roleKey && roleKey.includes('lead');
-            });
+            const teamLead = (state.agents.list || []).find(agent => isAssistantAgent(agent));
 
             // Assign to both agent and team lead
             const assignees = [agent.id];
@@ -9939,13 +10031,13 @@
         }
     }
 
-    // Planner Briefing Widget - Team lead's daily summary
+    // Today's Briefing Widget - Team lead's daily summary
     class PlannerBriefingWidget extends Widget {
         async render() {
             if (!this.container) return;
 
-            const leader = getPlannerAgent();
-            const leaderName = leader?.name || 'Planner';
+            const leader = getChiefOfStaffAgent();
+            const leaderName = leader?.name || 'Chief of Staff';
             const leaderAvatar = leader?.avatar || '';
 
             this.container.innerHTML = `
@@ -9953,6 +10045,7 @@
                     <div class="workbench-briefing-header">
                         <div class="workbench-briefing-avatar" id="briefing-avatar-${this.instance.instanceId}"></div>
                         <div>
+                            <div class="workbench-card-title">Today's Briefing</div>
                             <div class="workbench-card-subtitle">Resolved issues and momentum check-in.</div>
                         </div>
                     </div>
@@ -10004,8 +10097,8 @@
                     return;
                 }
 
-                const leader = getPlannerAgent();
-                const leaderName = leader?.name || 'Planner';
+                const leader = getChiefOfStaffAgent();
+                const leaderName = leader?.name || 'Chief of Staff';
                 const creditsEarned = Math.min(resolvedCount, 12);
 
                 digestContainer.innerHTML = `
@@ -10214,10 +10307,10 @@
             }
         });
 
-        // Planner Briefing
+        // Today's Briefing
         widgetRegistry.register({
             id: 'widget-planner-briefing',
-            name: 'Planner Briefing',
+            name: 'Today\'s Briefing',
             description: 'Daily summary from your team lead',
             icon: '📋',
             author: 'Control Room',

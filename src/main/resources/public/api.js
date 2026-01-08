@@ -108,10 +108,10 @@
     // Agent API
     const agentApi = {
         async list() {
-            return api('/api/agents');
+            return api('/api/agents', { cache: 'no-store' });
         },
         async listAll() {
-            return api('/api/agents/all');
+            return api('/api/agents/all', { cache: 'no-store' });
         },
         async create(data) {
             return api('/api/agents', {
