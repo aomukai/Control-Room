@@ -111,6 +111,7 @@
     };
 
     const DEFAULT_ROLE_CHARTERS = {
+        assistant: 'Coordinates the team, manages pacing, and enforces stop conditions. Avoids authoring creative canon unless explicitly tasked.',
         planner: 'Responsible for story structure, pacing, and narrative arc. Coordinates with other agents on high-level direction and helps resolve structural conflicts.',
         writer: 'Creates prose, dialogue, and scene descriptions. Focuses on voice, emotional impact, and bringing the story to life on the page.',
         editor: 'Refines language, fixes errors, and improves clarity. Ensures consistency in style and removes friction for the reader.',
