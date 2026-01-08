@@ -3321,7 +3321,7 @@
     }
 
     function renderWorkbenchChatPane() {
-        renderWorkbenchDashboard();
+        renderWidgetDashboard();
     }
 
     function getPlannerAgent() {
@@ -9705,6 +9705,487 @@
         body.appendChild(localSection);
     }
 
+    // ============================================
+    // WIDGET SYSTEM
+    // ============================================
+
+    // Widget Registry - manages available widget types
+    class WidgetRegistry {
+        constructor() {
+            this.widgets = new Map();
+        }
+
+        register(manifest) {
+            this.widgets.set(manifest.id, manifest);
+        }
+
+        get(widgetId) {
+            return this.widgets.get(widgetId);
+        }
+
+        list() {
+            return Array.from(this.widgets.values());
+        }
+
+        createInstance(widgetId, settings = {}) {
+            const manifest = this.get(widgetId);
+            if (!manifest) throw new Error(`Widget not found: ${widgetId}`);
+
+            const defaultSettings = this.getDefaultSettings(manifest);
+
+            return {
+                instanceId: this.generateId(),
+                widgetId,
+                position: 0,
+                size: manifest.size.default,
+                settings: { ...defaultSettings, ...settings }
+            };
+        }
+
+        getDefaultSettings(manifest) {
+            if (!manifest.settings) return {};
+            const defaults = {};
+            for (const [key, config] of Object.entries(manifest.settings)) {
+                defaults[key] = config.default;
+            }
+            return defaults;
+        }
+
+        generateId() {
+            return 'widget-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        }
+    }
+
+    // Widget Base Class - all widgets extend this
+    class Widget {
+        constructor(instance, manifest) {
+            this.instance = instance;
+            this.manifest = manifest;
+            this.container = null;
+            this.mounted = false;
+        }
+
+        async mount(container) {
+            this.container = container;
+            await this.render();
+            this.attachEventListeners();
+            this.mounted = true;
+        }
+
+        async unmount() {
+            this.detachEventListeners();
+            this.container = null;
+            this.mounted = false;
+        }
+
+        async render() {
+            // Default implementation - subclasses override
+            if (!this.container) return;
+            this.container.innerHTML = `
+                <div class="widget-content">
+                    <p>Widget: ${this.manifest.name}</p>
+                </div>
+            `;
+        }
+
+        async update(newSettings) {
+            this.instance.settings = { ...this.instance.settings, ...newSettings };
+            await this.render();
+            this.saveToDashboard();
+        }
+
+        attachEventListeners() {}
+        detachEventListeners() {}
+
+        saveToDashboard() {
+            if (window.dashboardState) {
+                window.dashboardState.saveWidget(this.instance);
+            }
+        }
+    }
+
+    // Quick Notes Widget - simple text editor with auto-save
+    class QuickNotesWidget extends Widget {
+        constructor(instance, manifest) {
+            super(instance, manifest);
+            this.saveTimeout = null;
+        }
+
+        async render() {
+            if (!this.container) return;
+
+            const content = this.instance.settings.content || '';
+            const showPreview = this.instance.settings.showPreview || false;
+            const lastModified = this.instance.settings.lastModified;
+
+            this.container.innerHTML = `
+                <div class="widget-quick-notes">
+                    <div class="widget-quick-notes-toolbar">
+                        <button class="widget-quick-notes-toggle" type="button" title="Toggle Preview">
+                            ${showPreview ? '📝 Edit' : '👁️ Preview'}
+                        </button>
+                        <span class="widget-quick-notes-meta">
+                            ${content.length} chars
+                            ${lastModified ? '· ' + this.formatTimeAgo(lastModified) : ''}
+                        </span>
+                    </div>
+                    ${showPreview ?
+                        `<div class="widget-quick-notes-preview">${this.renderMarkdown(content)}</div>` :
+                        `<textarea class="widget-quick-notes-textarea" placeholder="Jot down your thoughts...">${escapeHtml(content)}</textarea>`
+                    }
+                </div>
+            `;
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            const toggleBtn = this.container.querySelector('.widget-quick-notes-toggle');
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', () => {
+                    this.instance.settings.showPreview = !this.instance.settings.showPreview;
+                    this.render();
+                    this.attachEventListeners();
+                });
+            }
+
+            const textarea = this.container.querySelector('.widget-quick-notes-textarea');
+            if (textarea) {
+                textarea.addEventListener('input', (e) => {
+                    this.handleContentChange(e.target.value);
+                });
+            }
+        }
+
+        handleContentChange(content) {
+            this.instance.settings.content = content;
+            this.instance.settings.lastModified = Date.now();
+
+            // Debounced save
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = setTimeout(() => {
+                this.saveToDashboard();
+                // Update the meta display
+                const meta = this.container.querySelector('.widget-quick-notes-meta');
+                if (meta) {
+                    meta.innerHTML = `${content.length} chars · just now`;
+                }
+            }, 500);
+        }
+
+        renderMarkdown(text) {
+            if (!text) return '<p class="widget-quick-notes-empty">Nothing here yet...</p>';
+
+            // Simple markdown rendering
+            let html = escapeHtml(text);
+
+            // Headers
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+            // Bold and italic
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+
+            return html;
+        }
+
+        formatTimeAgo(timestamp) {
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return 'just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+            return Math.floor(seconds / 86400) + 'd ago';
+        }
+    }
+
+    // Dashboard State Manager
+    class DashboardState {
+        constructor() {
+            this.workspaceId = 'default'; // Will be updated from workspace info
+            this.widgets = [];
+            this.mountedWidgets = new Map(); // instanceId -> Widget instance
+        }
+
+        load() {
+            const key = `dashboard-layout-${this.workspaceId}`;
+            const saved = localStorage.getItem(key);
+            if (saved) {
+                try {
+                    const data = JSON.parse(saved);
+                    this.widgets = data.widgets || [];
+                } catch (err) {
+                    console.error('Failed to load dashboard layout:', err);
+                    this.widgets = [];
+                }
+            }
+        }
+
+        save() {
+            const key = `dashboard-layout-${this.workspaceId}`;
+            const data = {
+                workspaceId: this.workspaceId,
+                version: 1,
+                columns: 4,
+                widgets: this.widgets
+            };
+            localStorage.setItem(key, JSON.stringify(data));
+        }
+
+        saveWidget(instance) {
+            const index = this.widgets.findIndex(w => w.instanceId === instance.instanceId);
+            if (index >= 0) {
+                this.widgets[index] = instance;
+            }
+            this.save();
+        }
+
+        addWidget(instance) {
+            instance.position = this.widgets.length;
+            this.widgets.push(instance);
+            this.save();
+        }
+
+        removeWidget(instanceId) {
+            this.widgets = this.widgets.filter(w => w.instanceId !== instanceId);
+            // Reindex positions
+            this.widgets.forEach((w, i) => w.position = i);
+            this.save();
+        }
+    }
+
+    // Global instances
+    const widgetRegistry = new WidgetRegistry();
+    const dashboardState = new DashboardState();
+    window.dashboardState = dashboardState; // Make available to widgets
+
+    // Register built-in widgets
+    function registerBuiltInWidgets() {
+        widgetRegistry.register({
+            id: 'widget-quick-notes',
+            name: 'Quick Notes',
+            description: 'Jot down quick thoughts',
+            icon: '📝',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'medium',
+                allowedSizes: ['small', 'medium', 'large']
+            },
+            configurable: true,
+            settings: {
+                showPreview: {
+                    type: 'checkbox',
+                    label: 'Show Markdown Preview',
+                    default: false
+                },
+                content: {
+                    type: 'text',
+                    label: 'Content',
+                    default: ''
+                },
+                lastModified: {
+                    type: 'number',
+                    label: 'Last Modified',
+                    default: 0
+                }
+            }
+        });
+    }
+
+    // Render widget-based dashboard
+    function renderWidgetDashboard() {
+        const container = document.getElementById('workbench-chat-content');
+        if (!container) return;
+
+        // Load saved layout
+        dashboardState.load();
+
+        container.innerHTML = `
+            <div class="workbench-dashboard-header">
+                <h2 class="workbench-dashboard-title">Dashboard</h2>
+                <button class="btn-add-widget" id="btn-add-widget" type="button" title="Add Widget">+ Add Widget</button>
+            </div>
+            <div class="workbench-dashboard" id="widget-dashboard-grid"></div>
+        `;
+
+        const grid = document.getElementById('widget-dashboard-grid');
+        if (!grid) return;
+
+        // If no widgets, show empty state
+        if (dashboardState.widgets.length === 0) {
+            grid.innerHTML = `
+                <div class="widget-empty-state">
+                    <div class="widget-empty-icon">✨</div>
+                    <h3>Your creative workspace awaits!</h3>
+                    <p>Add widgets to customize your writer's command center.</p>
+                    <button class="btn-primary" id="btn-add-first-widget" type="button">+ Add Your First Widget</button>
+                </div>
+            `;
+
+            const addFirstBtn = document.getElementById('btn-add-first-widget');
+            if (addFirstBtn) {
+                addFirstBtn.addEventListener('click', () => showWidgetPicker());
+            }
+        } else {
+            // Render all widgets
+            dashboardState.widgets
+                .sort((a, b) => a.position - b.position)
+                .forEach(instance => {
+                    renderWidgetCard(grid, instance);
+                });
+        }
+
+        // Wire add widget button
+        const addBtn = document.getElementById('btn-add-widget');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => showWidgetPicker());
+        }
+    }
+
+    function renderWidgetCard(grid, instance) {
+        const manifest = widgetRegistry.get(instance.widgetId);
+        if (!manifest) return;
+
+        // Create widget wrapper
+        const card = document.createElement('div');
+        card.className = `workbench-card widget-card widget-size-${instance.size}`;
+        card.dataset.instanceId = instance.instanceId;
+
+        // Widget header
+        const header = document.createElement('div');
+        header.className = 'widget-header';
+        header.innerHTML = `
+            <div class="widget-title">
+                <span class="widget-icon">${manifest.icon}</span>
+                <span class="widget-name">${manifest.name}</span>
+            </div>
+            <div class="widget-controls">
+                <button class="widget-control-btn widget-remove-btn" type="button" title="Remove Widget">×</button>
+            </div>
+        `;
+
+        // Widget content container
+        const content = document.createElement('div');
+        content.className = 'widget-body';
+
+        card.appendChild(header);
+        card.appendChild(content);
+        grid.appendChild(card);
+
+        // Mount animation
+        requestAnimationFrame(() => {
+            card.classList.add('widget-mounting');
+            setTimeout(() => {
+                card.classList.remove('widget-mounting');
+                card.classList.add('widget-mounted');
+            }, 300);
+        });
+
+        // Create and mount widget
+        let widget;
+        if (instance.widgetId === 'widget-quick-notes') {
+            widget = new QuickNotesWidget(instance, manifest);
+        } else {
+            widget = new Widget(instance, manifest);
+        }
+
+        widget.mount(content);
+        dashboardState.mountedWidgets.set(instance.instanceId, widget);
+
+        // Wire remove button
+        const removeBtn = header.querySelector('.widget-remove-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                if (confirm(`Remove ${manifest.name} widget?`)) {
+                    removeWidgetCard(instance.instanceId);
+                }
+            });
+        }
+    }
+
+    function removeWidgetCard(instanceId) {
+        const card = document.querySelector(`[data-instance-id="${instanceId}"]`);
+        if (!card) return;
+
+        // Unmount widget
+        const widget = dashboardState.mountedWidgets.get(instanceId);
+        if (widget) {
+            widget.unmount();
+            dashboardState.mountedWidgets.delete(instanceId);
+        }
+
+        // Unmount animation
+        card.classList.add('widget-unmounting');
+        setTimeout(() => {
+            card.remove();
+            dashboardState.removeWidget(instanceId);
+
+            // Check if dashboard is now empty
+            const grid = document.getElementById('widget-dashboard-grid');
+            if (grid && dashboardState.widgets.length === 0) {
+                renderWidgetDashboard();
+            }
+        }, 300);
+    }
+
+    function showWidgetPicker() {
+        const modal = createModalShell('Add Widget');
+
+        const availableWidgets = widgetRegistry.list();
+
+        modal.body.innerHTML = `
+            <div class="widget-picker">
+                <div class="widget-picker-grid">
+                    ${availableWidgets.map(manifest => `
+                        <div class="widget-picker-card" data-widget-id="${manifest.id}">
+                            <div class="widget-picker-icon">${manifest.icon}</div>
+                            <div class="widget-picker-name">${manifest.name}</div>
+                            <div class="widget-picker-description">${manifest.description}</div>
+                            <button class="btn-primary widget-picker-add-btn" type="button">Add</button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        // Wire add buttons
+        modal.body.querySelectorAll('.widget-picker-add-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const card = e.target.closest('.widget-picker-card');
+                const widgetId = card.dataset.widgetId;
+                addWidgetToGrid(widgetId);
+                modal.close();
+            });
+        });
+
+        modal.open();
+    }
+
+    function addWidgetToGrid(widgetId) {
+        const instance = widgetRegistry.createInstance(widgetId);
+        dashboardState.addWidget(instance);
+
+        const grid = document.getElementById('widget-dashboard-grid');
+        if (!grid) {
+            // If we're in empty state, re-render the whole dashboard
+            renderWidgetDashboard();
+            return;
+        }
+
+        // Clear empty state if present
+        const emptyState = grid.querySelector('.widget-empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        renderWidgetCard(grid, instance);
+    }
+
     // Initialize
     function init() {
         log('Control Room starting...', 'info');
@@ -9721,6 +10202,9 @@
         loadFileTree();
         loadAgents();
         loadWorkspaceInfo();
+
+        // Initialize widget system
+        registerBuiltInWidgets();
 
         // Set initial view mode (starts in Editor mode)
         setViewMode('editor');
