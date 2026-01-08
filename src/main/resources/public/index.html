@@ -54,19 +54,19 @@
                 <!-- Workbench-only buttons -->
                 <button class="sidebar-btn" id="btn-sidebar-issues" title="Issues" aria-label="Issues">
                     <span class="btn-icon">
-                        <img src="assets/icons/heroicons_outline/clipboard-document-list.svg" alt="">
+                        <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="">
                     </span>
                     <span class="btn-text">Issues</span>
                 </button>
                 <button class="sidebar-btn" id="btn-sidebar-widgets" title="Widgets" aria-label="Widgets">
                     <span class="btn-icon">
-                        <img src="assets/icons/heroicons_outline/squares-2x2.svg" alt="">
+                        <img src="assets/icons/heroicons_outline/swatch.svg" alt="">
                     </span>
                     <span class="btn-text">Widgets</span>
                 </button>
                 <button class="sidebar-btn" id="btn-sidebar-patch-review" title="Patch Review" aria-label="Patch Review">
                     <span class="btn-icon">
-                        <img src="assets/icons/heroicons_outline/document-magnifying-glass.svg" alt="">
+                        <img src="assets/icons/heroicons_outline/pencil-square.svg" alt="">
                     </span>
                     <span class="btn-text">Patch Review</span>
                 </button>
@@ -96,6 +96,18 @@
                 <div id="file-tree"></div>
             </div>
             <div class="sidebar-footer">
+                <button class="sidebar-btn" id="btn-workspace-switch" title="Switch Project" aria-label="Switch Project">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/server.svg" alt="">
+                    </span>
+                    <span class="btn-text" id="workspace-name">Project</span>
+                </button>
+                <button class="sidebar-btn" id="btn-dev-tools" title="Dev Tools" aria-label="Dev Tools">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/cloud.svg" alt="">
+                    </span>
+                    <span class="btn-text">Dev Tools</span>
+                </button>
                 <button class="sidebar-btn" id="btn-open-settings" title="Settings" aria-label="Settings">
                     <span class="btn-icon">
                         <img src="assets/icons/heroicons_outline/cog-6-tooth.svg" alt="">
@@ -104,36 +116,8 @@
                 </button>
             </div>
         </div>
-        <!-- Main Container with Top Bar -->
+        <!-- Main Container -->
         <div id="main-container">
-            <!-- Top Bar Mode Switch -->
-            <div id="top-bar">
-                <div id="top-bar-tabs">
-                    <button class="top-bar-tab" id="btn-toggle-mode-top" type="button">
-                        <span class="tab-label">Switch to Workbench</span>
-                    </button>
-                    <button class="top-bar-tab" id="btn-open-issues" type="button">
-                        <span class="tab-label">Issues</span>
-                    </button>
-                    <button class="top-bar-tab" id="btn-widgets" type="button">
-                        <span class="tab-label">Widgets</span>
-                    </button>
-                    <button class="top-bar-tab" id="btn-patch-review" type="button">
-                        <span class="tab-label">Patch Review</span>
-                    </button>
-                    <button class="top-bar-tab" id="btn-dev-tools" type="button">
-                        <span class="tab-label">Dev Tools</span>
-                    </button>
-                </div>
-                <div id="top-bar-right">
-                    <button id="btn-workspace-switch" class="workspace-switch" type="button" title="Switch Project" aria-label="Switch Project">
-                        <span class="workspace-label">Project</span>
-                        <span id="workspace-name">Loading...</span>
-                        <span id="workspace-desc" class="workspace-desc"></span>
-                        <span class="workspace-caret">▼</span>
-                    </button>
-                </div>
-            </div>
             <!-- View Container (Editor or Workbench) -->
             <div id="view-container">
                 <!-- Editor View (existing) -->

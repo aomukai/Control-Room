@@ -2299,19 +2299,6 @@
             }
         }
 
-        // Top bar toggle button - only show in workbench/settings
-        if (elements.btnToggleModeTop) {
-            const toggleLabel = isSettings ? 'Back to Editor' : (isWorkbench ? 'Switch to Editor' : 'Switch to Workbench');
-            elements.btnToggleModeTop.classList.toggle('active', isWorkbench);
-            elements.btnToggleModeTop.style.display = isEditor ? 'none' : 'flex';
-            const label = elements.btnToggleModeTop.querySelector('.tab-label');
-            if (label) {
-                label.textContent = toggleLabel;
-            } else {
-                elements.btnToggleModeTop.textContent = toggleLabel;
-            }
-        }
-
         // Editor-only sidebar buttons
         const btnToggleExplorer = document.getElementById('btn-toggle-explorer');
         const btnOpenWorkspace = document.getElementById('btn-open-workspace');
@@ -2334,23 +2321,18 @@
         if (btnSidebarWidgets) btnSidebarWidgets.style.display = isWorkbench ? 'flex' : 'none';
         if (btnSidebarPatchReview) btnSidebarPatchReview.style.display = isWorkbench ? 'flex' : 'none';
 
-        // File tree - only show in editor mode
+        // File tree - only show in editor mode, respect explorer toggle state
         if (elements.fileTreeArea) {
-            elements.fileTreeArea.style.display = isEditor ? 'flex' : 'none';
+            if (isEditor) {
+                // In editor mode, restore the collapsed state (explorer toggle controls it)
+                elements.fileTreeArea.style.display = '';
+            } else {
+                // In workbench mode, always hide it
+                elements.fileTreeArea.style.display = 'none';
+            }
         }
 
-        // Top bar buttons - hide Issues, Widgets, Patch Review in workbench
-        if (elements.btnOpenIssues) {
-            elements.btnOpenIssues.style.display = isEditor ? 'flex' : 'none';
-        }
-
-        if (elements.btnWidgets) {
-            elements.btnWidgets.style.display = isEditor ? 'flex' : 'none';
-        }
-
-        if (elements.btnPatchReview) {
-            elements.btnPatchReview.style.display = isEditor ? 'flex' : 'none';
-        }
+        // Top bar buttons - no longer need to hide Issues, Widgets, Patch Review (they're sidebar-only now)
 
         // Settings button
         if (elements.btnOpenSettings) {
@@ -8568,7 +8550,9 @@
     }
 
     function getExplorerVisible() {
-        return localStorage.getItem('explorer-visible') === '1';
+        const stored = localStorage.getItem('explorer-visible');
+        // Default to true (visible) if not set
+        return stored === null ? true : stored === '1';
     }
 
     function setExplorerVisible(visible) {
@@ -9036,30 +9020,11 @@
             elements.btnToggleMode.addEventListener('click', handleToggleModeClick);
         }
 
-        if (elements.btnToggleModeTop) {
-            elements.btnToggleModeTop.addEventListener('click', handleToggleModeClick);
-        }
-
-        if (elements.btnOpenIssues) {
-            elements.btnOpenIssues.addEventListener('click', () => {
-                openIssueBoardPanel();
-            });
-        }
-
-        if (elements.btnWidgets) {
-            elements.btnWidgets.addEventListener('click', () => {
-                showWidgetPicker();
-            });
-        }
-
-        if (elements.btnPatchReview) {
-            elements.btnPatchReview.addEventListener('click', () => showPatchReviewModal());
-        }
         if (elements.btnDevTools) {
             elements.btnDevTools.addEventListener('click', () => showDevToolsModal());
         }
 
-        // Sidebar versions of workbench buttons
+        // Sidebar workbench buttons
         const btnSidebarIssues = document.getElementById('btn-sidebar-issues');
         if (btnSidebarIssues) {
             btnSidebarIssues.addEventListener('click', () => {
