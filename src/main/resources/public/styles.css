@@ -41,9 +41,9 @@ html, body {
 
 /* Left Sidebar */
 #left-sidebar {
-    width: 220px;
-    min-width: 160px;
-    max-width: 400px;
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
     background: linear-gradient(180deg, #2c2c2c 0%, var(--bg-medium) 100%);
     border-right: 2px solid var(--border-color);
     display: flex;
@@ -55,31 +55,39 @@ html, body {
     display: none;
 }
 
-#left-sidebar.explorer-collapsed {
-    width: 64px;
-    min-width: 64px;
-    max-width: 64px;
+/* Explorer panel */
+#explorer-panel {
+    width: 260px;
+    min-width: 200px;
+    max-width: 360px;
+    background: var(--bg-medium);
+    border-right: 2px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+    transform: translateX(0);
 }
 
-#left-sidebar.explorer-collapsed .sidebar-header {
+#explorer-panel.is-hidden {
+    width: 0;
+    min-width: 0;
+    border-right: none;
+    opacity: 0;
+    transform: translateX(-12px);
+    pointer-events: none;
+}
+
+#explorer-panel.is-hidden #file-tree-area {
     display: none;
 }
 
-#left-sidebar.explorer-collapsed .sidebar-buttons {
-    padding-top: 16px;
-}
-
 .sidebar-header {
-    padding: 16px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-bright);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-light);
+    display: none;
 }
 
 .sidebar-buttons {
-    padding: 12px 10px 8px;
+    padding: 12px 8px 8px;
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
@@ -101,6 +109,10 @@ html, body {
     transition: all 0.15s ease;
     position: relative;
     height: 42px;
+}
+
+.sidebar-btn .btn-text {
+    display: none;
 }
 
 .sidebar-btn:hover {
@@ -131,6 +143,17 @@ html, body {
     filter: invert(100%);
 }
 
+.context-menu {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.context-menu.is-open {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .sidebar-btn .btn-text {
     position: absolute;
     width: 1px;
@@ -153,6 +176,7 @@ html, body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    flex: 1;
 }
 
 #file-tree-area.collapsed {
@@ -164,9 +188,6 @@ html, body {
     padding: 8px 10px 12px;
 }
 
-#left-sidebar.explorer-collapsed .sidebar-footer {
-    padding-bottom: 16px;
-}
 
 .file-tree-header {
     padding: 10px 12px;
