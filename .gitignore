@@ -22,3 +22,6 @@ nul
 
 # Design Documents
 docs/
+
+# Local agent registry data
+workspace/**/.control-room/agents/*.json
