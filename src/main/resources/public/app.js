@@ -9915,6 +9915,187 @@
         }
     }
 
+    // Planner Briefing Widget - Team lead's daily summary
+    class PlannerBriefingWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            const leader = getPlannerAgent();
+            const leaderName = leader?.name || 'Planner';
+            const leaderAvatar = leader?.avatar || '';
+
+            this.container.innerHTML = `
+                <div class="widget-planner-briefing">
+                    <div class="workbench-briefing-header">
+                        <div class="workbench-briefing-avatar" id="briefing-avatar-${this.instance.instanceId}"></div>
+                        <div>
+                            <div class="workbench-card-subtitle">Resolved issues and momentum check-in.</div>
+                        </div>
+                    </div>
+                    <div class="workbench-briefing" id="briefing-content-${this.instance.instanceId}">
+                        <div class="workbench-digest-loading">Loading digest...</div>
+                    </div>
+                    <div class="workbench-briefing-actions">
+                        <button class="workbench-link-btn briefing-open-issues" type="button">Open Issues</button>
+                        <button class="workbench-link-btn briefing-start-conference" type="button">Start Conference</button>
+                    </div>
+                    <div class="workbench-briefing-signature">${escapeHtml(leaderName)}</div>
+                </div>
+            `;
+
+            // Render avatar
+            const avatarEl = this.container.querySelector(`#briefing-avatar-${this.instance.instanceId}`);
+            if (avatarEl) {
+                const avatarData = leaderAvatar && leaderAvatar.trim() ? leaderAvatar.trim() : '';
+                if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
+                    const img = document.createElement('img');
+                    img.src = avatarData;
+                    img.alt = leaderName;
+                    avatarEl.appendChild(img);
+                } else if (avatarData) {
+                    avatarEl.textContent = avatarData;
+                } else {
+                    avatarEl.textContent = leaderName.charAt(0).toUpperCase();
+                }
+            }
+
+            // Load data
+            this.loadData();
+        }
+
+        async loadData() {
+            const digestContainer = this.container.querySelector(`#briefing-content-${this.instance.instanceId}`);
+            if (!digestContainer) return;
+
+            try {
+                const issues = await issueApi.list();
+                const closed = issues.filter(issue => issue.status === 'closed');
+                const resolvedCount = closed.length;
+                const recentResolved = closed
+                    .sort((a, b) => (b.closedAt || b.updatedAt || 0) - (a.closedAt || a.updatedAt || 0))
+                    .slice(0, 5);
+
+                if (recentResolved.length === 0) {
+                    digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let's get a win on the board.</div>';
+                    return;
+                }
+
+                const leader = getPlannerAgent();
+                const leaderName = leader?.name || 'Planner';
+                const creditsEarned = Math.min(resolvedCount, 12);
+
+                digestContainer.innerHTML = `
+                    <div class="workbench-briefing-text">
+                        Hello, here's the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
+                        ${leaderName ? `${escapeHtml(leaderName)} was exceptionally successful.` : ''}
+                        Check the issues board for the newest items, or start a conference to regroup.
+                    </div>
+                    <div class="workbench-digest-list">
+                        ${recentResolved.map(issue => `
+                            <div class="workbench-digest-item">
+                                <div class="workbench-digest-title">Issue #${issue.id}: ${escapeHtml(issue.title)}</div>
+                                <div class="workbench-digest-meta">${formatTimestamp(issue.closedAt || issue.updatedAt)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (err) {
+                digestContainer.innerHTML = `<div class="workbench-placeholder">Failed to load briefing: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            const openIssuesBtn = this.container.querySelector('.briefing-open-issues');
+            if (openIssuesBtn) {
+                openIssuesBtn.addEventListener('click', () => openIssueBoardPanel());
+            }
+
+            const startConfBtn = this.container.querySelector('.briefing-start-conference');
+            if (startConfBtn) {
+                startConfBtn.addEventListener('click', () => showConferenceInviteModal());
+            }
+        }
+    }
+
+    // Issue Pulse Widget - Open vs resolved trends
+    class IssuePulseWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            this.container.innerHTML = `
+                <div class="widget-issue-pulse">
+                    <div class="workbench-card-subtitle">Open vs resolved trends.</div>
+                    <div class="workbench-stats" id="issue-stats-${this.instance.instanceId}">
+                        <div class="workbench-digest-loading">Loading stats...</div>
+                    </div>
+                </div>
+            `;
+
+            this.loadData();
+        }
+
+        async loadData() {
+            const statsContainer = this.container.querySelector(`#issue-stats-${this.instance.instanceId}`);
+            if (!statsContainer) return;
+
+            try {
+                const issues = await issueApi.list();
+                const total = issues.length;
+                const openCount = issues.filter(issue => issue.status === 'open').length;
+                const resolvedCount = issues.filter(issue => issue.status === 'closed').length;
+
+                statsContainer.innerHTML = `
+                    <div class="workbench-stat">
+                        <span class="workbench-stat-label">Open</span>
+                        <span class="workbench-stat-value">${openCount}</span>
+                    </div>
+                    <div class="workbench-stat">
+                        <span class="workbench-stat-label">Resolved</span>
+                        <span class="workbench-stat-value">${resolvedCount}</span>
+                    </div>
+                    <div class="workbench-stat">
+                        <span class="workbench-stat-label">Total</span>
+                        <span class="workbench-stat-value">${total}</span>
+                    </div>
+                `;
+            } catch (err) {
+                statsContainer.innerHTML = `<div class="workbench-placeholder">Stats unavailable.</div>`;
+            }
+        }
+    }
+
+    // Credits Leaderboard Widget - Top contributors (stub for now)
+    class CreditsLeaderboardWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            this.container.innerHTML = `
+                <div class="widget-credits-leaderboard">
+                    <div class="workbench-card-subtitle">Coming soon.</div>
+                    <div class="workbench-placeholder">Top contributors will appear here.</div>
+                    <div class="workbench-card-detail">No credits yet. Once enabled, this card will show weekly leaders.</div>
+                </div>
+            `;
+        }
+    }
+
+    // Team Activity Widget - Last 24 hours (stub for now)
+    class TeamActivityWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            this.container.innerHTML = `
+                <div class="widget-team-activity">
+                    <div class="workbench-card-subtitle">Last 24 hours.</div>
+                    <div class="workbench-placeholder">Telemetry and token usage are coming soon.</div>
+                    <div class="workbench-card-detail">Token usage, active sessions, and throughput will appear here.</div>
+                </div>
+            `;
+        }
+    }
+
     // Dashboard State Manager
     class DashboardState {
         constructor() {
@@ -9977,6 +10158,7 @@
 
     // Register built-in widgets
     function registerBuiltInWidgets() {
+        // Quick Notes
         widgetRegistry.register({
             id: 'widget-quick-notes',
             name: 'Quick Notes',
@@ -10006,6 +10188,70 @@
                     default: 0
                 }
             }
+        });
+
+        // Planner Briefing
+        widgetRegistry.register({
+            id: 'widget-planner-briefing',
+            name: 'Planner Briefing',
+            description: 'Daily summary from your team lead',
+            icon: '📋',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'large',
+                allowedSizes: ['medium', 'large']
+            },
+            configurable: false,
+            settings: {}
+        });
+
+        // Issue Pulse
+        widgetRegistry.register({
+            id: 'widget-issue-pulse',
+            name: 'Issue Pulse',
+            description: 'Open vs resolved issue trends',
+            icon: '📊',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small', 'medium']
+            },
+            configurable: false,
+            settings: {}
+        });
+
+        // Credits Leaderboard
+        widgetRegistry.register({
+            id: 'widget-credits-leaderboard',
+            name: 'Credits Leaderboard',
+            description: 'Top contributors by credits earned',
+            icon: '🏆',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small', 'medium']
+            },
+            configurable: false,
+            settings: {}
+        });
+
+        // Team Activity
+        widgetRegistry.register({
+            id: 'widget-team-activity',
+            name: 'Team Activity',
+            description: 'Recent agent activity and telemetry',
+            icon: '👥',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small', 'medium']
+            },
+            configurable: false,
+            settings: {}
         });
     }
 
@@ -10122,10 +10368,24 @@
 
         // Create and mount widget
         let widget;
-        if (instance.widgetId === 'widget-quick-notes') {
-            widget = new QuickNotesWidget(instance, manifest);
-        } else {
-            widget = new Widget(instance, manifest);
+        switch (instance.widgetId) {
+            case 'widget-quick-notes':
+                widget = new QuickNotesWidget(instance, manifest);
+                break;
+            case 'widget-planner-briefing':
+                widget = new PlannerBriefingWidget(instance, manifest);
+                break;
+            case 'widget-issue-pulse':
+                widget = new IssuePulseWidget(instance, manifest);
+                break;
+            case 'widget-credits-leaderboard':
+                widget = new CreditsLeaderboardWidget(instance, manifest);
+                break;
+            case 'widget-team-activity':
+                widget = new TeamActivityWidget(instance, manifest);
+                break;
+            default:
+                widget = new Widget(instance, manifest);
         }
 
         widget.mount(content);
