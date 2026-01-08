@@ -6222,37 +6222,68 @@ input[type="password"].settings-control {
    WIDGET SYSTEM
    ============================================ */
 
-/* Dashboard Header */
-.workbench-dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border-color);
+/* Widget Hint */
+.widget-hint-pulse {
+    animation: widgetPulse 1.5s ease-in-out infinite;
 }
 
-.workbench-dashboard-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-bright);
-    margin: 0;
+@keyframes widgetPulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(17, 119, 187, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(17, 119, 187, 0);
+    }
 }
 
-.btn-add-widget {
+.widget-hint-tooltip {
     background: var(--accent-color);
     color: var(--text-bright);
-    border: none;
-    padding: 8px 16px;
+    padding: 8px 12px;
     border-radius: 8px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    animation: hintFadeIn 0.3s ease;
+    pointer-events: none;
 }
 
-.btn-add-widget:hover {
-    background: var(--accent-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+.widget-hint-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid var(--accent-color);
+}
+
+@keyframes hintFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.widget-hint-tooltip.hint-fade-out {
+    animation: hintFadeOut 0.3s ease forwards;
+}
+
+@keyframes hintFadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
 }
 
 /* Widget Grid */
@@ -6529,17 +6560,19 @@ input[type="password"].settings-control {
 
 .widget-quick-notes-textarea {
     width: 100%;
-    min-height: 200px;
+    height: 150px;
+    max-height: 400px;
     background: var(--bg-dark);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 12px;
     color: var(--text-primary);
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 12px;
+    line-height: 1.5;
     font-family: 'Consolas', 'Monaco', monospace;
     resize: vertical;
     transition: border-color 0.2s ease;
+    overflow-y: auto;
 }
 
 .widget-quick-notes-textarea:focus {
@@ -6553,14 +6586,15 @@ input[type="password"].settings-control {
 }
 
 .widget-quick-notes-preview {
-    min-height: 200px;
+    height: 150px;
+    max-height: 400px;
     background: var(--bg-dark);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 12px;
     color: var(--text-primary);
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 12px;
+    line-height: 1.5;
     overflow-y: auto;
 }
 

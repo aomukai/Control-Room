@@ -98,6 +98,7 @@
         btnToggleMode: document.getElementById('btn-toggle-mode'),
         btnToggleModeTop: document.getElementById('btn-toggle-mode-top'),
         btnOpenIssues: document.getElementById('btn-open-issues'),
+        btnWidgets: document.getElementById('btn-widgets'),
         btnStartConference: document.getElementById('btn-start-conference'),
         btnOpenSettings: document.getElementById('btn-open-settings'),
         btnWorkspaceSwitch: document.getElementById('btn-workspace-switch'),
@@ -2305,6 +2306,10 @@
 
         if (elements.btnOpenIssues) {
             elements.btnOpenIssues.style.display = mode === 'workbench' ? 'flex' : 'none';
+        }
+
+        if (elements.btnWidgets) {
+            elements.btnWidgets.style.display = mode === 'workbench' ? 'flex' : 'none';
         }
 
         if (elements.btnOpenSettings) {
@@ -9001,6 +9006,13 @@
                 openIssueBoardPanel();
             });
         }
+
+        if (elements.btnWidgets) {
+            elements.btnWidgets.addEventListener('click', () => {
+                showWidgetPicker();
+            });
+        }
+
         if (elements.btnPatchReview) {
             elements.btnPatchReview.addEventListener('click', () => showPatchReviewModal());
         }
@@ -9973,7 +9985,7 @@
             author: 'Control Room',
             version: '1.0.0',
             size: {
-                default: 'medium',
+                default: 'small',
                 allowedSizes: ['small', 'medium', 'large']
             },
             configurable: true,
@@ -10006,10 +10018,6 @@
         dashboardState.load();
 
         container.innerHTML = `
-            <div class="workbench-dashboard-header">
-                <h2 class="workbench-dashboard-title">Dashboard</h2>
-                <button class="btn-add-widget" id="btn-add-widget" type="button" title="Add Widget">+ Add Widget</button>
-            </div>
             <div class="workbench-dashboard" id="widget-dashboard-grid"></div>
         `;
 
@@ -10029,7 +10037,11 @@
 
             const addFirstBtn = document.getElementById('btn-add-first-widget');
             if (addFirstBtn) {
-                addFirstBtn.addEventListener('click', () => showWidgetPicker());
+                addFirstBtn.addEventListener('click', () => {
+                    showWidgetPicker();
+                    // Show first-time hint after adding first widget
+                    showFirstTimeWidgetHint();
+                });
             }
         } else {
             // Render all widgets
@@ -10039,12 +10051,40 @@
                     renderWidgetCard(grid, instance);
                 });
         }
+    }
 
-        // Wire add widget button
-        const addBtn = document.getElementById('btn-add-widget');
-        if (addBtn) {
-            addBtn.addEventListener('click', () => showWidgetPicker());
-        }
+    // Show hint pointing to Widgets button after first widget is added
+    function showFirstTimeWidgetHint() {
+        const hasSeenHint = localStorage.getItem('widget-hint-shown');
+        if (hasSeenHint) return;
+
+        // Wait for widget to be added
+        setTimeout(() => {
+            if (dashboardState.widgets.length === 1 && elements.btnWidgets) {
+                // Add pulsing class
+                elements.btnWidgets.classList.add('widget-hint-pulse');
+
+                // Create hint tooltip
+                const hint = document.createElement('div');
+                hint.className = 'widget-hint-tooltip';
+                hint.textContent = 'Add more widgets here!';
+                document.body.appendChild(hint);
+
+                // Position hint near button
+                const btnRect = elements.btnWidgets.getBoundingClientRect();
+                hint.style.position = 'fixed';
+                hint.style.top = (btnRect.bottom + 10) + 'px';
+                hint.style.left = (btnRect.left + btnRect.width / 2 - hint.offsetWidth / 2) + 'px';
+
+                // Remove after 5 seconds
+                setTimeout(() => {
+                    hint.classList.add('hint-fade-out');
+                    elements.btnWidgets.classList.remove('widget-hint-pulse');
+                    setTimeout(() => hint.remove(), 300);
+                    localStorage.setItem('widget-hint-shown', 'true');
+                }, 5000);
+            }
+        }, 500);
     }
 
     function renderWidgetCard(grid, instance) {
