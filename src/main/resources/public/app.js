@@ -3198,6 +3198,25 @@
         return agent.canBeTeamLead === true;
     }
 
+    function getAgentActivityState(agent) {
+        const state = agent && agent.activityState ? String(agent.activityState).toLowerCase() : 'idle';
+        if (state === 'reading' || state === 'processing' || state === 'executing') {
+            return state;
+        }
+        return 'idle';
+    }
+
+    function getAgentSupervisionState(agent) {
+        const state = agent && agent.supervisionState ? String(agent.supervisionState).toLowerCase() : 'none';
+        if (state === 'assisted' || state === 'watched') {
+            return state;
+        }
+        if (agent && agent.assisted) {
+            return 'assisted';
+        }
+        return 'none';
+    }
+
     function countAssistantAgents() {
         return (state.agents.list || []).filter(agent => isAssistantAgent(agent)).length;
     }
@@ -3387,33 +3406,70 @@
             item.appendChild(icon);
             item.appendChild(info);
 
-            const badges = document.createElement('div');
-            badges.className = 'agent-badges';
+            const statusCluster = document.createElement('div');
+            statusCluster.className = 'agent-status-cluster';
 
             const status = document.createElement('div');
             const statusInfo = getAgentStatusInfo(agent);
             status.className = `agent-status ${statusInfo.className}`;
             status.title = statusInfo.title;
-            badges.appendChild(status);
+            statusCluster.appendChild(status);
+
+            const icons = [];
+            const activityState = getAgentActivityState(agent);
+            if (activityState === 'reading') {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/reading.svg',
+                    'Reviewing context and references.'
+                ));
+            } else if (activityState === 'processing') {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/processing.svg',
+                    'Thinking through the best next steps.',
+                    'agent-status-icon-processing'
+                ));
+            } else if (activityState === 'executing') {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/executing.svg',
+                    'Producing output / taking action now.'
+                ));
+            }
+
+            const supervisionState = getAgentSupervisionState(agent);
+            if (supervisionState === 'watched') {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/watched.svg',
+                    'This agent is being monitored due to recent uncertainty.'
+                ));
+            } else if (supervisionState === 'assisted') {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/assisted.svg',
+                    'Another agent is quietly assisting to ensure accuracy.'
+                ));
+            }
+
+            if (agent.isPrimaryForRole) {
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/lucide/primary.svg',
+                    'Primary agent for this role.'
+                ));
+            }
+
+            if (icons.length > 0) {
+                const iconRow = document.createElement('div');
+                iconRow.className = 'agent-status-icons';
+                icons.slice(0, 3).forEach(icon => iconRow.appendChild(icon));
+                statusCluster.appendChild(iconRow);
+            }
 
             if (isAssistantAgent(agent)) {
                 const badge = document.createElement('span');
                 badge.className = 'agent-lead-badge';
                 badge.textContent = 'Lead';
-                badges.appendChild(badge);
+                statusCluster.appendChild(badge);
             }
 
-            if (agent.assisted) {
-                const badge = document.createElement('span');
-                badge.className = 'agent-assisted-badge';
-                badge.textContent = 'Assisted';
-                badge.title = agent.assistedReason
-                    ? `Assisted Mode: ${agent.assistedReason}`
-                    : 'Assisted Mode active';
-                badges.appendChild(badge);
-            }
-
-            item.appendChild(badges);
+            item.appendChild(statusCluster);
 
             item.addEventListener('click', () => {
                 if (!ensureChiefOfStaff('Agent chat')) {
@@ -3496,6 +3552,20 @@
             default:
                 return { className: 'unknown', title: 'Status unknown' };
         }
+    }
+
+    function createAgentStatusIcon(src, title, className) {
+        const wrapper = document.createElement('span');
+        wrapper.className = `agent-status-icon${className ? ` ${className}` : ''}`;
+        wrapper.title = title || '';
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        img.setAttribute('aria-hidden', 'true');
+        wrapper.appendChild(img);
+
+        return wrapper;
     }
 
     function renderWorkbenchChatPane() {
