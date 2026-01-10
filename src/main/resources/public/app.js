@@ -10062,6 +10062,54 @@
             }
         ));
 
+        localSection.appendChild(createRow(
+            'Seed credit comment',
+            'Post a comment with a credit action on an issue.',
+            'Post',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: posting credit comment...');
+
+                const issueIdRaw = prompt('Issue ID to credit (e.g., 14):');
+                const issueIdValue = issueIdRaw ? parseInt(String(issueIdRaw).replace(/[^0-9]/g, ''), 10) : NaN;
+                if (!issueIdRaw || Number.isNaN(issueIdValue)) {
+                    setStatus('Status: credit comment canceled');
+                    notificationStore.warning('Invalid issue ID format. Use a number like 14.', 'workbench');
+                    btn.disabled = false;
+                    return;
+                }
+
+                const reason = prompt('Credit reason (e.g., evidence-verified):', 'evidence-verified');
+                if (!reason) {
+                    setStatus('Status: credit comment canceled');
+                    btn.disabled = false;
+                    return;
+                }
+
+                const author = prompt('Author (agent name or id):', 'system') || 'system';
+                const body = `Credit hook: ${reason}`;
+
+                try {
+                    await issueApi.addComment(issueIdValue, {
+                        author,
+                        body,
+                        action: {
+                            type: reason,
+                            details: 'Dev Tools credit hook'
+                        }
+                    });
+                    await refreshIssueModal(issueIdValue);
+                    setStatus(`Status: posted credit comment to Issue #${issueIdValue}`);
+                    notificationStore.success('Credit comment posted.', 'workbench');
+                } catch (err) {
+                    setStatus(`Status: credit comment failed (${err.message})`);
+                    notificationStore.error(`Failed to post credit comment: ${err.message}`, 'workbench');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        ));
+
         const assistedSection = document.createElement('div');
         assistedSection.className = 'dev-tools-section';
         const assistedTitle = document.createElement('div');
@@ -10689,17 +10737,30 @@
 
             this.container.innerHTML = `
                 <div class="widget-credits-leaderboard">
-                    <div class="workbench-card-subtitle">Top contributors by credits earned.</div>
+                    <div class="widget-credits-header">
+                        <div class="workbench-card-subtitle">Top contributors by credits earned.</div>
+                        <button type="button" class="workbench-link-btn" id="credits-refresh-${this.instance.instanceId}">Refresh</button>
+                    </div>
                     <div class="workbench-digest-loading" id="credits-leaderboard-${this.instance.instanceId}">Loading leaderboard...</div>
                 </div>
             `;
 
+            const refreshBtn = this.container.querySelector(`#credits-refresh-${this.instance.instanceId}`);
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    this.loadData(true);
+                });
+            }
+
             this.loadData();
         }
 
-        async loadData() {
+        async loadData(force = false) {
             const list = this.container.querySelector(`#credits-leaderboard-${this.instance.instanceId}`);
             if (!list) return;
+            if (force) {
+                list.innerHTML = 'Loading leaderboard...';
+            }
 
                 const formatCredits = (value) => {
                     if (Number.isInteger(value)) {
