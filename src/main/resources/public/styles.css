@@ -6584,7 +6584,7 @@ input[type="password"].settings-control {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
 }
 
 /* Empty State */
@@ -6812,6 +6812,7 @@ input[type="password"].settings-control {
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 12px;
+    flex-shrink: 0;
 }
 
 .credits-refresh-btn {
@@ -6853,7 +6854,16 @@ input[type="password"].settings-control {
 .widget-credits-leaderboard {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.credits-leaderboard-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 

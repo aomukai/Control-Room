@@ -11040,7 +11040,9 @@
                             <img src="assets/icons/heroicons_outline/arrow-path.svg" class="credits-refresh-icon" alt="Refresh">
                         </button>
                     </div>
-                    <div class="credits-leaderboard-loading" id="credits-leaderboard-${this.instance.instanceId}">Loading leaderboard...</div>
+                    <div class="credits-leaderboard-container" id="credits-leaderboard-${this.instance.instanceId}">
+                        <div class="credits-leaderboard-loading">Loading leaderboard...</div>
+                    </div>
                 </div>
             `;
 
@@ -11092,10 +11094,10 @@
         }
 
         async loadData(force = false) {
-            const list = this.container.querySelector(`#credits-leaderboard-${this.instance.instanceId}`);
-            if (!list) return;
+            const container = this.container.querySelector(`#credits-leaderboard-${this.instance.instanceId}`);
+            if (!container) return;
             if (force) {
-                list.innerHTML = '<div class="credits-leaderboard-loading">Loading leaderboard...</div>';
+                container.innerHTML = '<div class="credits-leaderboard-loading">Loading leaderboard...</div>';
             }
 
             const formatCredits = (value) => {
@@ -11117,13 +11119,13 @@
                 const agentById = new Map(agents.map(agent => [agent.id, agent]));
 
                 if (!profiles || profiles.length === 0) {
-                    list.innerHTML = '<div class="workbench-placeholder">No credits yet.</div>';
+                    container.innerHTML = '<div class="workbench-placeholder">No credits yet.</div>';
                     return;
                 }
 
                 const maxCredits = profiles[0]?.currentCredits || 1;
 
-                list.innerHTML = `
+                container.innerHTML = `
                     <div class="credits-leaderboard-list">
                         ${profiles.map((profile, index) => {
                             const agent = agentById.get(profile.agentId);
@@ -11159,7 +11161,7 @@
                     </div>
                 `;
             } catch (err) {
-                list.innerHTML = `<div class="workbench-placeholder">Leaderboard unavailable.</div>`;
+                container.innerHTML = `<div class="workbench-placeholder">Leaderboard unavailable.</div>`;
             }
         }
     }
@@ -11187,29 +11189,43 @@
             this.mountedWidgets = new Map(); // instanceId -> Widget instance
         }
 
-        load() {
-            const key = `dashboard-layout-${this.workspaceId}`;
-            const saved = localStorage.getItem(key);
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    this.widgets = data.widgets || [];
-                } catch (err) {
-                    console.error('Failed to load dashboard layout:', err);
+        async load() {
+            console.log('[Dashboard] Loading layout from server...');
+            try {
+                const response = await fetch('/api/dashboard/layout');
+                const result = await response.json();
+                if (result.layout && result.layout.widgets) {
+                    this.widgets = result.layout.widgets || [];
+                    this.workspaceId = result.layout.workspaceId || 'default';
+                    console.log('[Dashboard] Loaded widgets:', this.widgets.length);
+                } else {
+                    console.log('[Dashboard] No saved layout found');
                     this.widgets = [];
                 }
+            } catch (err) {
+                console.error('[Dashboard] Failed to load layout:', err);
+                this.widgets = [];
             }
         }
 
-        save() {
-            const key = `dashboard-layout-${this.workspaceId}`;
+        async save() {
             const data = {
                 workspaceId: this.workspaceId,
                 version: 1,
                 columns: 4,
                 widgets: this.widgets
             };
-            localStorage.setItem(key, JSON.stringify(data));
+            console.log('[Dashboard] Saving layout to server...', {widgetCount: this.widgets.length});
+            try {
+                await fetch('/api/dashboard/layout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ layout: data })
+                });
+                console.log('[Dashboard] Layout saved successfully');
+            } catch (err) {
+                console.error('[Dashboard] Failed to save layout:', err);
+            }
         }
 
         saveWidget(instance) {
@@ -11339,12 +11355,12 @@
     }
 
     // Render widget-based dashboard
-    function renderWidgetDashboard() {
+    async function renderWidgetDashboard() {
         const container = document.getElementById('workbench-chat-content');
         if (!container) return;
 
-        // Load saved layout
-        dashboardState.load();
+        // Load saved layout (async)
+        await dashboardState.load();
 
         container.innerHTML = `
             <div class="workbench-dashboard" id="widget-dashboard-grid"></div>
@@ -11372,9 +11388,11 @@
             }
         } else {
             // Render all widgets
+            console.log('[Dashboard] Rendering widgets:', dashboardState.widgets);
             dashboardState.widgets
                 .sort((a, b) => a.position - b.position)
                 .forEach(instance => {
+                    console.log('[Dashboard] Rendering widget:', instance.widgetId, instance.instanceId);
                     renderWidgetCard(grid, instance);
                 });
         }
@@ -11398,7 +11416,11 @@
 
     function renderWidgetCard(grid, instance) {
         const manifest = widgetRegistry.get(instance.widgetId);
-        if (!manifest) return;
+        if (!manifest) {
+            console.error('[Dashboard] Widget manifest not found for:', instance.widgetId);
+            return;
+        }
+        console.log('[Dashboard] Rendering card for:', instance.widgetId);
 
         // Create widget wrapper
         const card = document.createElement('div');

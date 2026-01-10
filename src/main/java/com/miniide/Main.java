@@ -86,6 +86,9 @@ public class Main {
             patchCleanupScheduler = new PatchCleanupScheduler(projectContext, notificationStore, patchIntervalMs, patchCleanupConfig);
             patchCleanupScheduler.start();
 
+            // Initialize dashboard layout store
+            DashboardLayoutStore dashboardLayoutStore = new DashboardLayoutStore(config.getWorkspacePath(), objectMapper);
+
             // Create and register controllers
             MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
@@ -98,7 +101,8 @@ public class Main {
                 new CreditController(creditStore, objectMapper),
                 memoryController,
                 new PatchController(projectContext, notificationStore, creditStore, objectMapper),
-                new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper)
+                new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
+                new DashboardController(dashboardLayoutStore, objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));
