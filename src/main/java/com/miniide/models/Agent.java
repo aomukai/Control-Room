@@ -31,6 +31,9 @@ public class Agent {
     private String assistedReason;
     private Long assistedSince;
     private String assistedModel;
+    private Integer assistedQueueSize;
+    private Integer assistedTaskDosage;
+    private String assistedNotes;
     private String clonedFrom;
     private long createdAt;
     private long updatedAt;
@@ -201,6 +204,30 @@ public class Agent {
 
     public void setAssistedModel(String assistedModel) {
         this.assistedModel = assistedModel;
+    }
+
+    public Integer getAssistedQueueSize() {
+        return assistedQueueSize;
+    }
+
+    public void setAssistedQueueSize(Integer assistedQueueSize) {
+        this.assistedQueueSize = assistedQueueSize;
+    }
+
+    public Integer getAssistedTaskDosage() {
+        return assistedTaskDosage;
+    }
+
+    public void setAssistedTaskDosage(Integer assistedTaskDosage) {
+        this.assistedTaskDosage = assistedTaskDosage;
+    }
+
+    public String getAssistedNotes() {
+        return assistedNotes;
+    }
+
+    public void setAssistedNotes(String assistedNotes) {
+        this.assistedNotes = assistedNotes;
     }
 
     public String getClonedFrom() {

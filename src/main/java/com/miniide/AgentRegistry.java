@@ -130,6 +130,15 @@ public class AgentRegistry {
                     existing.setAssistedSince(updates.getAssistedSince());
                     existing.setAssistedModel(updates.getAssistedModel());
                 }
+                if (updates.getAssistedQueueSize() != null) {
+                    existing.setAssistedQueueSize(updates.getAssistedQueueSize());
+                }
+                if (updates.getAssistedTaskDosage() != null) {
+                    existing.setAssistedTaskDosage(updates.getAssistedTaskDosage());
+                }
+                if (updates.getAssistedNotes() != null) {
+                    existing.setAssistedNotes(updates.getAssistedNotes());
+                }
 
                 existing.setUpdatedAt(System.currentTimeMillis());
 
