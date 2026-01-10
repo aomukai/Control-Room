@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Controller for issue management.
@@ -27,6 +28,36 @@ public class IssueController implements Controller {
     private final CreditStore creditStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
+    private static final Map<String, Double> COMMENT_CREDIT_AMOUNTS = Map.ofEntries(
+        Map.entry("evidence-verified", 1.0),
+        Map.entry("evidence-verified-precise", 2.0),
+        Map.entry("evidence-outcome-upgrade", 1.0),
+        Map.entry("consulted-devils-advocate", 1.0),
+        Map.entry("issue-applied-in-work", 2.0),
+        Map.entry("comment-under-budget", 1.0),
+        Map.entry("proposal-accepted-by-user", 3.0),
+        Map.entry("user-marked-helpful", 2.0),
+        Map.entry("clean-unfreeze", 1.0),
+        Map.entry("moderator-commendation", 1.0),
+        Map.entry("evidence-failed-verification", -2.0),
+        Map.entry("circuit-breaker-triggered", -1.0),
+        Map.entry("issue-marked-leech", -1.0),
+        Map.entry("hallucination-detected", -3.0),
+        Map.entry("moderator-penalty", -1.0)
+    );
+    private static final Set<String> SYSTEM_ONLY_REASONS = Set.of(
+        "evidence-verified",
+        "evidence-verified-precise",
+        "evidence-outcome-upgrade",
+        "evidence-failed-verification",
+        "circuit-breaker-triggered",
+        "hallucination-detected"
+    );
+    private static final Set<String> MODERATOR_REASONS = Set.of(
+        "moderator-commendation",
+        "moderator-penalty",
+        "clean-unfreeze"
+    );
 
     public IssueController(IssueMemoryService issueService, ProjectContext projectContext,
                            CreditStore creditStore, ObjectMapper objectMapper) {
@@ -229,6 +260,7 @@ public class IssueController implements Controller {
 
             Comment comment = issueService.addComment(issueId, author, body, action);
             logger.info("Comment added to Issue #" + issueId + " by " + author);
+            awardCommentCredit(comment, issueId);
             ctx.status(201).json(comment);
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
@@ -296,5 +328,56 @@ public class IssueController implements Controller {
             }
         }
         return null;
+    }
+
+    private void awardCommentCredit(Comment comment, int issueId) {
+        if (creditStore == null || comment == null || comment.getAction() == null) {
+            return;
+        }
+        String reason = comment.getAction().getType();
+        if (reason == null) {
+            return;
+        }
+        reason = reason.trim();
+        if (!COMMENT_CREDIT_AMOUNTS.containsKey(reason)) {
+            return;
+        }
+        String agentId = resolveAgentId(comment.getAuthor());
+        if (agentId == null) {
+            return;
+        }
+
+        double amount = COMMENT_CREDIT_AMOUNTS.get(reason);
+        String verifiedBy = resolveVerifiedBy(reason);
+
+        CreditEvent event = new CreditEvent();
+        event.setAgentId(agentId);
+        event.setAmount(amount);
+        event.setReason(reason);
+        event.setVerifiedBy(verifiedBy);
+        event.setTimestamp(System.currentTimeMillis());
+        CreditEvent.RelatedEntity related = new CreditEvent.RelatedEntity();
+        related.setType("comment");
+        related.setId(issueId + ":" + comment.getTimestamp());
+        event.setRelatedEntity(related);
+
+        try {
+            creditStore.award(event);
+        } catch (Exception e) {
+            logger.warn("Failed to award comment credit: " + e.getMessage());
+        }
+    }
+
+    private String resolveVerifiedBy(String reason) {
+        if (SYSTEM_ONLY_REASONS.contains(reason)) {
+            return "system";
+        }
+        if (MODERATOR_REASONS.contains(reason)) {
+            return "moderator";
+        }
+        if ("user-marked-helpful".equals(reason) || "proposal-accepted-by-user".equals(reason)) {
+            return "user";
+        }
+        return "system";
     }
 }
