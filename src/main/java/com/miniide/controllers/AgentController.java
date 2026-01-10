@@ -193,6 +193,20 @@ public class AgentController implements Controller {
                 ctx.status(400).json(Map.of("error", "Invalid agent endpoint payload"));
                 return;
             }
+            Agent agent = projectContext.agents().getAgent(id);
+            if (agent != null
+                && agent.getAssisted() != null
+                && agent.getAssisted()
+                && agent.getAssistedModel() != null
+                && config.getModel() != null
+                && !agent.getAssistedModel().equals(config.getModel())) {
+                Agent updates = new Agent();
+                updates.setAssisted(false);
+                updates.setAssistedReason(null);
+                updates.setAssistedSince(null);
+                updates.setAssistedModel(null);
+                projectContext.agents().updateAgent(id, updates);
+            }
             ctx.json(saved);
         } catch (Exception e) {
             logger.error("Failed to update agent endpoint: " + e.getMessage(), e);

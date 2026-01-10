@@ -3198,12 +3198,16 @@
         return agent.canBeTeamLead === true;
     }
 
-    function hasActiveAssistant() {
-        return (state.agents.list || []).some(agent => isAssistantAgent(agent));
+    function countAssistantAgents() {
+        return (state.agents.list || []).filter(agent => isAssistantAgent(agent)).length;
+    }
+
+    function hasExactlyOneAssistant() {
+        return countAssistantAgents() === 1;
     }
 
     function updateAgentLockState() {
-        state.agents.locked = !hasActiveAssistant();
+        state.agents.locked = !hasExactlyOneAssistant();
     }
 
     function showChiefRequiredModal(actionLabel) {
@@ -3216,7 +3220,7 @@
 
         const text = document.createElement('div');
         text.className = 'modal-text';
-        text.textContent = `Agents are disabled without a Chief of Staff. ${actionLabel || 'This action'} can’t run until one exists.`;
+        text.textContent = `Agents are disabled without a Chief of Staff. ${actionLabel || 'This action'} can't run until one exists.`;
         body.appendChild(text);
 
         const hint = document.createElement('div');
@@ -3233,14 +3237,46 @@
         }
     }
 
+    function showMultipleChiefsModal(actionLabel) {
+        const { body, confirmBtn, cancelBtn } = createModalShell(
+            'Multiple Chiefs of Staff',
+            'Close',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: true }
+        );
+
+        if (cancelBtn) {
+            cancelBtn.remove();
+        }
+        if (confirmBtn) {
+            confirmBtn.classList.remove('modal-btn-primary');
+            confirmBtn.classList.add('modal-btn-secondary');
+        }
+
+        const text = document.createElement('div');
+        text.className = 'modal-text';
+        text.textContent = `Team Mode requires exactly one Chief of Staff. ${actionLabel || 'This action'} can't run until extra Chiefs are disabled.`;
+        body.appendChild(text);
+
+        const hint = document.createElement('div');
+        hint.className = 'modal-hint';
+        hint.textContent = 'Disable or retire extra Chiefs of Staff to unlock agents.';
+        body.appendChild(hint);
+    }
+
     function ensureChiefOfStaff(actionLabel, onProceed) {
-        if (hasActiveAssistant()) {
+        const count = countAssistantAgents();
+        if (count === 1) {
             if (typeof onProceed === 'function') {
                 onProceed();
             }
             return true;
         }
-        showChiefRequiredModal(actionLabel);
+        if (count === 0) {
+            showChiefRequiredModal(actionLabel);
+        } else {
+            showMultipleChiefsModal(actionLabel);
+        }
         return false;
     }
 
@@ -3300,8 +3336,11 @@
                 item.classList.add('team-lead');
             }
             if (state.agents.locked) {
+                const assistantCount = countAssistantAgents();
                 item.classList.add('is-disabled');
-                item.title = 'Agents are locked until a Chief of Staff exists.';
+                item.title = assistantCount > 1
+                    ? 'Agents are locked until extra Chiefs of Staff are disabled.'
+                    : 'Agents are locked until a Chief of Staff exists.';
             }
 
             const icon = document.createElement('span');
@@ -3345,21 +3384,36 @@
             info.appendChild(name);
             info.appendChild(role);
 
+            item.appendChild(icon);
+            item.appendChild(info);
+
+            const badges = document.createElement('div');
+            badges.className = 'agent-badges';
+
             const status = document.createElement('div');
             const statusInfo = getAgentStatusInfo(agent);
             status.className = `agent-status ${statusInfo.className}`;
             status.title = statusInfo.title;
-
-            item.appendChild(icon);
-            item.appendChild(info);
-            item.appendChild(status);
+            badges.appendChild(status);
 
             if (isAssistantAgent(agent)) {
                 const badge = document.createElement('span');
                 badge.className = 'agent-lead-badge';
                 badge.textContent = 'Lead';
-                item.appendChild(badge);
+                badges.appendChild(badge);
             }
+
+            if (agent.assisted) {
+                const badge = document.createElement('span');
+                badge.className = 'agent-assisted-badge';
+                badge.textContent = 'Assisted';
+                badge.title = agent.assistedReason
+                    ? `Assisted Mode: ${agent.assistedReason}`
+                    : 'Assisted Mode active';
+                badges.appendChild(badge);
+            }
+
+            item.appendChild(badges);
 
             item.addEventListener('click', () => {
                 if (!ensureChiefOfStaff('Agent chat')) {
@@ -8747,6 +8801,29 @@
             return true;
         };
 
+        const resetAssistedIfModelChanged = async (agent, endpoint) => {
+            if (!agent || !agent.assisted || !agent.assistedModel || !endpoint?.model) {
+                return;
+            }
+            if (agent.assistedModel === endpoint.model) {
+                return;
+            }
+            agent.assisted = false;
+            agent.assistedReason = null;
+            agent.assistedSince = null;
+            agent.assistedModel = null;
+            try {
+                await agentApi.update(agent.id, {
+                    assisted: false,
+                    assistedReason: null,
+                    assistedSince: null,
+                    assistedModel: null
+                });
+            } catch (err) {
+                log(`Failed to reset assisted mode for ${agent.name}: ${err.message}`, 'warning');
+            }
+        };
+
         const checkReachability = async (endpoint) => {
             const key = [
                 endpoint.provider,
@@ -8765,6 +8842,7 @@
 
         agents.forEach(agent => {
             const endpoint = resolveEndpoint(agent);
+            void resetAssistedIfModelChanged(agent, endpoint);
             if (!endpointConfigured(endpoint)) {
                 statusById[agent.id] = 'unconfigured';
             } else if (!endpoint.model) {
@@ -9853,6 +9931,19 @@
             return row;
         };
 
+        const createToggleSwitch = (checked) => {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'toggle-switch';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = Boolean(checked);
+            const slider = document.createElement('span');
+            slider.className = 'toggle-slider';
+            wrapper.appendChild(input);
+            wrapper.appendChild(slider);
+            return { wrapper, input };
+        };
+
         const backendSection = document.createElement('div');
         backendSection.className = 'dev-tools-section';
         const backendTitle = document.createElement('div');
@@ -9921,7 +10012,215 @@
             }
         ));
 
+        const assistedSection = document.createElement('div');
+        assistedSection.className = 'dev-tools-section';
+        const assistedTitle = document.createElement('div');
+        assistedTitle.className = 'dev-tools-section-title';
+        assistedTitle.textContent = 'Assisted Mode';
+        assistedSection.appendChild(assistedTitle);
+
+        const assistedIntro = document.createElement('div');
+        assistedIntro.className = 'modal-text';
+        assistedIntro.textContent = 'Toggle per-agent assisted mode and set a reason. Badges update in the roster.';
+        assistedSection.appendChild(assistedIntro);
+
+        const assistedList = document.createElement('div');
+        assistedList.className = 'dev-tools-list';
+        assistedList.textContent = 'Loading agents...';
+        assistedSection.appendChild(assistedList);
+
+        const plannerSection = document.createElement('div');
+        plannerSection.className = 'dev-tools-section';
+        const plannerTitle = document.createElement('div');
+        plannerTitle.className = 'dev-tools-section-title';
+        plannerTitle.textContent = 'Planner Status Tags';
+        plannerSection.appendChild(plannerTitle);
+
+        const plannerIntro = document.createElement('div');
+        plannerIntro.className = 'modal-text';
+        plannerIntro.textContent = 'Apply a single roadmap status tag (Idea → Plan → Draft → Polished) to an issue.';
+        plannerSection.appendChild(plannerIntro);
+
+        const plannerRow = document.createElement('div');
+        plannerRow.className = 'dev-tools-row dev-tools-row-stack';
+
+        const plannerFields = document.createElement('div');
+        plannerFields.className = 'dev-tools-fields';
+
+        const issueInput = document.createElement('input');
+        issueInput.type = 'number';
+        issueInput.min = '1';
+        issueInput.placeholder = 'Issue ID';
+        issueInput.className = 'modal-input dev-tools-input';
+
+        const statusSelect = document.createElement('select');
+        statusSelect.className = 'modal-select dev-tools-select';
+        [
+            { value: '', label: 'Select status tag' },
+            { value: 'Idea', label: 'Idea' },
+            { value: 'Plan', label: 'Plan' },
+            { value: 'Draft', label: 'Draft' },
+            { value: 'Polished', label: 'Polished' },
+            { value: 'none', label: 'Clear status tag' }
+        ].forEach(({ value, label }) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            statusSelect.appendChild(option);
+        });
+
+        plannerFields.appendChild(issueInput);
+        plannerFields.appendChild(statusSelect);
+        plannerRow.appendChild(plannerFields);
+
+        const plannerBtn = document.createElement('button');
+        plannerBtn.type = 'button';
+        plannerBtn.className = 'modal-btn modal-btn-secondary';
+        plannerBtn.textContent = 'Apply';
+
+        plannerBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueInput.value, 10);
+            if (!issueId) {
+                setStatus('Status: enter a valid issue ID');
+                return;
+            }
+            const selected = statusSelect.value;
+            if (!selected) {
+                setStatus('Status: select a status tag');
+                return;
+            }
+
+            const roadmapTags = new Set(['idea', 'plan', 'draft', 'polished']);
+            const isRoadmapTag = (tag) => roadmapTags.has(String(tag || '').toLowerCase());
+
+            plannerBtn.disabled = true;
+            setStatus('Status: updating issue tags...');
+            try {
+                const issue = await issueApi.get(issueId);
+                const currentTags = Array.isArray(issue.tags) ? issue.tags : [];
+                const filtered = currentTags.filter(tag => !isRoadmapTag(tag));
+                const nextTags = selected === 'none' ? filtered : [...filtered, selected];
+                await issueApi.update(issueId, { tags: nextTags });
+                await loadIssues();
+                setStatus(`Status: updated Issue #${issueId}`);
+                notificationStore.success(`Updated Issue #${issueId} status tag.`, 'workbench');
+            } catch (err) {
+                setStatus(`Status: tag update failed (${err.message})`);
+                notificationStore.error(`Failed to update tags: ${err.message}`, 'workbench');
+            } finally {
+                plannerBtn.disabled = false;
+            }
+        });
+
+        plannerRow.appendChild(plannerBtn);
+        plannerSection.appendChild(plannerRow);
+
+        const renderAssistedList = async () => {
+            const agents = state.agents.list || [];
+            if (agents.length === 0) {
+                assistedList.textContent = 'No agents available.';
+                return;
+            }
+
+            let endpoints = {};
+            try {
+                endpoints = await agentEndpointsApi.list();
+            } catch (err) {
+                log(`Failed to load agent endpoints: ${err.message}`, 'warning');
+            }
+
+            assistedList.innerHTML = '';
+
+            agents.forEach(agent => {
+                const endpoint = endpoints?.[agent.id] || agent.endpoint || null;
+                const modelLabel = endpoint?.model ? `Model: ${endpoint.model}` : 'Model: unset';
+
+                const row = document.createElement('div');
+                row.className = 'dev-tools-row dev-tools-row-stack';
+
+                const textWrap = document.createElement('div');
+                const titleEl = document.createElement('div');
+                titleEl.className = 'dev-tools-item-title';
+                titleEl.textContent = agent.name || agent.id || 'Agent';
+                const descEl = document.createElement('div');
+                descEl.className = 'dev-tools-item-desc';
+                descEl.textContent = `${agent.role || 'role'} · ${modelLabel}`;
+                textWrap.appendChild(titleEl);
+                textWrap.appendChild(descEl);
+
+                const controls = document.createElement('div');
+                controls.className = 'dev-tools-controls';
+
+                const { wrapper, input } = createToggleSwitch(agent.assisted);
+
+                const reasonSelect = document.createElement('select');
+                reasonSelect.className = 'modal-select dev-tools-select';
+                [
+                    { value: 'manual', label: 'Manual' },
+                    { value: 'scope-exceeded', label: 'Scope exceeded' },
+                    { value: 'uncertainty', label: 'Uncertainty' },
+                    { value: 'no-progress', label: 'No progress' },
+                    { value: 'hysteria', label: 'Hysteria' }
+                ].forEach(({ value, label }) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = label;
+                    reasonSelect.appendChild(option);
+                });
+                reasonSelect.value = agent.assistedReason || 'manual';
+                reasonSelect.disabled = !agent.assisted;
+
+                const applyAssistedState = async () => {
+                    const assisted = input.checked;
+                    const reason = reasonSelect.value;
+                    reasonSelect.disabled = !assisted;
+                    input.disabled = true;
+                    reasonSelect.disabled = true;
+
+                    const payload = {
+                        assisted,
+                        assistedReason: assisted ? reason : null,
+                        assistedSince: assisted ? Date.now() : null,
+                        assistedModel: assisted ? (endpoint?.model || null) : null
+                    };
+
+                    try {
+                        await agentApi.update(agent.id, payload);
+                        agent.assisted = assisted;
+                        agent.assistedReason = payload.assistedReason;
+                        agent.assistedSince = payload.assistedSince;
+                        agent.assistedModel = payload.assistedModel;
+                        setStatus(`Status: updated assisted mode for ${agent.name}`);
+                        renderAgentSidebar();
+                    } catch (err) {
+                        setStatus(`Status: assisted update failed (${err.message})`);
+                        notificationStore.error(`Failed to update assisted mode: ${err.message}`, 'workbench');
+                        input.checked = Boolean(agent.assisted);
+                    } finally {
+                        input.disabled = false;
+                        reasonSelect.disabled = !input.checked;
+                    }
+                };
+
+                input.addEventListener('change', applyAssistedState);
+                reasonSelect.addEventListener('change', () => {
+                    if (input.checked) {
+                        applyAssistedState();
+                    }
+                });
+
+                controls.appendChild(wrapper);
+                controls.appendChild(reasonSelect);
+                row.appendChild(textWrap);
+                row.appendChild(controls);
+                assistedList.appendChild(row);
+            });
+        };
+
         body.appendChild(backendSection);
+        body.appendChild(localSection);
+        body.appendChild(assistedSection);
+        body.appendChild(plannerSection);
         const isDevMode = state.workspace && state.workspace.devMode;
         if (isDevMode) {
             const patchSection = document.createElement('div');
@@ -9973,7 +10272,8 @@
 
             body.appendChild(patchSection);
         }
-        body.appendChild(localSection);
+
+        renderAssistedList();
     }
 
     // ============================================
