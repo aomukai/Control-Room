@@ -27,6 +27,10 @@ public class Agent {
     private Boolean isPrimaryForRole;
     private Boolean canBeTeamLead;
     private AgentMemoryProfile memoryProfile;
+    private Boolean assisted;
+    private String assistedReason;
+    private Long assistedSince;
+    private String assistedModel;
     private String clonedFrom;
     private long createdAt;
     private long updatedAt;
@@ -165,6 +169,38 @@ public class Agent {
 
     public void setMemoryProfile(AgentMemoryProfile memoryProfile) {
         this.memoryProfile = memoryProfile;
+    }
+
+    public Boolean getAssisted() {
+        return assisted;
+    }
+
+    public void setAssisted(Boolean assisted) {
+        this.assisted = assisted;
+    }
+
+    public String getAssistedReason() {
+        return assistedReason;
+    }
+
+    public void setAssistedReason(String assistedReason) {
+        this.assistedReason = assistedReason;
+    }
+
+    public Long getAssistedSince() {
+        return assistedSince;
+    }
+
+    public void setAssistedSince(Long assistedSince) {
+        this.assistedSince = assistedSince;
+    }
+
+    public String getAssistedModel() {
+        return assistedModel;
+    }
+
+    public void setAssistedModel(String assistedModel) {
+        this.assistedModel = assistedModel;
     }
 
     public String getClonedFrom() {

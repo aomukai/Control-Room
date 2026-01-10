@@ -1789,6 +1789,37 @@ html, body {
     gap: 12px;
 }
 
+.dev-tools-row-stack {
+    align-items: flex-start;
+}
+
+.dev-tools-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dev-tools-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.dev-tools-fields {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dev-tools-input {
+    min-width: 120px;
+}
+
+.dev-tools-select {
+    min-width: 140px;
+}
+
 .dev-tools-row .modal-text {
     margin: 0;
 }
@@ -5227,11 +5258,29 @@ input[type="password"].settings-control {
     box-shadow: 0 0 0 1px rgba(78, 201, 176, 0.2);
 }
 
-.agent-lead-badge {
+.agent-badges {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.agent-lead-badge {
     background: rgba(78, 201, 176, 0.2);
     color: var(--success-color);
     border: 1px solid rgba(78, 201, 176, 0.5);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.agent-assisted-badge {
+    background: rgba(234, 158, 0, 0.15);
+    color: #e6b35a;
+    border: 1px solid rgba(234, 158, 0, 0.45);
     font-size: 10px;
     font-weight: 600;
     padding: 2px 6px;

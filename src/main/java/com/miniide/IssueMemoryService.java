@@ -18,6 +18,12 @@ import java.nio.file.Paths;
 public class IssueMemoryService {
 
     private static final String STORAGE_PATH = "data/issues.json";
+    private static final Map<String, String> ROADMAP_STATUS_TAGS = Map.of(
+        "idea", "Idea",
+        "plan", "Plan",
+        "draft", "Draft",
+        "polished", "Polished"
+    );
     private final Map<Integer, Issue> issues = new ConcurrentHashMap<>();
     private final AtomicInteger idCounter = new AtomicInteger(0);
 
@@ -29,6 +35,7 @@ public class IssueMemoryService {
                              List<String> tags, String priority) {
         int id = idCounter.incrementAndGet();
         long now = System.currentTimeMillis();
+        List<String> normalizedTags = normalizeTags(tags);
 
         Issue issue = new Issue(
             id,
@@ -36,7 +43,7 @@ public class IssueMemoryService {
             body,
             openedBy,
             assignedTo,
-            tags,
+            normalizedTags,
             priority,
             "open",
             now,
@@ -115,7 +122,7 @@ public class IssueMemoryService {
         existing.setBody(updated.getBody());
         existing.setOpenedBy(updated.getOpenedBy());
         existing.setAssignedTo(updated.getAssignedTo());
-        existing.setTags(updated.getTags());
+        existing.setTags(normalizeTags(updated.getTags()));
         existing.setPriority(updated.getPriority());
         existing.setStatus(updated.getStatus());
         existing.setUpdatedAt(System.currentTimeMillis());
@@ -192,5 +199,38 @@ public class IssueMemoryService {
         if (logger != null) {
             logger.warn("[IssueMemoryService] " + message);
         }
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<String> normalized = new ArrayList<>();
+        String roadmapTag = null;
+
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            String trimmed = tag.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            String canonicalRoadmap = ROADMAP_STATUS_TAGS.get(trimmed.toLowerCase());
+            if (canonicalRoadmap != null) {
+                roadmapTag = canonicalRoadmap;
+                continue;
+            }
+            if (!normalized.contains(trimmed)) {
+                normalized.add(trimmed);
+            }
+        }
+
+        if (roadmapTag != null) {
+            normalized.add(roadmapTag);
+        }
+
+        return normalized;
     }
 }

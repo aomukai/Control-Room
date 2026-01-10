@@ -107,6 +107,13 @@ public class AgentRegistry {
                 }
                 if (updates.getEndpoint() != null) {
                     existing.setEndpoint(updates.getEndpoint());
+                    String newModel = updates.getEndpoint().getModel();
+                    if (existing.getAssisted() != null && existing.getAssisted()
+                        && existing.getAssistedModel() != null
+                        && newModel != null
+                        && !newModel.equals(existing.getAssistedModel())) {
+                        clearAssistedState(existing);
+                    }
                 }
                 if (updates.getMemoryProfile() != null) {
                     existing.setMemoryProfile(updates.getMemoryProfile());
@@ -116,6 +123,12 @@ public class AgentRegistry {
                 }
                 if (updates.getCanBeTeamLead() != null) {
                     existing.setCanBeTeamLead(updates.getCanBeTeamLead());
+                }
+                if (updates.getAssisted() != null) {
+                    existing.setAssisted(updates.getAssisted());
+                    existing.setAssistedReason(updates.getAssistedReason());
+                    existing.setAssistedSince(updates.getAssistedSince());
+                    existing.setAssistedModel(updates.getAssistedModel());
                 }
 
                 existing.setUpdatedAt(System.currentTimeMillis());
@@ -324,6 +337,16 @@ public class AgentRegistry {
             logger.info("Deleted role settings for: " + roleKey);
         }
         return removed;
+    }
+
+    private void clearAssistedState(Agent agent) {
+        if (agent == null) {
+            return;
+        }
+        agent.setAssisted(false);
+        agent.setAssistedReason(null);
+        agent.setAssistedSince(null);
+        agent.setAssistedModel(null);
     }
 
     private String generateUniqueId(String name) {
