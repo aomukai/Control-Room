@@ -1,10 +1,12 @@
 package com.miniide;
 
+import com.miniide.models.AgentCreditProfile;
 import com.miniide.models.CreditEvent;
 import com.miniide.storage.JsonStorage;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +25,14 @@ public class CreditStore {
         "evidence-outcome-upgrade",
         "evidence-failed-verification",
         "circuit-breaker-triggered",
+        "hallucination-detected"
+    );
+    private static final Set<String> VERIFIED_REASONS = Set.of(
+        "evidence-verified",
+        "evidence-verified-precise"
+    );
+    private static final Set<String> FAILED_VERIFICATION_REASONS = Set.of(
+        "evidence-failed-verification",
         "hallucination-detected"
     );
 
@@ -76,6 +86,29 @@ public class CreditStore {
         return totalCredits / slices;
     }
 
+    public List<AgentCreditProfile> listProfiles() {
+        Map<String, List<CreditEvent>> byAgent = groupByAgent();
+        List<AgentCreditProfile> results = new ArrayList<>();
+        for (Map.Entry<String, List<CreditEvent>> entry : byAgent.entrySet()) {
+            results.add(buildProfile(entry.getKey(), entry.getValue()));
+        }
+        results.sort(Comparator.comparingDouble(AgentCreditProfile::getCurrentCredits).reversed());
+        return results;
+    }
+
+    public AgentCreditProfile getProfile(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return null;
+        }
+        List<CreditEvent> agentEvents = new ArrayList<>();
+        for (CreditEvent event : events.values()) {
+            if (agentId.equals(event.getAgentId())) {
+                agentEvents.add(event);
+            }
+        }
+        return buildProfile(agentId, agentEvents);
+    }
+
     private void validateEvent(CreditEvent event) {
         if (event == null) {
             throw new IllegalArgumentException("Credit event payload is required");
@@ -106,6 +139,117 @@ public class CreditStore {
             event.setTimestamp(System.currentTimeMillis());
         }
         return event;
+    }
+
+    private Map<String, List<CreditEvent>> groupByAgent() {
+        Map<String, List<CreditEvent>> grouped = new HashMap<>();
+        for (CreditEvent event : events.values()) {
+            if (event == null || event.getAgentId() == null) {
+                continue;
+            }
+            grouped.computeIfAbsent(event.getAgentId(), key -> new ArrayList<>()).add(event);
+        }
+        return grouped;
+    }
+
+    private AgentCreditProfile buildProfile(String agentId, List<CreditEvent> agentEvents) {
+        AgentCreditProfile profile = new AgentCreditProfile();
+        profile.setAgentId(agentId);
+        if (agentEvents == null || agentEvents.isEmpty()) {
+            profile.setReliabilityTier("none");
+            return profile;
+        }
+
+        double totalCredits = 0;
+        Map<String, Double> creditsByReason = new HashMap<>();
+        int verifiedCount = 0;
+        int failedVerificationCount = 0;
+        int penaltyCount = 0;
+
+        agentEvents.sort(Comparator.comparingLong(CreditEvent::getTimestamp));
+        int longestStreak = 0;
+        int currentStreak = 0;
+        double recentDelta = 0;
+
+        for (CreditEvent event : agentEvents) {
+            if (event == null) {
+                continue;
+            }
+            double amount = event.getAmount();
+            recentDelta = amount;
+            totalCredits += amount;
+            String reason = event.getReason();
+            if (reason != null) {
+                creditsByReason.put(reason, creditsByReason.getOrDefault(reason, 0.0) + amount);
+            }
+
+            boolean isVerified = reason != null && VERIFIED_REASONS.contains(reason);
+            boolean isFailedVerification = reason != null && FAILED_VERIFICATION_REASONS.contains(reason);
+            if (isVerified) {
+                verifiedCount++;
+            }
+            if (isFailedVerification) {
+                failedVerificationCount++;
+            }
+            if (amount < 0 || isFailedVerification) {
+                penaltyCount++;
+            }
+
+            if (isVerified) {
+                currentStreak++;
+                if (currentStreak > longestStreak) {
+                    longestStreak = currentStreak;
+                }
+            } else {
+                currentStreak = 0;
+            }
+        }
+
+        int totalVerificationAttempts = verifiedCount + failedVerificationCount;
+        double verificationRate = totalVerificationAttempts == 0
+            ? 0.0
+            : (double) verifiedCount / totalVerificationAttempts;
+        double penaltyRate = agentEvents.isEmpty()
+            ? 0.0
+            : (double) penaltyCount / agentEvents.size();
+
+        int trailingStreak = 0;
+        for (int i = agentEvents.size() - 1; i >= 0; i--) {
+            CreditEvent event = agentEvents.get(i);
+            String reason = event != null ? event.getReason() : null;
+            if (reason != null && VERIFIED_REASONS.contains(reason)) {
+                trailingStreak++;
+            } else {
+                break;
+            }
+        }
+
+        profile.setLifetimeCredits(totalCredits);
+        profile.setCurrentCredits(totalCredits);
+        profile.setCreditsByReason(creditsByReason);
+        profile.setCreditsThisSession(totalCredits);
+        profile.setCreditsThisChapter(0);
+        profile.setVerificationRate(verificationRate);
+        profile.setApplicationRate(0);
+        profile.setPenaltyRate(penaltyRate);
+        profile.setCurrentVerifiedStreak(trailingStreak);
+        profile.setLongestVerifiedStreak(longestStreak);
+        profile.setReliabilityTier(computeReliabilityTier(verificationRate, penaltyRate));
+        profile.setRecentDelta(recentDelta);
+        return profile;
+    }
+
+    private String computeReliabilityTier(double verificationRate, double penaltyRate) {
+        if (verificationRate > 0.95 && penaltyRate < 0.05) {
+            return "gold";
+        }
+        if (verificationRate > 0.85 && penaltyRate < 0.15) {
+            return "silver";
+        }
+        if (verificationRate > 0.70 && penaltyRate < 0.25) {
+            return "bronze";
+        }
+        return "none";
     }
 
     private void loadFromDisk() {
