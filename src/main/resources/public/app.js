@@ -286,11 +286,17 @@
     // ============================================
 
     async function showPatchReviewModal(focusId, defaultView = 'diff') {
+        let patchActivityAgentId = null;
         const { overlay, modal, body, close, confirmBtn } = createModalShell(
             'Patch Review',
             'Close',
             'Cancel',
-            { closeOnCancel: true }
+            { closeOnCancel: true, onClose: () => {
+                if (patchActivityAgentId) {
+                    setAgentActivityState(patchActivityAgentId, 'idle');
+                    patchActivityAgentId = null;
+                }
+            } }
         );
         modal.classList.add('patch-review-modal');
         confirmBtn.addEventListener('click', close);
@@ -387,6 +393,10 @@
         function renderAgentHeader(patch) {
             agentHeaderContainer.innerHTML = '';
             if (!patch || !patch.provenance) {
+                if (patchActivityAgentId) {
+                    setAgentActivityState(patchActivityAgentId, 'idle');
+                    patchActivityAgentId = null;
+                }
                 return;
             }
 
@@ -394,13 +404,25 @@
             const agentName = provenance.agent || null;
 
             if (!agentName) {
+                if (patchActivityAgentId) {
+                    setAgentActivityState(patchActivityAgentId, 'idle');
+                    patchActivityAgentId = null;
+                }
                 return;
             }
 
             // Find agent in state
+            const agentId = resolveAgentIdFromLabel(agentName);
             const agent = (state.agents.list || []).find(a =>
-                a.id === agentName || a.name === agentName
+                a.id === agentId || a.name === agentName
             );
+            if (agentId) {
+                if (patchActivityAgentId && patchActivityAgentId !== agentId) {
+                    setAgentActivityState(patchActivityAgentId, 'idle');
+                }
+                patchActivityAgentId = agentId;
+                setAgentActivityState(agentId, 'reading', `Reviewing patch ${patch.id || ''}`.trim());
+            }
 
             const header = document.createElement('div');
             header.className = 'patch-agent-header';
@@ -903,14 +925,35 @@
                                     console.error('Invalid file path:', file);
                                     continue;
                                 }
-                                await api('/api/file', {
-                                    method: 'PUT',
-                                    body: { path: file.path, content: file.content }
-                                });
+                                if (patchActivityAgentId) {
+                                    await withAgentActivity(
+                                        patchActivityAgentId,
+                                        'executing',
+                                        () => api('/api/file', {
+                                            method: 'PUT',
+                                            body: { path: file.path, content: file.content }
+                                        }),
+                                        `Applying patch ${patch.id || ''}`.trim()
+                                    );
+                                } else {
+                                    await api('/api/file', {
+                                        method: 'PUT',
+                                        body: { path: file.path, content: file.content }
+                                    });
+                                }
                             }
 
                             // Mark patch as applied
-                            await patchApi.apply(patch.id);
+                            if (patchActivityAgentId) {
+                                await withAgentActivity(
+                                    patchActivityAgentId,
+                                    'executing',
+                                    () => patchApi.apply(patch.id),
+                                    `Applying patch ${patch.id || ''}`.trim()
+                                );
+                            } else {
+                                await patchApi.apply(patch.id);
+                            }
 
                             // Create feedback issue for the agent
                             await createPatchFeedbackIssue(patch, 'applied', editedFiles);
@@ -933,7 +976,16 @@
                     }
 
                     // Normal apply (diff mode or no edits in editor mode)
-                    await patchApi.apply(patch.id);
+                    if (patchActivityAgentId) {
+                        await withAgentActivity(
+                            patchActivityAgentId,
+                            'executing',
+                            () => patchApi.apply(patch.id),
+                            `Applying patch ${patch.id || ''}`.trim()
+                        );
+                    } else {
+                        await patchApi.apply(patch.id);
+                    }
                     const payload = buildPatchNotificationPayload(patch);
                     notificationStore.push(
                         'success',
@@ -963,7 +1015,16 @@
                 disableActions(true);
                 actionError.classList.add('hidden');
                 try {
-                    await patchApi.reject(patch.id);
+                    if (patchActivityAgentId) {
+                        await withAgentActivity(
+                            patchActivityAgentId,
+                            'executing',
+                            () => patchApi.reject(patch.id),
+                            `Rejecting patch ${patch.id || ''}`.trim()
+                        );
+                    } else {
+                        await patchApi.reject(patch.id);
+                    }
 
                     // Create feedback issue for the agent
                     await createPatchFeedbackIssue(patch, 'rejected');
@@ -993,7 +1054,16 @@
                 if (!confirmed) return;
                 disableActions(true);
                 try {
-                    await patchApi.delete(patch.id);
+                    if (patchActivityAgentId) {
+                        await withAgentActivity(
+                            patchActivityAgentId,
+                            'executing',
+                            () => patchApi.delete(patch.id),
+                            `Deleting patch ${patch.id || ''}`.trim()
+                        );
+                    } else {
+                        await patchApi.delete(patch.id);
+                    }
                     notificationStore.info(`Deleted ${patch.id}`, 'editor');
                     currentPatchId = null;
                     await loadPatches();
@@ -2009,6 +2079,8 @@
 
     // Issue Detail Modal
     // Opens the issue modal and fetches issue data
+    let issueActivityAgentId = null;
+
     async function openIssueModal(issueId) {
         if (!issueId) return;
 
@@ -2024,6 +2096,16 @@
             const issue = await issueApi.get(issueId);
             state.issueModal.issue = issue;
             state.issueModal.isLoading = false;
+            if (issueActivityAgentId) {
+                setAgentActivityState(issueActivityAgentId, 'idle');
+                issueActivityAgentId = null;
+            }
+            const assignedId = resolveAgentIdFromLabel(issue.assignedTo);
+            const openedId = resolveAgentIdFromLabel(issue.openedBy);
+            issueActivityAgentId = assignedId || openedId;
+            if (issueActivityAgentId) {
+                setAgentActivityState(issueActivityAgentId, 'reading', `Reviewing Issue #${issue.id}`);
+            }
             renderIssueModal();
         } catch (err) {
             state.issueModal.isLoading = false;
@@ -2038,6 +2120,11 @@
         state.issueModal.isLoading = false;
         state.issueModal.error = null;
         state.issueModal.issue = null;
+
+        if (issueActivityAgentId) {
+            setAgentActivityState(issueActivityAgentId, 'idle');
+            issueActivityAgentId = null;
+        }
 
         const overlay = document.getElementById('issue-modal-overlay');
         if (overlay) {
@@ -3203,6 +3290,23 @@
         return agent.canBeTeamLead === true;
     }
 
+    function resolveAgentIdFromLabel(label) {
+        if (!label) {
+            return null;
+        }
+        const target = String(label).trim().toLowerCase();
+        if (!target) {
+            return null;
+        }
+        const agents = state.agents.list || [];
+        const byId = agents.find(agent => (agent.id || '').toLowerCase() === target);
+        if (byId) {
+            return byId.id;
+        }
+        const byName = agents.find(agent => (agent.name || '').trim().toLowerCase() === target);
+        return byName ? byName.id : null;
+    }
+
     function getAgentActivityState(agent) {
         const fallback = agent && agent.activityState ? String(agent.activityState).toLowerCase() : 'idle';
         const override = agent && agent.id ? state.agents.activityById[agent.id] : null;
@@ -3214,20 +3318,33 @@
         return 'idle';
     }
 
-    function setAgentActivityState(agentId, activity) {
+    function getAgentActivityMessage(agent) {
+        if (!agent || !agent.id) {
+            return '';
+        }
+        return state.agents.activityMessageById[agent.id] || '';
+    }
+
+    function setAgentActivityState(agentId, activity, message) {
         if (!agentId) {
             return;
         }
         if (!activity || activity === 'idle') {
             delete state.agents.activityById[agentId];
+            delete state.agents.activityMessageById[agentId];
         } else {
             state.agents.activityById[agentId] = activity;
+            if (message) {
+                state.agents.activityMessageById[agentId] = message;
+            } else {
+                delete state.agents.activityMessageById[agentId];
+            }
         }
         renderAgentSidebar();
     }
 
-    function withAgentActivity(agentId, activity, work) {
-        setAgentActivityState(agentId, activity);
+    function withAgentActivity(agentId, activity, work, message) {
+        setAgentActivityState(agentId, activity, message);
         const finalize = () => setAgentActivityState(agentId, 'idle');
         try {
             const result = typeof work === 'function' ? work() : null;
@@ -3453,21 +3570,22 @@
 
             const icons = [];
             const activityState = getAgentActivityState(agent);
+            const activityMessage = getAgentActivityMessage(agent);
             if (activityState === 'reading') {
                 icons.push(createAgentStatusIcon(
                     'assets/icons/lucide/reading.svg',
-                    'Reviewing context and references.'
+                    activityMessage || 'Reviewing context and references.'
                 ));
             } else if (activityState === 'processing') {
                 icons.push(createAgentStatusIcon(
                     'assets/icons/lucide/processing.svg',
-                    'Thinking through the best next steps.',
+                    activityMessage || 'Thinking through the best next steps.',
                     'agent-status-icon-processing'
                 ));
             } else if (activityState === 'executing') {
                 icons.push(createAgentStatusIcon(
                     'assets/icons/lucide/executing.svg',
-                    'Producing output / taking action now.'
+                    activityMessage || 'Producing output / taking action now.'
                 ));
             }
 
@@ -7812,7 +7930,7 @@
             close();
         };
 
-        invited.forEach(agent => setAgentActivityState(agent.id, 'reading'));
+        invited.forEach(agent => setAgentActivityState(agent.id, 'reading', 'In conference'));
 
         const header = document.createElement('div');
         header.className = 'conference-header';
@@ -9095,7 +9213,7 @@
         }
 
         setSelectedAgentId(agent.id);
-        setAgentActivityState(agent.id, 'reading');
+        setAgentActivityState(agent.id, 'reading', `Reading chat for ${agent.name || 'agent'}`);
         const closeWithActivity = () => setAgentActivityState(agent.id, 'idle');
 
         const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
@@ -9205,7 +9323,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message, agentId: agent.id })
-                }));
+                }), `Responding to ${agent.name || 'agent'} chat`);
                 const reply = response.content || 'No response.';
                 appendWorkbenchChatMessage(history, 'assistant', reply, agent.name);
                 log.push({ role: 'assistant', content: reply });
@@ -9362,7 +9480,7 @@
 
         try {
             if (agentId) {
-                await withAgentActivity(agentId, 'processing', runChat);
+                await withAgentActivity(agentId, 'processing', runChat, 'Responding to chat');
             } else {
                 await runChat();
             }
