@@ -1,0 +1,18 @@
+{
+  "workspaceId" : "default",
+  "version" : 1,
+  "columns" : 4,
+  "widgets" : [ {
+    "instanceId" : "widget-1768044961309-hij5q6463",
+    "widgetId" : "widget-quick-notes",
+    "position" : 0,
+    "size" : "small",
+    "settings" : {
+      "showPreview" : false,
+      "content" : "lalala",
+      "lastModified" : 1768044971281,
+      "_customWidth" : 377,
+      "_customHeight" : 287
+    }
+  } ]
+}
