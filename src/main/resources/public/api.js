@@ -105,6 +105,30 @@
         }
     };
 
+    // Credit API
+    const creditApi = {
+        async listProfiles() {
+            return api('/api/credits/profiles');
+        },
+        async getProfile(agentId) {
+            return api(`/api/credits/profiles/${agentId}`);
+        },
+        async listEvents(filters = {}) {
+            const params = new URLSearchParams();
+            if (filters.agentId) params.set('agentId', filters.agentId);
+            const query = params.toString();
+            const url = '/api/credits' + (query ? '?' + query : '');
+            return api(url);
+        },
+        async createEvent(data) {
+            return api('/api/credits', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        }
+    };
+
     // Agent API
     const agentApi = {
         async list() {
@@ -480,6 +504,7 @@
     // Expose all APIs on window for app.js to use
     window.api = api;
     window.issueApi = issueApi;
+    window.creditApi = creditApi;
     window.agentApi = agentApi;
     window.agentEndpointsApi = agentEndpointsApi;
     window.settingsApi = settingsApi;

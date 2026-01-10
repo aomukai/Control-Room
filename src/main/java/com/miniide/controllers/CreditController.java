@@ -23,10 +23,12 @@ public class CreditController implements Controller {
 
     @Override
     public void registerRoutes(Javalin app) {
+        app.get("/api/credits/profiles", this::listProfiles);
+        app.get("/api/credits/profiles/{agentId}", this::getProfile);
+        app.get("/api/credits/assisted-slice", this::computeAssistedSlice);
         app.get("/api/credits", this::listCredits);
         app.get("/api/credits/{id}", this::getCredit);
         app.post("/api/credits", this::createCredit);
-        app.get("/api/credits/assisted-slice", this::computeAssistedSlice);
     }
 
     private void listCredits(Context ctx) {
@@ -80,6 +82,28 @@ public class CreditController implements Controller {
             ));
         } catch (Exception e) {
             ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void listProfiles(Context ctx) {
+        try {
+            ctx.json(creditStore.listProfiles());
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void getProfile(Context ctx) {
+        try {
+            String agentId = ctx.pathParam("agentId");
+            var profile = creditStore.getProfile(agentId);
+            if (profile == null) {
+                ctx.status(404).json(Map.of("error", "Credit profile not found for agent: " + agentId));
+                return;
+            }
+            ctx.json(profile);
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
         }
     }
 }

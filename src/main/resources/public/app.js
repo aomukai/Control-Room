@@ -10012,6 +10012,56 @@
             }
         ));
 
+        localSection.appendChild(createRow(
+            'Seed credits leaderboard',
+            'Create sample credit events for the leaderboard.',
+            'Seed',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: seeding credits...');
+                const agents = state.agents.list || [];
+                const agentByName = new Map(agents.map(agent => [String(agent.name || '').toLowerCase(), agent]));
+                const payloads = [
+                    { name: 'Waldorf', amounts: [23, 2] },
+                    { name: 'Kermit', amounts: [20, 0] },
+                    { name: 'Dr. Bunsen', amounts: [14, 1] },
+                    { name: 'Miss Piggy', amounts: [12, 1] },
+                    { name: 'Fozzie Bear', amounts: [9, 1] }
+                ];
+
+                let created = 0;
+                for (const entry of payloads) {
+                    const agent = agentByName.get(entry.name.toLowerCase());
+                    if (!agent) {
+                        continue;
+                    }
+                    for (const amount of entry.amounts) {
+                        try {
+                            await creditApi.createEvent({
+                                agentId: agent.id,
+                                amount,
+                                reason: 'moderator-commendation',
+                                verifiedBy: 'system',
+                                timestamp: Date.now()
+                            });
+                            created += 1;
+                        } catch (err) {
+                            log(`Failed to seed credit for ${entry.name}: ${err.message}`, 'warning');
+                        }
+                    }
+                }
+
+                if (created > 0) {
+                    renderWidgetDashboard();
+                    setStatus(`Status: seeded ${created} credit events`);
+                    notificationStore.success('Credits seeded for leaderboard.', 'workbench');
+                } else {
+                    setStatus('Status: no matching agents to seed');
+                }
+                btn.disabled = false;
+            }
+        ));
+
         const assistedSection = document.createElement('div');
         assistedSection.className = 'dev-tools-section';
         const assistedTitle = document.createElement('div');
@@ -10632,18 +10682,69 @@
         }
     }
 
-    // Credits Leaderboard Widget - Top contributors (stub for now)
+    // Credits Leaderboard Widget - Top contributors
     class CreditsLeaderboardWidget extends Widget {
         async render() {
             if (!this.container) return;
 
             this.container.innerHTML = `
                 <div class="widget-credits-leaderboard">
-                    <div class="workbench-card-subtitle">Coming soon.</div>
-                    <div class="workbench-placeholder">Top contributors will appear here.</div>
-                    <div class="workbench-card-detail">No credits yet. Once enabled, this card will show weekly leaders.</div>
+                    <div class="workbench-card-subtitle">Top contributors by credits earned.</div>
+                    <div class="workbench-digest-loading" id="credits-leaderboard-${this.instance.instanceId}">Loading leaderboard...</div>
                 </div>
             `;
+
+            this.loadData();
+        }
+
+        async loadData() {
+            const list = this.container.querySelector(`#credits-leaderboard-${this.instance.instanceId}`);
+            if (!list) return;
+
+                const formatCredits = (value) => {
+                    if (Number.isInteger(value)) {
+                        return value;
+                    }
+                    return Number(value).toFixed(1);
+                };
+                const formatDelta = (value) => {
+                    const num = Number(value || 0);
+                    const abs = Math.abs(num);
+                    const amount = Number.isInteger(abs) ? abs : abs.toFixed(1);
+                    return `${num >= 0 ? '+' : '-'}${amount}`;
+                };
+
+            try {
+                const profiles = await creditApi.listProfiles();
+                const agents = state.agents.list || [];
+                const agentById = new Map(agents.map(agent => [agent.id, agent]));
+
+                if (!profiles || profiles.length === 0) {
+                    list.innerHTML = '<div class="workbench-placeholder">No credits yet.</div>';
+                    return;
+                }
+
+                const topProfiles = profiles.slice(0, 5);
+                list.innerHTML = `
+                    <div class="workbench-digest-list">
+                        ${topProfiles.map((profile, index) => {
+                            const agent = agentById.get(profile.agentId);
+                            const name = agent?.name || profile.agentId || 'Unknown';
+                            const credits = formatCredits(profile.currentCredits || 0);
+                            const delta = formatDelta(profile.recentDelta || 0);
+                            const tier = profile.reliabilityTier ? profile.reliabilityTier.toUpperCase() : '';
+                            return `
+                                <div class="workbench-digest-item">
+                                    <div class="workbench-digest-title">${index + 1}. ${escapeHtml(name)}</div>
+                                    <div class="workbench-digest-meta">${credits} (${delta})${tier ? ` · ${tier}` : ''}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } catch (err) {
+                list.innerHTML = `<div class="workbench-placeholder">Leaderboard unavailable.</div>`;
+            }
         }
     }
 
