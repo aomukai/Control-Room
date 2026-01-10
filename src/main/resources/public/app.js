@@ -3478,9 +3478,14 @@
                     'This agent is being monitored due to recent uncertainty.'
                 ));
             } else if (supervisionState === 'assisted') {
+                const note = agent.assistedNotes ? ` ${agent.assistedNotes}` : '';
+                const dosage = agent.assistedTaskDosage ? ` Dosage: ${agent.assistedTaskDosage}.` : '';
+                const queue = agent.assistedQueueSize !== null && agent.assistedQueueSize !== undefined
+                    ? ` Queue: ${agent.assistedQueueSize}.`
+                    : '';
                 icons.push(createAgentStatusIcon(
                     'assets/icons/lucide/assisted.svg',
-                    'Another agent is quietly assisting to ensure accuracy.'
+                    `Another agent is quietly assisting to ensure accuracy.${dosage}${queue}${note}`
                 ));
             }
 
@@ -10399,18 +10404,47 @@
                 reasonSelect.value = agent.assistedReason || 'manual';
                 reasonSelect.disabled = !agent.assisted;
 
+                const queueInput = document.createElement('input');
+                queueInput.type = 'number';
+                queueInput.min = '0';
+                queueInput.className = 'modal-input dev-tools-input';
+                queueInput.placeholder = 'Queue';
+                queueInput.value = agent.assistedQueueSize ?? '';
+
+                const dosageInput = document.createElement('input');
+                dosageInput.type = 'number';
+                dosageInput.min = '1';
+                dosageInput.className = 'modal-input dev-tools-input';
+                dosageInput.placeholder = 'Dosage';
+                dosageInput.value = agent.assistedTaskDosage ?? '';
+
+                const noteInput = document.createElement('input');
+                noteInput.type = 'text';
+                noteInput.className = 'modal-input dev-tools-input';
+                noteInput.placeholder = 'Assist note';
+                noteInput.value = agent.assistedNotes || '';
+
                 const applyAssistedState = async () => {
                     const assisted = input.checked;
                     const reason = reasonSelect.value;
                     reasonSelect.disabled = !assisted;
                     input.disabled = true;
                     reasonSelect.disabled = true;
+                    queueInput.disabled = true;
+                    dosageInput.disabled = true;
+                    noteInput.disabled = true;
+
+                    const queueValue = queueInput.value.trim();
+                    const dosageValue = dosageInput.value.trim();
 
                     const payload = {
                         assisted,
                         assistedReason: assisted ? reason : null,
                         assistedSince: assisted ? Date.now() : null,
-                        assistedModel: assisted ? (endpoint?.model || null) : null
+                        assistedModel: assisted ? (endpoint?.model || null) : null,
+                        assistedQueueSize: assisted && queueValue !== '' ? parseInt(queueValue, 10) : null,
+                        assistedTaskDosage: assisted && dosageValue !== '' ? parseInt(dosageValue, 10) : null,
+                        assistedNotes: assisted ? noteInput.value.trim() : null
                     };
 
                     try {
@@ -10419,6 +10453,9 @@
                         agent.assistedReason = payload.assistedReason;
                         agent.assistedSince = payload.assistedSince;
                         agent.assistedModel = payload.assistedModel;
+                        agent.assistedQueueSize = payload.assistedQueueSize;
+                        agent.assistedTaskDosage = payload.assistedTaskDosage;
+                        agent.assistedNotes = payload.assistedNotes;
                         setStatus(`Status: updated assisted mode for ${agent.name}`);
                         renderAgentSidebar();
                     } catch (err) {
@@ -10428,6 +10465,9 @@
                     } finally {
                         input.disabled = false;
                         reasonSelect.disabled = !input.checked;
+                        queueInput.disabled = !input.checked;
+                        dosageInput.disabled = !input.checked;
+                        noteInput.disabled = !input.checked;
                     }
                 };
 
@@ -10437,9 +10477,19 @@
                         applyAssistedState();
                     }
                 });
+                [queueInput, dosageInput, noteInput].forEach((field) => {
+                    field.addEventListener('change', () => {
+                        if (input.checked) {
+                            applyAssistedState();
+                        }
+                    });
+                });
 
                 controls.appendChild(wrapper);
                 controls.appendChild(reasonSelect);
+                controls.appendChild(queueInput);
+                controls.appendChild(dosageInput);
+                controls.appendChild(noteInput);
                 row.appendChild(textWrap);
                 row.appendChild(controls);
                 assistedList.appendChild(row);
