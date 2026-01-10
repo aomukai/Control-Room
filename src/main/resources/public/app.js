@@ -10268,28 +10268,26 @@
 
         localSection.appendChild(createRow(
             'Seed credits leaderboard',
-            'Create sample credit events for the leaderboard.',
+            'Create random credit events for all agents.',
             'Seed',
             async (btn) => {
                 btn.disabled = true;
                 setStatus('Status: seeding credits...');
                 const agents = state.agents.list || [];
-                const agentByName = new Map(agents.map(agent => [String(agent.name || '').toLowerCase(), agent]));
-                const payloads = [
-                    { name: 'Waldorf', amounts: [23, 2] },
-                    { name: 'Kermit', amounts: [20, 0] },
-                    { name: 'Dr. Bunsen', amounts: [14, 1] },
-                    { name: 'Miss Piggy', amounts: [12, 1] },
-                    { name: 'Fozzie Bear', amounts: [9, 1] }
-                ];
 
+                if (agents.length === 0) {
+                    setStatus('Status: no agents to seed');
+                    notificationStore.warning('No agents found to seed credits.', 'workbench');
+                    btn.disabled = false;
+                    return;
+                }
+
+                // Generate random credits for each agent (1-3 events per agent)
                 let created = 0;
-                for (const entry of payloads) {
-                    const agent = agentByName.get(entry.name.toLowerCase());
-                    if (!agent) {
-                        continue;
-                    }
-                    for (const amount of entry.amounts) {
+                for (const agent of agents) {
+                    const eventCount = Math.floor(Math.random() * 3) + 1; // 1-3 events
+                    for (let i = 0; i < eventCount; i++) {
+                        const amount = Math.floor(Math.random() * 25) + 1; // 1-25 credits per event
                         try {
                             await creditApi.createEvent({
                                 agentId: agent.id,
@@ -10300,17 +10298,17 @@
                             });
                             created += 1;
                         } catch (err) {
-                            log(`Failed to seed credit for ${entry.name}: ${err.message}`, 'warning');
+                            log(`Failed to seed credit for ${agent.name}: ${err.message}`, 'warning');
                         }
                     }
                 }
 
                 if (created > 0) {
                     renderWidgetDashboard();
-                    setStatus(`Status: seeded ${created} credit events`);
-                    notificationStore.success('Credits seeded for leaderboard.', 'workbench');
+                    setStatus(`Status: seeded ${created} credit events for ${agents.length} agents`);
+                    notificationStore.success(`Seeded ${created} credits across ${agents.length} agents.`, 'workbench');
                 } else {
-                    setStatus('Status: no matching agents to seed');
+                    setStatus('Status: failed to seed credits');
                 }
                 btn.disabled = false;
             }
@@ -11038,9 +11036,11 @@
                 <div class="widget-credits-leaderboard">
                     <div class="widget-credits-header">
                         <div class="workbench-card-subtitle">Top contributors by credits earned.</div>
-                        <button type="button" class="workbench-link-btn" id="credits-refresh-${this.instance.instanceId}">Refresh</button>
+                        <button type="button" class="credits-refresh-btn" id="credits-refresh-${this.instance.instanceId}" title="Refresh leaderboard">
+                            <img src="assets/icons/heroicons_outline/arrow-path.svg" class="credits-refresh-icon" alt="Refresh">
+                        </button>
                     </div>
-                    <div class="workbench-digest-loading" id="credits-leaderboard-${this.instance.instanceId}">Loading leaderboard...</div>
+                    <div class="credits-leaderboard-loading" id="credits-leaderboard-${this.instance.instanceId}">Loading leaderboard...</div>
                 </div>
             `;
 
@@ -11054,25 +11054,62 @@
             this.loadData();
         }
 
+        getRankIcon(index) {
+            const icons = {
+                0: `<img src="assets/icons/lucide/trophy.svg" class="leaderboard-rank-icon gold" alt="1st place">`,
+                1: `<img src="assets/icons/lucide/medal.svg" class="leaderboard-rank-icon silver" alt="2nd place">`,
+                2: `<img src="assets/icons/lucide/award.svg" class="leaderboard-rank-icon bronze" alt="3rd place">`
+            };
+            return icons[index] || `<span class="leaderboard-rank-number">${index + 1}</span>`;
+        }
+
+        getTierBadge(tier) {
+            if (!tier || tier.toLowerCase() === 'none') return '';
+            const tierLower = tier.toLowerCase();
+            const tierColors = {
+                platinum: '#E5E4E2',
+                gold: '#FFD700',
+                silver: '#C0C0C0',
+                bronze: '#CD7F32'
+            };
+            const color = tierColors[tierLower] || 'var(--text-secondary)';
+            return `<span class="leaderboard-tier-badge" style="color: ${color};">${tier.toUpperCase()}</span>`;
+        }
+
+        getAgentAvatar(agent) {
+            if (!agent) {
+                return `<div class="leaderboard-avatar leaderboard-avatar-fallback">?</div>`;
+            }
+
+            if (agent.avatar && agent.avatar.startsWith('data:image')) {
+                return `<img src="${agent.avatar}" class="leaderboard-avatar" alt="${escapeHtml(agent.name || 'Agent')}">`;
+            } else if (agent.emoji) {
+                return `<div class="leaderboard-avatar leaderboard-avatar-emoji">${agent.emoji}</div>`;
+            } else {
+                const initial = (agent.name || 'A').charAt(0).toUpperCase();
+                return `<div class="leaderboard-avatar leaderboard-avatar-initial">${initial}</div>`;
+            }
+        }
+
         async loadData(force = false) {
             const list = this.container.querySelector(`#credits-leaderboard-${this.instance.instanceId}`);
             if (!list) return;
             if (force) {
-                list.innerHTML = 'Loading leaderboard...';
+                list.innerHTML = '<div class="credits-leaderboard-loading">Loading leaderboard...</div>';
             }
 
-                const formatCredits = (value) => {
-                    if (Number.isInteger(value)) {
-                        return value;
-                    }
-                    return Number(value).toFixed(1);
-                };
-                const formatDelta = (value) => {
-                    const num = Number(value || 0);
-                    const abs = Math.abs(num);
-                    const amount = Number.isInteger(abs) ? abs : abs.toFixed(1);
-                    return `${num >= 0 ? '+' : '-'}${amount}`;
-                };
+            const formatCredits = (value) => {
+                if (Number.isInteger(value)) {
+                    return value;
+                }
+                return Number(value).toFixed(1);
+            };
+            const formatDelta = (value) => {
+                const num = Number(value || 0);
+                const abs = Math.abs(num);
+                const amount = Number.isInteger(abs) ? abs : abs.toFixed(1);
+                return num >= 0 ? `+${amount}` : `-${amount}`;
+            };
 
             try {
                 const profiles = await creditApi.listProfiles();
@@ -11084,19 +11121,38 @@
                     return;
                 }
 
-                const topProfiles = profiles.slice(0, 5);
+                const maxCredits = profiles[0]?.currentCredits || 1;
+
                 list.innerHTML = `
-                    <div class="workbench-digest-list">
-                        ${topProfiles.map((profile, index) => {
+                    <div class="credits-leaderboard-list">
+                        ${profiles.map((profile, index) => {
                             const agent = agentById.get(profile.agentId);
                             const name = agent?.name || profile.agentId || 'Unknown';
                             const credits = formatCredits(profile.currentCredits || 0);
                             const delta = formatDelta(profile.recentDelta || 0);
-                            const tier = profile.reliabilityTier ? profile.reliabilityTier.toUpperCase() : '';
+                            const tier = profile.reliabilityTier;
+                            const deltaClass = (profile.recentDelta || 0) >= 0 ? 'positive' : 'negative';
+                            const barWidth = Math.max(5, (profile.currentCredits / maxCredits) * 100);
+
                             return `
-                                <div class="workbench-digest-item">
-                                    <div class="workbench-digest-title">${index + 1}. ${escapeHtml(name)}</div>
-                                    <div class="workbench-digest-meta">${credits} (${delta})${tier ? ` · ${tier}` : ''}</div>
+                                <div class="leaderboard-item rank-${index + 1}">
+                                    <div class="leaderboard-rank">
+                                        ${this.getRankIcon(index)}
+                                    </div>
+                                    ${this.getAgentAvatar(agent)}
+                                    <div class="leaderboard-info">
+                                        <div class="leaderboard-name-row">
+                                            <span class="leaderboard-name">${escapeHtml(name)}</span>
+                                            ${tier ? this.getTierBadge(tier) : ''}
+                                        </div>
+                                        <div class="leaderboard-credits-row">
+                                            <span class="leaderboard-credits">${credits} credits</span>
+                                            <span class="leaderboard-delta ${deltaClass}">${delta}</span>
+                                        </div>
+                                        <div class="leaderboard-bar-track">
+                                            <div class="leaderboard-bar-fill" style="width: ${barWidth}%"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             `;
                         }).join('')}
