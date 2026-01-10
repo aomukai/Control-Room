@@ -56,7 +56,8 @@
             list: [],
             selectedId: null,
             statusById: {},
-            activityById: {}
+            activityById: {},
+            activityMessageById: {}
         },
         chat: {
             memoryId: null,
