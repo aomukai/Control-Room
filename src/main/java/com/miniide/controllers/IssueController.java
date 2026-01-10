@@ -3,8 +3,11 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.CreditStore;
 import com.miniide.IssueMemoryService;
+import com.miniide.ProjectContext;
 import com.miniide.models.Comment;
+import com.miniide.models.CreditEvent;
 import com.miniide.models.Issue;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -20,11 +23,16 @@ import java.util.Optional;
 public class IssueController implements Controller {
 
     private final IssueMemoryService issueService;
+    private final ProjectContext projectContext;
+    private final CreditStore creditStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public IssueController(IssueMemoryService issueService, ObjectMapper objectMapper) {
+    public IssueController(IssueMemoryService issueService, ProjectContext projectContext,
+                           CreditStore creditStore, ObjectMapper objectMapper) {
         this.issueService = issueService;
+        this.projectContext = projectContext;
+        this.creditStore = creditStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -149,6 +157,7 @@ public class IssueController implements Controller {
             if (json.has("priority")) {
                 issue.setPriority(json.get("priority").asText());
             }
+            String previousStatus = issue.getStatus();
             if (json.has("status")) {
                 issue.setStatus(json.get("status").asText());
             }
@@ -161,6 +170,9 @@ public class IssueController implements Controller {
             }
 
             Issue updated = issueService.updateIssue(issue);
+            if (shouldAwardIssueCloseCredit(previousStatus, updated.getStatus())) {
+                awardIssueClosedCredit(updated);
+            }
             logger.info("Issue updated via API: #" + updated.getId());
             ctx.json(updated);
         } catch (NumberFormatException e) {
@@ -226,5 +238,63 @@ public class IssueController implements Controller {
             logger.error("Error adding comment: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private boolean shouldAwardIssueCloseCredit(String previousStatus, String nextStatus) {
+        if (previousStatus == null || nextStatus == null) {
+            return false;
+        }
+        return !"closed".equalsIgnoreCase(previousStatus)
+            && "closed".equalsIgnoreCase(nextStatus);
+    }
+
+    private void awardIssueClosedCredit(Issue issue) {
+        if (creditStore == null || issue == null) {
+            return;
+        }
+        String agentId = resolveAgentId(issue.getAssignedTo());
+        if (agentId == null) {
+            agentId = resolveAgentId(issue.getOpenedBy());
+        }
+        if (agentId == null) {
+            return;
+        }
+
+        CreditEvent event = new CreditEvent();
+        event.setAgentId(agentId);
+        event.setAmount(2);
+        event.setReason("resolved-issue");
+        event.setVerifiedBy("system");
+        event.setTimestamp(System.currentTimeMillis());
+        CreditEvent.RelatedEntity related = new CreditEvent.RelatedEntity();
+        related.setType("issue");
+        related.setId(String.valueOf(issue.getId()));
+        event.setRelatedEntity(related);
+
+        try {
+            creditStore.award(event);
+        } catch (Exception e) {
+            logger.warn("Failed to award issue close credit: " + e.getMessage());
+        }
+    }
+
+    private String resolveAgentId(String value) {
+        if (value == null || value.isBlank() || projectContext == null) {
+            return null;
+        }
+        String target = value.trim().toLowerCase();
+        var agents = projectContext.agents().listAllAgents();
+        for (var agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            if (agent.getId() != null && agent.getId().equalsIgnoreCase(target)) {
+                return agent.getId();
+            }
+            if (agent.getName() != null && agent.getName().trim().equalsIgnoreCase(target)) {
+                return agent.getId();
+            }
+        }
+        return null;
     }
 }
