@@ -44,6 +44,7 @@ public class Main {
             // Initialize notification and issue services
             NotificationStore notificationStore = new NotificationStore();
             IssueMemoryService issueService = new IssueMemoryService();
+            CreditStore creditStore = new CreditStore();
             MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");
             logger.info("Memory service initialized");
@@ -94,6 +95,7 @@ public class Main {
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, objectMapper),
+                new CreditController(creditStore, objectMapper),
                 memoryController,
                 new PatchController(projectContext, notificationStore, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper)
