@@ -6577,6 +6577,26 @@ input[type="password"].settings-control {
     transition: none;
 }
 
+/* Widget Drag and Drop */
+.widget-card.widget-dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.widget-card.widget-drop-target {
+    border: 2px dashed var(--accent-color);
+    background: rgba(14, 99, 156, 0.1);
+    transform: scale(1.02);
+}
+
+.widget-card:not(.widget-resizing) {
+    cursor: grab;
+}
+
+.widget-card:not(.widget-resizing):active {
+    cursor: grabbing;
+}
+
 /* Widget Body */
 .widget-body {
     min-height: 100px;
@@ -6742,7 +6762,7 @@ input[type="password"].settings-control {
     font-size: 12px;
     line-height: 1.5;
     font-family: 'Consolas', 'Monaco', monospace;
-    resize: vertical;
+    resize: none;
     transition: border-color 0.2s ease;
     overflow-y: auto;
 }

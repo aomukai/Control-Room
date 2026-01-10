@@ -11426,6 +11426,7 @@
         const card = document.createElement('div');
         card.className = `workbench-card widget-card widget-size-${instance.size}`;
         card.dataset.instanceId = instance.instanceId;
+        card.draggable = true;
 
         // Apply custom size if set
         if (instance.settings._customWidth) {
@@ -11508,6 +11509,9 @@
 
         // Wire resize handle
         initWidgetResize(card, resizeHandle, instance);
+
+        // Wire drag-and-drop
+        initWidgetDragDrop(card, instance);
     }
 
     function initWidgetResize(card, handle, instance) {
@@ -11561,6 +11565,89 @@
 
             // Save the new size
             dashboardState.saveWidget(instance);
+        });
+    }
+
+    // Shared drag state for all widgets
+    let currentDraggedCard = null;
+    let currentDraggedInstance = null;
+
+    function initWidgetDragDrop(card, instance) {
+        card.addEventListener('dragstart', (e) => {
+            // Prevent drag from starting on interactive elements
+            const target = e.target;
+            if (target.tagName === 'TEXTAREA' ||
+                target.tagName === 'INPUT' ||
+                target.tagName === 'BUTTON' ||
+                target.closest('.widget-body')) {
+                e.preventDefault();
+                return;
+            }
+
+            currentDraggedCard = card;
+            currentDraggedInstance = instance;
+            card.classList.add('widget-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', card.innerHTML);
+        });
+
+        card.addEventListener('dragend', (e) => {
+            card.classList.remove('widget-dragging');
+            // Remove all drop zone indicators
+            document.querySelectorAll('.widget-card').forEach(el => {
+                el.classList.remove('widget-drop-target');
+            });
+            currentDraggedCard = null;
+            currentDraggedInstance = null;
+        });
+
+        card.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            if (currentDraggedCard && currentDraggedCard !== card) {
+                card.classList.add('widget-drop-target');
+            }
+        });
+
+        card.addEventListener('dragleave', (e) => {
+            card.classList.remove('widget-drop-target');
+        });
+
+        card.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            card.classList.remove('widget-drop-target');
+
+            if (!currentDraggedCard || !currentDraggedInstance || currentDraggedCard === card) {
+                return;
+            }
+
+            // Get current positions
+            const draggedPos = currentDraggedInstance.position;
+            const targetPos = instance.position;
+
+            console.log('[Dashboard] Swapping positions:', draggedPos, '<->', targetPos);
+
+            // Swap positions in the data
+            currentDraggedInstance.position = targetPos;
+            instance.position = draggedPos;
+
+            // Update all widgets
+            dashboardState.saveWidget(currentDraggedInstance);
+            dashboardState.saveWidget(instance);
+
+            // Re-render the dashboard to show new order
+            const grid = document.getElementById('widget-dashboard-grid');
+            if (grid) {
+                grid.innerHTML = '';
+                dashboardState.widgets
+                    .sort((a, b) => a.position - b.position)
+                    .forEach(inst => {
+                        renderWidgetCard(grid, inst);
+                    });
+            }
         });
     }
 

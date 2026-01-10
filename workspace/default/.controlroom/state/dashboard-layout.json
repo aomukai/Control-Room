@@ -3,16 +3,34 @@
   "version" : 1,
   "columns" : 4,
   "widgets" : [ {
+    "instanceId" : "widget-1768046559912-yuubnlpzs",
+    "widgetId" : "widget-issue-pulse",
+    "position" : 0,
+    "size" : "small",
+    "settings" : { }
+  }, {
+    "instanceId" : "widget-1768046580613-n8w5hm8xc",
+    "widgetId" : "widget-credits-leaderboard",
+    "position" : 1,
+    "size" : "small",
+    "settings" : { }
+  }, {
     "instanceId" : "widget-1768044961309-hij5q6463",
     "widgetId" : "widget-quick-notes",
-    "position" : 0,
+    "position" : 2,
     "size" : "small",
     "settings" : {
       "showPreview" : false,
       "content" : "lalala",
       "lastModified" : 1768044971281,
-      "_customWidth" : 377,
-      "_customHeight" : 287
+      "_customWidth" : 348,
+      "_customHeight" : 294
     }
+  }, {
+    "instanceId" : "widget-1768046567460-pal9puxf3",
+    "widgetId" : "widget-planner-briefing",
+    "position" : 3,
+    "size" : "large",
+    "settings" : { }
   } ]
 }
