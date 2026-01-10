@@ -3,8 +3,10 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.CreditStore;
 import com.miniide.PatchService.ApplyOutcome;
 import com.miniide.ProjectContext;
+import com.miniide.models.CreditEvent;
 import com.miniide.models.PatchProposal;
 import com.miniide.NotificationStore;
 import io.javalin.Javalin;
@@ -20,12 +22,15 @@ public class PatchController implements Controller {
 
     private final ProjectContext projectContext;
     private final NotificationStore notificationStore;
+    private final CreditStore creditStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public PatchController(ProjectContext projectContext, NotificationStore notificationStore, ObjectMapper objectMapper) {
+    public PatchController(ProjectContext projectContext, NotificationStore notificationStore,
+                           CreditStore creditStore, ObjectMapper objectMapper) {
         this.projectContext = projectContext;
         this.notificationStore = notificationStore;
+        this.creditStore = creditStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -105,6 +110,7 @@ public class PatchController implements Controller {
                 ));
                 return;
             }
+            awardPatchApplyCredit(outcome.getProposal());
             ctx.json(Map.of("ok", true, "patch", outcome.getProposal(), "fileResults", outcome.getFileResults()));
         } catch (Exception e) {
             logger.error("Failed to apply patch: " + e.getMessage(), e);
@@ -201,6 +207,33 @@ public class PatchController implements Controller {
             payload,
             "patch"
         );
+    }
+
+    private void awardPatchApplyCredit(PatchProposal proposal) {
+        if (creditStore == null || proposal == null || proposal.getProvenance() == null) {
+            return;
+        }
+        String agentId = proposal.getProvenance().getAgent();
+        if (agentId == null || agentId.isBlank()) {
+            return;
+        }
+
+        CreditEvent event = new CreditEvent();
+        event.setAgentId(agentId);
+        event.setAmount(3);
+        event.setReason("proposal-accepted-by-user");
+        event.setVerifiedBy("user");
+        event.setTimestamp(System.currentTimeMillis());
+        CreditEvent.RelatedEntity related = new CreditEvent.RelatedEntity();
+        related.setType("patch");
+        related.setId(proposal.getId());
+        event.setRelatedEntity(related);
+
+        try {
+            creditStore.award(event);
+        } catch (Exception e) {
+            logger.warn("Failed to award patch credit: " + e.getMessage());
+        }
     }
 
     private Map<String, Object> buildPatchAuditExport(PatchProposal patch) {

@@ -94,10 +94,10 @@ public class Main {
                 new AgentController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
-                new IssueController(issueService, objectMapper),
+                new IssueController(issueService, projectContext, creditStore, objectMapper),
                 new CreditController(creditStore, objectMapper),
                 memoryController,
-                new PatchController(projectContext, notificationStore, objectMapper),
+                new PatchController(projectContext, notificationStore, creditStore, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper)
             );
 
