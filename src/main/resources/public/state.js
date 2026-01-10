@@ -55,7 +55,8 @@
         agents: {
             list: [],
             selectedId: null,
-            statusById: {}
+            statusById: {},
+            activityById: {}
         },
         chat: {
             memoryId: null,

@@ -2417,6 +2417,11 @@
                 { closeOnCancel: true, closeOnConfirm: false }
             );
 
+        const closeChatModal = () => {
+            closeWithActivity();
+            close();
+        };
+
             modal.classList.add('settings-coming-soon-modal');
 
             const text = document.createElement('div');
@@ -3199,11 +3204,42 @@
     }
 
     function getAgentActivityState(agent) {
-        const state = agent && agent.activityState ? String(agent.activityState).toLowerCase() : 'idle';
-        if (state === 'reading' || state === 'processing' || state === 'executing') {
-            return state;
+        const fallback = agent && agent.activityState ? String(agent.activityState).toLowerCase() : 'idle';
+        const override = agent && agent.id ? state.agents.activityById[agent.id] : null;
+        const activity = override || fallback;
+        const normalized = activity ? String(activity).toLowerCase() : 'idle';
+        if (normalized === 'reading' || normalized === 'processing' || normalized === 'executing') {
+            return normalized;
         }
         return 'idle';
+    }
+
+    function setAgentActivityState(agentId, activity) {
+        if (!agentId) {
+            return;
+        }
+        if (!activity || activity === 'idle') {
+            delete state.agents.activityById[agentId];
+        } else {
+            state.agents.activityById[agentId] = activity;
+        }
+        renderAgentSidebar();
+    }
+
+    function withAgentActivity(agentId, activity, work) {
+        setAgentActivityState(agentId, activity);
+        const finalize = () => setAgentActivityState(agentId, 'idle');
+        try {
+            const result = typeof work === 'function' ? work() : null;
+            if (result && typeof result.finally === 'function') {
+                return result.finally(finalize);
+            }
+            finalize();
+            return result;
+        } catch (err) {
+            finalize();
+            throw err;
+        }
     }
 
     function getAgentSupervisionState(agent) {
@@ -7766,6 +7802,13 @@
         const { panel, actions, body, close } = createWorkbenchPanelShell('Conference');
         panel.classList.add('conference-mode-modal');
 
+        const closeConference = () => {
+            invited.forEach(agent => setAgentActivityState(agent.id, 'idle'));
+            close();
+        };
+
+        invited.forEach(agent => setAgentActivityState(agent.id, 'reading'));
+
         const header = document.createElement('div');
         header.className = 'conference-header';
 
@@ -7792,8 +7835,15 @@
             showConferenceManageModal(invited, renderAttendees);
         });
 
+        const btnClose = document.createElement('button');
+        btnClose.type = 'button';
+        btnClose.className = 'conference-action-btn';
+        btnClose.textContent = 'Close';
+        btnClose.addEventListener('click', closeConference);
+
         headerActions.appendChild(btnCreateIssue);
         headerActions.appendChild(btnManage);
+        headerActions.appendChild(btnClose);
 
         header.appendChild(headerLeft);
         header.appendChild(headerActions);
@@ -9040,13 +9090,16 @@
         }
 
         setSelectedAgentId(agent.id);
+        setAgentActivityState(agent.id, 'reading');
+        const closeWithActivity = () => setAgentActivityState(agent.id, 'idle');
 
         const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             `${agent.name || 'Agent'}`,
             'Exit and Create Issue',
             null,
-            { closeOnCancel: false, closeOnConfirm: false }
+            { closeOnCancel: false, closeOnConfirm: false, onClose: closeWithActivity }
         );
+        const closeChatModal = close;
 
         modal.classList.add('workbench-chat-modal');
 
@@ -9143,11 +9196,11 @@
             log.push({ role: 'user', content: message });
 
             try {
-                const response = await api('/api/ai/chat', {
+                const response = await withAgentActivity(agent.id, 'processing', () => api('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message, agentId: agent.id })
-                });
+                }));
                 const reply = response.content || 'No response.';
                 appendWorkbenchChatMessage(history, 'assistant', reply, agent.name);
                 log.push({ role: 'assistant', content: reply });
@@ -9214,7 +9267,7 @@
                     issueId: response.id
                 });
 
-                close();
+                closeChatModal();
             } catch (err) {
                 notificationStore.error('Failed to create issue. Please try again.', 'workbench');
                 console.error('Issue creation error:', err);
@@ -9269,13 +9322,13 @@
 
         log(`Chat: User message sent${reroll ? ' (reroll)' : ''}`, 'info');
 
-        try {
+        const agentId = (reroll && previous ? previous.agentId : state.agents.selectedId) || null;
+        const runChat = async () => {
             const payload = {
                 message,
                 memoryId: state.chat.memoryId || undefined,
                 reroll
             };
-            const agentId = (reroll && previous ? previous.agentId : state.agents.selectedId) || null;
             if (agentId) {
                 payload.agentId = agentId;
             }
@@ -9300,6 +9353,14 @@
             const reply = response && response.content ? response.content : 'No response.';
             addChatMessage('assistant', reply, meta);
             log(`Chat: AI response received${meta.escalated ? ' (escalated)' : ''}`, 'success');
+        };
+
+        try {
+            if (agentId) {
+                await withAgentActivity(agentId, 'processing', runChat);
+            } else {
+                await runChat();
+            }
         } catch (err) {
             addChatMessage('assistant', 'Sorry, I encountered an error. Please try again.');
             log(`Chat error: ${err.message}`, 'error');
