@@ -5258,7 +5258,7 @@ input[type="password"].settings-control {
     box-shadow: 0 0 0 1px rgba(78, 201, 176, 0.2);
 }
 
-.agent-badges {
+.agent-status-cluster {
     margin-left: auto;
     display: flex;
     align-items: center;
@@ -5275,6 +5275,41 @@ input[type="password"].settings-control {
     border-radius: 999px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
+}
+
+.agent-status-icons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.agent-status-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+}
+
+.agent-status-icon img {
+    width: 14px;
+    height: 14px;
+    filter: invert(80%);
+    opacity: 0.8;
+}
+
+.agent-status-icon:hover img {
+    opacity: 1;
+}
+
+.agent-status-icon-processing img {
+    animation: cr-spin 1.1s linear infinite;
+}
+
+@keyframes cr-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .agent-assisted-badge {
