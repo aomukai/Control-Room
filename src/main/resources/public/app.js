@@ -4234,7 +4234,7 @@
     async function loadIssues() {
         state.issueBoard.isLoading = true;
         state.issueBoard.error = null;
-        renderIssueBoardContent();
+        window.renderIssueBoardContent();
 
         try {
             // Build filters for API call
@@ -4249,253 +4249,11 @@
             const issues = await issueApi.list(filters);
             state.issueBoard.issues = issues;
             state.issueBoard.isLoading = false;
-            renderIssueBoardContent();
+            window.renderIssueBoardContent();
         } catch (err) {
             state.issueBoard.isLoading = false;
             state.issueBoard.error = err.message;
-            renderIssueBoardContent();
-        }
-    }
-
-    function renderIssueBoard(container) {
-        const target = container || document.getElementById('workbench-chat-content');
-        if (!target) return;
-
-        target.innerHTML = `
-            <div class="issue-board">
-                <div class="issue-board-header">
-                    <div class="issue-board-title">
-                        <span class="issue-board-icon">📋</span>
-                        <span>Issue Board</span>
-                    </div>
-                    <div class="issue-board-actions">
-                        <button type="button" class="issue-board-btn issue-board-btn-primary" id="issue-board-new" title="Create issue">
-                            New Issue
-                        </button>
-                        <button type="button" class="issue-board-btn" id="issue-board-refresh" title="Refresh">
-                            <span>↻</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="issue-board-filters">
-                    <div class="issue-filter-group">
-                        <label class="issue-filter-label">Status</label>
-                        <select id="issue-filter-status" class="issue-filter-select">
-                            <option value="all">All</option>
-                            <option value="open">Open</option>
-                            <option value="closed">Closed</option>
-                            <option value="waiting-on-user">Waiting</option>
-                        </select>
-                    </div>
-                    <div class="issue-filter-group">
-                        <label class="issue-filter-label">Priority</label>
-                        <select id="issue-filter-priority" class="issue-filter-select">
-                            <option value="all">All</option>
-                            <option value="urgent">Urgent</option>
-                            <option value="high">High</option>
-                            <option value="normal">Normal</option>
-                            <option value="low">Low</option>
-                        </select>
-                    </div>
-                    <div class="issue-filter-stats" id="issue-filter-stats"></div>
-                </div>
-                <div class="issue-board-content" id="issue-board-list"></div>
-            </div>
-        `;
-
-        // Set current filter values
-        const statusSelect = document.getElementById('issue-filter-status');
-        const prioritySelect = document.getElementById('issue-filter-priority');
-        if (statusSelect) statusSelect.value = state.issueBoard.filters.status;
-        if (prioritySelect) prioritySelect.value = state.issueBoard.filters.priority;
-
-        // Wire event listeners
-        initIssueBoardListeners();
-
-        // Load issues
-        loadIssues();
-    }
-
-    function initIssueBoardListeners() {
-        const refreshBtn = document.getElementById('issue-board-refresh');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                loadIssues();
-            });
-        }
-
-        const newBtn = document.getElementById('issue-board-new');
-        if (newBtn) {
-            newBtn.addEventListener('click', () => {
-                showIssueCreateModal();
-            });
-        }
-
-        const statusSelect = document.getElementById('issue-filter-status');
-        if (statusSelect) {
-            statusSelect.addEventListener('change', (e) => {
-                state.issueBoard.filters.status = e.target.value;
-                loadIssues();
-            });
-        }
-
-        const prioritySelect = document.getElementById('issue-filter-priority');
-        if (prioritySelect) {
-            prioritySelect.addEventListener('change', (e) => {
-                state.issueBoard.filters.priority = e.target.value;
-                loadIssues();
-            });
-        }
-    }
-
-    function renderIssueBoardContent() {
-        const container = document.getElementById('issue-board-list');
-        const statsContainer = document.getElementById('issue-filter-stats');
-        if (!container) return;
-
-        // Loading state
-        if (state.issueBoard.isLoading) {
-            container.innerHTML = `
-                <div class="issue-board-loading">
-                    <div class="issue-loading-spinner"></div>
-                    <span>Loading issues...</span>
-                </div>
-            `;
-            if (statsContainer) statsContainer.textContent = '';
-            return;
-        }
-
-        // Error state
-        if (state.issueBoard.error) {
-            container.innerHTML = `
-                <div class="issue-board-error">
-                    <span class="issue-error-icon">⚠</span>
-                    <span>${escapeHtml(state.issueBoard.error)}</span>
-                    <button type="button" class="issue-retry-btn" onclick="loadIssues()">Retry</button>
-                </div>
-            `;
-            if (statsContainer) statsContainer.textContent = '';
-            return;
-        }
-
-        const issues = state.issueBoard.issues;
-
-        // Update stats
-        if (statsContainer) {
-            const openCount = issues.filter(i => i.status === 'open').length;
-            statsContainer.textContent = `${issues.length} issue${issues.length !== 1 ? 's' : ''} (${openCount} open)`;
-        }
-
-        // Empty state
-        if (issues.length === 0) {
-            container.innerHTML = `
-                <div class="issue-board-empty">
-                    <span class="issue-empty-icon">📭</span>
-                    <span class="issue-empty-text">No issues found</span>
-                    <span class="issue-empty-hint">Issues created by agents will appear here</span>
-                </div>
-            `;
-            return;
-        }
-
-        // Render issue cards
-        container.innerHTML = '';
-        issues.forEach(issue => {
-            const card = createIssueCard(issue);
-            container.appendChild(card);
-        });
-    }
-
-      function createIssueCard(issue) {
-          const card = document.createElement('div');
-          card.className = 'issue-card';
-          card.dataset.issueId = issue.id;
-          const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
-
-          // Status class
-          const statusClass = `issue-status-${issue.status.replace(/-/g, '')}`;
-
-          // Priority indicator
-        const priorityClass = `issue-priority-${issue.priority}`;
-        const priorityIcon = getPriorityIcon(issue.priority);
-
-        // Comment count
-        const commentCount = issue.comments ? issue.comments.length : 0;
-
-        const isClosed = issue.status === 'closed';
-        const actionLabel = isClosed ? 'Reopen' : 'Close';
-          const actionClass = isClosed ? 'issue-action-reopen' : 'issue-action-close';
-
-          // Tags (show first 2)
-          const tagsHtml = otherTags.length > 0
-              ? otherTags.slice(0, 2).map(t => `<span class="issue-card-tag">${escapeHtml(t)}</span>`).join('')
-              : '';
-          const moreTagsHtml = otherTags.length > 2
-              ? `<span class="issue-card-tag-more">+${otherTags.length - 2}</span>`
-              : '';
-
-          card.innerHTML = `
-              <div class="issue-card-header">
-                  <div class="issue-card-header-left">
-                      <span class="issue-card-id">#${issue.id}</span>
-                      ${roadmapStatus ? `<span class="issue-card-roadmap">${escapeHtml(roadmapStatus)}</span>` : ''}
-                  </div>
-                  <span class="issue-card-status ${statusClass}">${formatStatus(issue.status)}</span>
-              </div>
-            <div class="issue-card-title">${escapeHtml(issue.title)}</div>
-            <div class="issue-card-meta">
-                <span class="issue-card-priority ${priorityClass}" title="${issue.priority} priority">
-                    ${priorityIcon}
-                </span>
-                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">→ ${escapeHtml(issue.assignedTo)}</span>` : ''}
-                ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">💬 ${commentCount}</span>` : ''}
-                <span class="issue-card-time" title="${formatTimestamp(issue.updatedAt)}">${formatRelativeTime(issue.updatedAt)}</span>
-            </div>
-            <div class="issue-card-actions">
-                <button type="button" class="issue-quick-action ${actionClass}" title="${actionLabel} issue">
-                    ${actionLabel}
-                </button>
-            </div>
-            ${tagsHtml || moreTagsHtml ? `<div class="issue-card-tags">${tagsHtml}${moreTagsHtml}</div>` : ''}
-        `;
-
-        // Click to open issue modal
-        card.addEventListener('click', () => {
-            openIssueModal(issue.id);
-        });
-
-        const quickAction = card.querySelector('.issue-quick-action');
-        if (quickAction) {
-            quickAction.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                quickAction.disabled = true;
-                const targetStatus = isClosed ? 'open' : 'closed';
-                try {
-                    const updated = await issueApi.update(issue.id, { status: targetStatus });
-                    if (targetStatus === 'closed') {
-                        notificationStore.issueClosed(updated.id, updated.title);
-                    } else {
-                        notificationStore.success(`Issue #${updated.id} reopened: ${updated.title}`, 'workbench');
-                    }
-                    await loadIssues();
-                } catch (err) {
-                    notificationStore.error(`Failed to ${actionLabel.toLowerCase()} Issue #${issue.id}: ${err.message}`, 'workbench');
-                } finally {
-                    quickAction.disabled = false;
-                }
-            });
-        }
-
-        return card;
-    }
-
-    function getPriorityIcon(priority) {
-        switch (priority) {
-            case 'urgent': return '🔴';
-            case 'high': return '🟠';
-            case 'normal': return '🔵';
-            case 'low': return '⚪';
-            default: return '🔵';
+            window.renderIssueBoardContent();
         }
     }
 
@@ -11822,8 +11580,10 @@
 
     window.dispatchNotificationAction = dispatchNotificationAction;
     window.isWorkbenchView = isWorkbenchView;
-    window.renderIssueBoard = renderIssueBoard;
     window.showIssueCreateModal = showIssueCreateModal;
+    window.openIssueModal = openIssueModal;
+    window.loadIssues = loadIssues;
+    window.extractRoadmapStatus = extractRoadmapStatus;
 
     // Start when DOM is ready
     if (document.readyState === 'loading') {
