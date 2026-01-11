@@ -70,6 +70,18 @@ public class AgentRegistry {
         for (int i = 0; i < agents.size(); i++) {
             Agent existing = agents.get(i);
             if (id.equals(existing.getId())) {
+                if (isAssistantRole(existing, updates) && hasAssistedUpdate(updates)) {
+                    boolean clearingOnly = Boolean.FALSE.equals(updates.getAssisted())
+                        && updates.getAssistedReason() == null
+                        && updates.getAssistedSince() == null
+                        && updates.getAssistedModel() == null
+                        && updates.getAssistedQueueSize() == null
+                        && updates.getAssistedTaskDosage() == null
+                        && updates.getAssistedNotes() == null;
+                    if (!clearingOnly) {
+                        throw new IllegalArgumentException("Assistant cannot be set to assisted mode");
+                    }
+                }
                 // Merge updates into existing agent
                 // Note: Only update non-null AND non-empty values for collections
                 // because Jackson deserializes missing fields as empty collections, not null
@@ -215,6 +227,9 @@ public class AgentRegistry {
             roleKey = "writer";
         }
         agent.setRole(roleKey);
+        if (isAssistantRole(agent, null) && hasAssistedUpdate(agent)) {
+            throw new IllegalArgumentException("Assistant cannot be set to assisted mode");
+        }
 
         String id = agent.getId();
         if (id == null || id.trim().isEmpty()) {
@@ -264,6 +279,9 @@ public class AgentRegistry {
         agent.setCreatedAt(System.currentTimeMillis());
         agent.setUpdatedAt(System.currentTimeMillis());
         agent.setEnabled(true);
+        if (isAssistantRole(agent, null) && hasAssistedUpdate(agent)) {
+            throw new IllegalArgumentException("Assistant cannot be set to assisted mode");
+        }
 
         agentsFile.getAgents().add(agent);
         saveToDisk();
@@ -356,6 +374,39 @@ public class AgentRegistry {
         agent.setAssistedReason(null);
         agent.setAssistedSince(null);
         agent.setAssistedModel(null);
+        agent.setAssistedQueueSize(null);
+        agent.setAssistedTaskDosage(null);
+        agent.setAssistedNotes(null);
+    }
+
+    private boolean hasAssistedUpdate(Agent agent) {
+        if (agent == null) {
+            return false;
+        }
+        return agent.getAssisted() != null
+            || agent.getAssistedReason() != null
+            || agent.getAssistedSince() != null
+            || agent.getAssistedModel() != null
+            || agent.getAssistedQueueSize() != null
+            || agent.getAssistedTaskDosage() != null
+            || agent.getAssistedNotes() != null;
+    }
+
+    private boolean isAssistantRole(Agent existing, Agent updates) {
+        String roleValue = null;
+        if (updates != null && updates.getRole() != null && !updates.getRole().trim().isEmpty()) {
+            roleValue = updates.getRole();
+        } else if (existing != null) {
+            roleValue = existing.getRole();
+        }
+        String roleKey = RoleKey.canonicalize(roleValue);
+        Boolean canBeTeamLead = null;
+        if (updates != null && updates.getCanBeTeamLead() != null) {
+            canBeTeamLead = updates.getCanBeTeamLead();
+        } else if (existing != null) {
+            canBeTeamLead = existing.getCanBeTeamLead();
+        }
+        return "assistant".equals(roleKey) || Boolean.TRUE.equals(canBeTeamLead);
     }
 
     private String generateUniqueId(String name) {

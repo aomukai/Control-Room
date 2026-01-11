@@ -119,6 +119,8 @@ public class AgentController implements Controller {
                 projectContext.agentEndpoints().upsertEndpoint(id, updates.getEndpoint());
             }
             ctx.json(updated);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to update agent: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -164,6 +166,8 @@ public class AgentController implements Controller {
             Agent agent = ctx.bodyAsClass(Agent.class);
             Agent imported = projectContext.agents().importAgent(agent);
             ctx.status(201).json(imported);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
         } catch (Exception e) {
             logger.error("Failed to import agent: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
