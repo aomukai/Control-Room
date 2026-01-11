@@ -28,3 +28,6 @@ workspace/**/.control-room/agents/*.json
 
 # Local runtime data
 data/*.json
+
+# Local workspace UI state
+workspace/**/.controlroom/state/*.json
