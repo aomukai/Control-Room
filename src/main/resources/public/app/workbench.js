@@ -2,6 +2,54 @@
 (function() {
     'use strict';
 
+    let issueActivityAgentId = null;
+    const ROADMAP_STATUS_MAP = {
+        idea: 'Idea',
+        plan: 'Plan',
+        draft: 'Draft',
+        polished: 'Polished'
+    };
+    const ROADMAP_STATUS_ORDER = ['Idea', 'Plan', 'Draft', 'Polished'];
+
+    function canonicalizeRoadmapTag(tag) {
+        if (!tag) {
+            return null;
+        }
+        const key = String(tag).trim().toLowerCase();
+        return ROADMAP_STATUS_MAP[key] || null;
+    }
+
+    function extractRoadmapStatus(tags) {
+        if (!Array.isArray(tags)) {
+            return { status: null, otherTags: [] };
+        }
+        let status = null;
+        const otherTags = [];
+        tags.forEach((tag) => {
+            const canonical = canonicalizeRoadmapTag(tag);
+            if (canonical) {
+                status = canonical;
+                return;
+            }
+            if (tag && !otherTags.includes(tag)) {
+                otherTags.push(tag);
+            }
+        });
+        return { status, otherTags };
+    }
+
+    function buildRoadmapStatusOptions(current) {
+        const options = [
+            { value: '', label: 'Select status' },
+            ...ROADMAP_STATUS_ORDER.map((value) => ({ value, label: value })),
+            { value: 'none', label: 'Clear status' }
+        ];
+        return options.map(({ value, label }) => {
+            const selected = value === (current || '') ? ' selected' : '';
+            return `<option value="${value}"${selected}>${label}</option>`;
+        }).join('');
+    }
+
     function createWorkbenchPanelShell(title) {
         const overlay = document.createElement('div');
         overlay.className = 'workbench-panel-overlay';
@@ -155,7 +203,7 @@
             <div class="issue-board">
                 <div class="issue-board-header">
                     <div class="issue-board-title">
-                        <span class="issue-board-icon">ĐY"<</span>
+                        <span class="issue-board-icon">ÐY"<</span>
                         <span>Issue Board</span>
                     </div>
                     <div class="issue-board-actions">
@@ -163,7 +211,7 @@
                             New Issue
                         </button>
                         <button type="button" class="issue-board-btn" id="issue-board-refresh" title="Refresh">
-                            <span>ƒÅ¯</span>
+                            <span>Å¯</span>
                         </button>
                     </div>
                 </div>
@@ -259,7 +307,7 @@
         if (state.issueBoard.error) {
             container.innerHTML = `
                 <div class="issue-board-error">
-                    <span class="issue-error-icon">ƒsÿ</span>
+                    <span class="issue-error-icon">sÿ</span>
                     <span>${escapeHtml(state.issueBoard.error)}</span>
                     <button type="button" class="issue-retry-btn" onclick="loadIssues()">Retry</button>
                 </div>
@@ -337,7 +385,7 @@
                 <span class="issue-card-priority ${priorityClass}" title="${issue.priority} priority">
                     ${priorityIcon}
                 </span>
-                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">ƒÅ' ${escapeHtml(issue.assignedTo)}</span>` : ''}
+                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">Å' ${escapeHtml(issue.assignedTo)}</span>` : ''}
                 ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">ÐY'ª ${commentCount}</span>` : ''}
                 <span class="issue-card-time" title="${formatTimestamp(issue.updatedAt)}">${formatRelativeTime(issue.updatedAt)}</span>
             </div>
@@ -384,8 +432,333 @@
             case 'urgent': return 'ÐY"ï';
             case 'high': return 'ÐYYÿ';
             case 'normal': return 'ÐY"æ';
-            case 'low': return 'ƒs¦';
+            case 'low': return 's¦';
             default: return 'ÐY"æ';
+        }
+    }
+
+    async function openIssueModal(issueId) {
+        if (!issueId) return;
+
+        state.issueModal.isOpen = true;
+        state.issueModal.issueId = issueId;
+        state.issueModal.isLoading = true;
+        state.issueModal.error = null;
+        state.issueModal.issue = null;
+
+        renderIssueModal();
+
+        try {
+            const issue = await issueApi.get(issueId);
+            state.issueModal.issue = issue;
+            state.issueModal.isLoading = false;
+            if (issueActivityAgentId) {
+                setAgentActivityState(issueActivityAgentId, 'idle');
+                issueActivityAgentId = null;
+            }
+            const assignedId = resolveAgentIdFromLabel(issue.assignedTo);
+            const openedId = resolveAgentIdFromLabel(issue.openedBy);
+            issueActivityAgentId = assignedId || openedId;
+            if (issueActivityAgentId) {
+                setAgentActivityState(issueActivityAgentId, 'reading', `Reviewing Issue #${issue.id}`);
+            }
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.isLoading = false;
+            state.issueModal.error = err.message;
+            renderIssueModal();
+        }
+    }
+
+    function closeIssueModal() {
+        state.issueModal.isOpen = false;
+        state.issueModal.issueId = null;
+        state.issueModal.isLoading = false;
+        state.issueModal.error = null;
+        state.issueModal.issue = null;
+
+        if (issueActivityAgentId) {
+            setAgentActivityState(issueActivityAgentId, 'idle');
+            issueActivityAgentId = null;
+        }
+
+        const overlay = document.getElementById('issue-modal-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+
+        // Return focus to notification bell if it exists
+        if (elements.notificationBell) {
+            elements.notificationBell.focus();
+        }
+    }
+
+    function renderIssueModal() {
+        // Remove existing overlay if any
+        let overlay = document.getElementById('issue-modal-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+
+        if (!state.issueModal.isOpen) {
+            return;
+        }
+
+        // Create overlay
+        overlay = document.createElement('div');
+        overlay.id = 'issue-modal-overlay';
+        overlay.className = 'issue-modal-overlay';
+
+        // Create modal container
+        const modal = document.createElement('div');
+        modal.className = 'issue-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', 'issue-modal-title');
+
+        // Loading state
+        if (state.issueModal.isLoading) {
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <h2 id="issue-modal-title" class="issue-modal-title">Loading Issue #${state.issueModal.issueId}...</h2>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+                <div class="issue-modal-body">
+                    <div class="issue-modal-loading">
+                        <div class="issue-loading-spinner"></div>
+                        <span>Loading issue details...</span>
+                    </div>
+                </div>
+            `;
+        }
+        // Error state
+        else if (state.issueModal.error) {
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <h2 id="issue-modal-title" class="issue-modal-title">Issue #${state.issueModal.issueId}</h2>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+                <div class="issue-modal-body">
+                    <div class="issue-modal-error">
+                        <span class="issue-error-icon">&#9888;</span>
+                        <span class="issue-error-message">${escapeHtml(state.issueModal.error)}</span>
+                    </div>
+                </div>
+            `;
+        }
+        // Issue loaded
+        else if (state.issueModal.issue) {
+            const issue = state.issueModal.issue;
+            const statusLabel = issue.status.replace(/-/g, ' ');
+            const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
+            const roadmapLabel = roadmapStatus || 'None';
+            const roadmapOptions = buildRoadmapStatusOptions(roadmapStatus);
+
+            // Build tags HTML
+            const tagsHtml = otherTags.length > 0
+                ? otherTags.map(tag => `<span class="issue-tag">${escapeHtml(tag)}</span>`).join('')
+                : '<span class="issue-no-tags">No tags</span>';
+
+            // Build comments HTML
+            let commentsHtml = '';
+            if (issue.comments && issue.comments.length > 0) {
+                commentsHtml = issue.comments.map(comment => {
+                    let actionBadge = '';
+                    if (comment.action && comment.action.type) {
+                        actionBadge = `
+                            <span class="comment-action-badge">
+                                <span class="comment-action-type">${escapeHtml(comment.action.type)}</span>
+                                ${comment.action.details ? `<span class="comment-action-details">${escapeHtml(comment.action.details)}</span>` : ''}
+                            </span>
+                        `;
+                    }
+                    return `
+                        <div class="issue-comment">
+                            <div class="comment-header">
+                                <span class="comment-author">${escapeHtml(comment.author || 'Unknown')}</span>
+                                <span class="comment-timestamp">${formatRelativeTime(comment.timestamp)}</span>
+                                ${actionBadge}
+                            </div>
+                            <div class="comment-body">${escapeHtml(comment.body || '')}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                commentsHtml = '<div class="issue-no-comments">No comments yet</div>';
+            }
+
+            modal.innerHTML = `
+                <div class="issue-modal-header">
+                    <div class="issue-modal-title-row">
+                        <h2 id="issue-modal-title" class="issue-modal-title">Issue #${issue.id}: ${escapeHtml(issue.title)}</h2>
+                        <span class="issue-status-pill ${getStatusClass(issue.status)}">${escapeHtml(statusLabel)}</span>
+                    </div>
+                    <div class="issue-modal-meta-row">
+                        <span class="issue-meta-item">
+                            <span class="issue-meta-label">Author:</span>
+                            <span class="issue-meta-value">${escapeHtml(issue.openedBy || 'Unknown')}</span>
+                        </span>
+                        ${issue.assignedTo ? `
+                            <span class="issue-meta-item">
+                                <span class="issue-meta-label">Assignee:</span>
+                                <span class="issue-meta-value">${escapeHtml(issue.assignedTo)}</span>
+                            </span>
+                        ` : ''}
+                    </div>
+                    <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
+                </div>
+
+                <div class="issue-modal-body">
+                      <div class="issue-meta-section">
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Tags:</span>
+                              <div class="issue-tags-container">${tagsHtml}</div>
+                          </div>
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Roadmap:</span>
+                              <span class="issue-roadmap-pill ${roadmapStatus ? 'is-set' : 'is-empty'}">${escapeHtml(roadmapLabel)}</span>
+                          </div>
+                          <div class="issue-meta-group issue-roadmap-controls">
+                              <span class="issue-meta-label">Update:</span>
+                              <div class="issue-roadmap-actions">
+                                  <select class="modal-select issue-roadmap-select">
+                                      ${roadmapOptions}
+                                  </select>
+                                  <button type="button" class="modal-btn modal-btn-secondary issue-roadmap-apply">Apply</button>
+                              </div>
+                          </div>
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Priority:</span>
+                              <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
+                          </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Created:</span>
+                            <span class="issue-meta-value">${formatTimestamp(issue.createdAt)}</span>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Updated:</span>
+                            <span class="issue-meta-value">${formatTimestamp(issue.updatedAt)}</span>
+                        </div>
+                        ${issue.closedAt ? `
+                            <div class="issue-meta-group">
+                                <span class="issue-meta-label">Closed:</span>
+                                <span class="issue-meta-value">${formatTimestamp(issue.closedAt)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="issue-body-section">
+                        <h3 class="issue-section-title">Description</h3>
+                        <div class="issue-body-content">${escapeHtml(issue.body || 'No description provided.')}</div>
+                    </div>
+
+                    <div class="issue-comments-section">
+                        <h3 class="issue-section-title">Comments (${issue.comments ? issue.comments.length : 0})</h3>
+                        <div class="issue-comments-list">${commentsHtml}</div>
+                    </div>
+                </div>
+
+                <div class="issue-modal-footer">
+                    <div class="issue-modal-actions-placeholder">
+                        <!-- Future actions: Add Comment, Close Issue, etc. -->
+                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Add Comment</button>
+                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Close Issue</button>
+                    </div>
+                    <button type="button" class="issue-modal-btn-close">Close</button>
+                </div>
+            `;
+        }
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        // Event listeners
+        const closeBtn = modal.querySelector('.issue-modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeIssueModal);
+        }
+
+        const footerCloseBtn = modal.querySelector('.issue-modal-btn-close');
+        if (footerCloseBtn) {
+            footerCloseBtn.addEventListener('click', closeIssueModal);
+        }
+
+        const roadmapApplyBtn = modal.querySelector('.issue-roadmap-apply');
+        if (roadmapApplyBtn) {
+            roadmapApplyBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) {
+                    return;
+                }
+                const select = modal.querySelector('.issue-roadmap-select');
+                if (!select) {
+                    return;
+                }
+                const value = select.value;
+                if (!value) {
+                    notificationStore.warning('Select a roadmap status tag first.', 'workbench');
+                    return;
+                }
+                const nextStatus = value === 'none' ? null : value;
+                const { otherTags } = extractRoadmapStatus(issue.tags || []);
+                const nextTags = [...otherTags];
+                if (nextStatus) {
+                    nextTags.push(nextStatus);
+                }
+                roadmapApplyBtn.disabled = true;
+                try {
+                    const updated = await issueApi.update(issue.id, { tags: nextTags });
+                    state.issueModal.issue = updated;
+                    notificationStore.success(`Updated Issue #${updated.id} roadmap status.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to update roadmap status: ${err.message}`, 'workbench');
+                } finally {
+                    roadmapApplyBtn.disabled = false;
+                }
+            });
+        }
+
+        // Close on overlay click (outside modal)
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeIssueModal();
+            }
+        });
+
+        // Keyboard handling
+        function handleKeydown(e) {
+            if (e.key === 'Escape') {
+                closeIssueModal();
+                document.removeEventListener('keydown', handleKeydown);
+            }
+        }
+        document.addEventListener('keydown', handleKeydown);
+
+        // Focus the close button for accessibility
+        if (closeBtn) {
+            closeBtn.focus();
+        }
+    }
+
+
+    async function refreshIssueModal(issueId) {
+        if (!state.issueModal.isOpen || state.issueModal.issueId !== issueId) return;
+        state.issueModal.isLoading = true;
+        state.issueModal.error = null;
+        renderIssueModal();
+        try {
+            const issue = await issueApi.get(issueId);
+            state.issueModal.issue = issue;
+            state.issueModal.isLoading = false;
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.isLoading = false;
+            state.issueModal.error = err.message;
+            renderIssueModal();
         }
     }
 
@@ -408,4 +781,9 @@
     window.renderIssueBoardContent = renderIssueBoardContent;
     window.createIssueCard = createIssueCard;
     window.getPriorityIcon = getPriorityIcon;
+    window.openIssueModal = openIssueModal;
+    window.closeIssueModal = closeIssueModal;
+    window.renderIssueModal = renderIssueModal;
+    window.refreshIssueModal = refreshIssueModal;
+    window.extractRoadmapStatus = extractRoadmapStatus;
 })();
