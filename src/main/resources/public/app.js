@@ -2080,6 +2080,52 @@
     // Issue Detail Modal
     // Opens the issue modal and fetches issue data
     let issueActivityAgentId = null;
+    const ROADMAP_STATUS_MAP = {
+        idea: 'Idea',
+        plan: 'Plan',
+        draft: 'Draft',
+        polished: 'Polished'
+    };
+    const ROADMAP_STATUS_ORDER = ['Idea', 'Plan', 'Draft', 'Polished'];
+
+    function canonicalizeRoadmapTag(tag) {
+        if (!tag) {
+            return null;
+        }
+        const key = String(tag).trim().toLowerCase();
+        return ROADMAP_STATUS_MAP[key] || null;
+    }
+
+    function extractRoadmapStatus(tags) {
+        if (!Array.isArray(tags)) {
+            return { status: null, otherTags: [] };
+        }
+        let status = null;
+        const otherTags = [];
+        tags.forEach((tag) => {
+            const canonical = canonicalizeRoadmapTag(tag);
+            if (canonical) {
+                status = canonical;
+                return;
+            }
+            if (tag && !otherTags.includes(tag)) {
+                otherTags.push(tag);
+            }
+        });
+        return { status, otherTags };
+    }
+
+    function buildRoadmapStatusOptions(current) {
+        const options = [
+            { value: '', label: 'Select status' },
+            ...ROADMAP_STATUS_ORDER.map((value) => ({ value, label: value })),
+            { value: 'none', label: 'Clear status' }
+        ];
+        return options.map(({ value, label }) => {
+            const selected = value === (current || '') ? ' selected' : '';
+            return `<option value="${value}"${selected}>${label}</option>`;
+        }).join('');
+    }
 
     async function openIssueModal(issueId) {
         if (!issueId) return;
@@ -2227,10 +2273,13 @@
         else if (state.issueModal.issue) {
             const issue = state.issueModal.issue;
             const statusLabel = issue.status.replace(/-/g, ' ');
+            const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
+            const roadmapLabel = roadmapStatus || 'None';
+            const roadmapOptions = buildRoadmapStatusOptions(roadmapStatus);
 
             // Build tags HTML
-            const tagsHtml = issue.tags && issue.tags.length > 0
-                ? issue.tags.map(tag => `<span class="issue-tag">${escapeHtml(tag)}</span>`).join('')
+            const tagsHtml = otherTags.length > 0
+                ? otherTags.map(tag => `<span class="issue-tag">${escapeHtml(tag)}</span>`).join('')
                 : '<span class="issue-no-tags">No tags</span>';
 
             // Build comments HTML
@@ -2283,15 +2332,28 @@
                 </div>
 
                 <div class="issue-modal-body">
-                    <div class="issue-meta-section">
-                        <div class="issue-meta-group">
-                            <span class="issue-meta-label">Tags:</span>
-                            <div class="issue-tags-container">${tagsHtml}</div>
-                        </div>
-                        <div class="issue-meta-group">
-                            <span class="issue-meta-label">Priority:</span>
-                            <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
-                        </div>
+                      <div class="issue-meta-section">
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Tags:</span>
+                              <div class="issue-tags-container">${tagsHtml}</div>
+                          </div>
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Roadmap:</span>
+                              <span class="issue-roadmap-pill ${roadmapStatus ? 'is-set' : 'is-empty'}">${escapeHtml(roadmapLabel)}</span>
+                          </div>
+                          <div class="issue-meta-group issue-roadmap-controls">
+                              <span class="issue-meta-label">Update:</span>
+                              <div class="issue-roadmap-actions">
+                                  <select class="modal-select issue-roadmap-select">
+                                      ${roadmapOptions}
+                                  </select>
+                                  <button type="button" class="modal-btn modal-btn-secondary issue-roadmap-apply">Apply</button>
+                              </div>
+                          </div>
+                          <div class="issue-meta-group">
+                              <span class="issue-meta-label">Priority:</span>
+                              <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
+                          </div>
                         <div class="issue-meta-group">
                             <span class="issue-meta-label">Created:</span>
                             <span class="issue-meta-value">${formatTimestamp(issue.createdAt)}</span>
@@ -2339,16 +2401,55 @@
             closeBtn.addEventListener('click', closeIssueModal);
         }
 
-        const footerCloseBtn = modal.querySelector('.issue-modal-btn-close');
-        if (footerCloseBtn) {
-            footerCloseBtn.addEventListener('click', closeIssueModal);
-        }
+          const footerCloseBtn = modal.querySelector('.issue-modal-btn-close');
+          if (footerCloseBtn) {
+              footerCloseBtn.addEventListener('click', closeIssueModal);
+          }
 
-        // Close on overlay click (outside modal)
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeIssueModal();
-            }
+          const roadmapApplyBtn = modal.querySelector('.issue-roadmap-apply');
+          if (roadmapApplyBtn) {
+              roadmapApplyBtn.addEventListener('click', async () => {
+                  const issue = state.issueModal.issue;
+                  if (!issue) {
+                      return;
+                  }
+                  const select = modal.querySelector('.issue-roadmap-select');
+                  if (!select) {
+                      return;
+                  }
+                  const value = select.value;
+                  if (!value) {
+                      notificationStore.warning('Select a roadmap status tag first.', 'workbench');
+                      return;
+                  }
+                  const nextStatus = value === 'none' ? null : value;
+                  const { otherTags } = extractRoadmapStatus(issue.tags || []);
+                  const nextTags = [...otherTags];
+                  if (nextStatus) {
+                      nextTags.push(nextStatus);
+                  }
+                  roadmapApplyBtn.disabled = true;
+                  try {
+                      const updated = await issueApi.update(issue.id, { tags: nextTags });
+                      state.issueModal.issue = updated;
+                      notificationStore.success(`Updated Issue #${updated.id} roadmap status.`, 'workbench');
+                      renderIssueModal();
+                      if (state.viewMode && state.viewMode.current === 'workbench') {
+                          await loadIssues();
+                      }
+                  } catch (err) {
+                      notificationStore.error(`Failed to update roadmap status: ${err.message}`, 'workbench');
+                  } finally {
+                      roadmapApplyBtn.disabled = false;
+                  }
+              });
+          }
+
+          // Close on overlay click (outside modal)
+          overlay.addEventListener('click', (e) => {
+              if (e.target === overlay) {
+                  closeIssueModal();
+              }
         });
 
         // Keyboard handling
@@ -4285,15 +4386,16 @@
         });
     }
 
-    function createIssueCard(issue) {
-        const card = document.createElement('div');
-        card.className = 'issue-card';
-        card.dataset.issueId = issue.id;
+      function createIssueCard(issue) {
+          const card = document.createElement('div');
+          card.className = 'issue-card';
+          card.dataset.issueId = issue.id;
+          const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
 
-        // Status class
-        const statusClass = `issue-status-${issue.status.replace(/-/g, '')}`;
+          // Status class
+          const statusClass = `issue-status-${issue.status.replace(/-/g, '')}`;
 
-        // Priority indicator
+          // Priority indicator
         const priorityClass = `issue-priority-${issue.priority}`;
         const priorityIcon = getPriorityIcon(issue.priority);
 
@@ -4302,21 +4404,24 @@
 
         const isClosed = issue.status === 'closed';
         const actionLabel = isClosed ? 'Reopen' : 'Close';
-        const actionClass = isClosed ? 'issue-action-reopen' : 'issue-action-close';
+          const actionClass = isClosed ? 'issue-action-reopen' : 'issue-action-close';
 
-        // Tags (show first 2)
-        const tagsHtml = issue.tags && issue.tags.length > 0
-            ? issue.tags.slice(0, 2).map(t => `<span class="issue-card-tag">${escapeHtml(t)}</span>`).join('')
-            : '';
-        const moreTagsHtml = issue.tags && issue.tags.length > 2
-            ? `<span class="issue-card-tag-more">+${issue.tags.length - 2}</span>`
-            : '';
+          // Tags (show first 2)
+          const tagsHtml = otherTags.length > 0
+              ? otherTags.slice(0, 2).map(t => `<span class="issue-card-tag">${escapeHtml(t)}</span>`).join('')
+              : '';
+          const moreTagsHtml = otherTags.length > 2
+              ? `<span class="issue-card-tag-more">+${otherTags.length - 2}</span>`
+              : '';
 
-        card.innerHTML = `
-            <div class="issue-card-header">
-                <span class="issue-card-id">#${issue.id}</span>
-                <span class="issue-card-status ${statusClass}">${formatStatus(issue.status)}</span>
-            </div>
+          card.innerHTML = `
+              <div class="issue-card-header">
+                  <div class="issue-card-header-left">
+                      <span class="issue-card-id">#${issue.id}</span>
+                      ${roadmapStatus ? `<span class="issue-card-roadmap">${escapeHtml(roadmapStatus)}</span>` : ''}
+                  </div>
+                  <span class="issue-card-status ${statusClass}">${formatStatus(issue.status)}</span>
+              </div>
             <div class="issue-card-title">${escapeHtml(issue.title)}</div>
             <div class="issue-card-meta">
                 <span class="issue-card-priority ${priorityClass}" title="${issue.priority} priority">
