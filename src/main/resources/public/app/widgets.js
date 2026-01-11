@@ -46,16 +46,28 @@
         createInstance(widgetId, settings = {}) {
             const manifest = this.get(widgetId);
             if (!manifest) throw new Error(`Widget not found: ${widgetId}`);
-    
+
             const defaultSettings = this.getDefaultSettings(manifest);
-    
+            const defaultSize = this.getDefaultDimensions(manifest.size.default);
+
             return {
                 instanceId: this.generateId(),
                 widgetId,
-                position: 0,
-                size: manifest.size.default,
+                x: 0,  // Will be set by findNonOverlappingPosition
+                y: 0,
+                width: defaultSize.width,
+                height: defaultSize.height,
                 settings: { ...defaultSettings, ...settings }
             };
+        }
+
+        getDefaultDimensions(sizeClass) {
+            const sizes = {
+                small: { width: 280, height: 220 },
+                medium: { width: 380, height: 300 },
+                large: { width: 520, height: 380 }
+            };
+            return sizes[sizeClass] || sizes.small;
         }
     
         getDefaultSettings(manifest) {
@@ -534,11 +546,11 @@
     // Dashboard State Manager
     class DashboardState {
         constructor() {
-            this.workspaceId = 'default'; // Will be updated from workspace info
+            this.workspaceId = 'default';
             this.widgets = [];
             this.mountedWidgets = new Map(); // instanceId -> Widget instance
         }
-    
+
         async load() {
             console.log('[Dashboard] Loading layout from server...');
             try {
@@ -547,6 +559,8 @@
                 if (result.layout && result.layout.widgets) {
                     this.widgets = result.layout.widgets || [];
                     this.workspaceId = result.layout.workspaceId || 'default';
+                    // Migrate old format if needed
+                    this.migrateIfNeeded();
                     console.log('[Dashboard] Loaded widgets:', this.widgets.length);
                 } else {
                     console.log('[Dashboard] No saved layout found');
@@ -557,12 +571,60 @@
                 this.widgets = [];
             }
         }
-    
+
+        // Migrate from old grid-based format to new freeform format
+        migrateIfNeeded() {
+            let needsSave = false;
+            const WIDGET_GAP = 20;
+            const PADDING = 20;
+
+            this.widgets.forEach((widget, index) => {
+                // Check if this is old format (has 'position' field instead of x/y)
+                if (widget.position !== undefined && widget.x === undefined) {
+                    console.log('[Dashboard] Migrating widget to freeform format:', widget.instanceId);
+                    needsSave = true;
+
+                    // Get dimensions from old format
+                    const manifest = widgetRegistry.get(widget.widgetId);
+                    const sizeClass = widget.size || (manifest?.size?.default) || 'small';
+                    const defaultDims = widgetRegistry.getDefaultDimensions(sizeClass);
+
+                    // Use custom size if set, otherwise default
+                    widget.width = widget.settings?._customWidth || defaultDims.width;
+                    widget.height = widget.settings?._customHeight || defaultDims.height;
+
+                    // Clean up old settings
+                    if (widget.settings) {
+                        delete widget.settings._customWidth;
+                        delete widget.settings._customHeight;
+                    }
+
+                    // Calculate position based on old position index
+                    // Layout in rows, 3 widgets per row
+                    const widgetsPerRow = 3;
+                    const row = Math.floor(index / widgetsPerRow);
+                    const col = index % widgetsPerRow;
+                    const avgWidth = 300;
+
+                    widget.x = PADDING + col * (avgWidth + WIDGET_GAP);
+                    widget.y = PADDING + row * (250 + WIDGET_GAP);
+
+                    // Remove old fields
+                    delete widget.position;
+                    delete widget.size;
+                }
+            });
+
+            if (needsSave) {
+                console.log('[Dashboard] Migration complete, saving...');
+                this.save();
+            }
+        }
+
         async save() {
             const data = {
                 workspaceId: this.workspaceId,
-                version: 1,
-                columns: 4,
+                version: 2, // New version for freeform format
                 widgets: this.widgets
             };
             console.log('[Dashboard] Saving layout to server...', {widgetCount: this.widgets.length});
@@ -577,7 +639,7 @@
                 console.error('[Dashboard] Failed to save layout:', err);
             }
         }
-    
+
         saveWidget(instance) {
             const index = this.widgets.findIndex(w => w.instanceId === instance.instanceId);
             if (index >= 0) {
@@ -585,19 +647,162 @@
             }
             this.save();
         }
-    
+
         addWidget(instance) {
-            instance.position = this.widgets.length;
+            // Find a non-overlapping position for the new widget
+            const position = this.findNonOverlappingPosition(instance.width, instance.height);
+            instance.x = position.x;
+            instance.y = position.y;
             this.widgets.push(instance);
             this.save();
         }
-    
+
         removeWidget(instanceId) {
             this.widgets = this.widgets.filter(w => w.instanceId !== instanceId);
-            // Reindex positions
-            this.widgets.forEach((w, i) => w.position = i);
             this.save();
         }
+
+        // Find first non-overlapping position for a new widget
+        findNonOverlappingPosition(width, height) {
+            const PADDING = 20;
+            const GAP = 20;
+            const grid = document.getElementById('widget-dashboard-grid');
+            const containerWidth = grid ? grid.clientWidth - PADDING * 2 : 800;
+
+            // Try positions in a grid pattern
+            for (let y = PADDING; y < 2000; y += height + GAP) {
+                for (let x = PADDING; x < containerWidth - width; x += 50) {
+                    const testRect = { x, y, width, height };
+                    let overlaps = false;
+
+                    for (const widget of this.widgets) {
+                        if (checkCollision(testRect, widget)) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+
+                    if (!overlaps) {
+                        return { x, y };
+                    }
+                }
+            }
+
+            // Fallback: place below all existing widgets
+            let maxY = PADDING;
+            for (const widget of this.widgets) {
+                maxY = Math.max(maxY, widget.y + widget.height + GAP);
+            }
+            return { x: PADDING, y: maxY };
+        }
+    }
+
+    // ============================================
+    // COLLISION DETECTION
+    // ============================================
+
+    function checkCollision(rectA, rectB) {
+        return !(
+            rectA.x + rectA.width <= rectB.x ||
+            rectA.x >= rectB.x + rectB.width ||
+            rectA.y + rectA.height <= rectB.y ||
+            rectA.y >= rectB.y + rectB.height
+        );
+    }
+
+    function getContainerBounds() {
+        const grid = document.getElementById('widget-dashboard-grid');
+        if (!grid) return { width: 800, height: 600 };
+        return {
+            width: grid.clientWidth,
+            height: Math.max(grid.clientHeight, grid.scrollHeight, 2000) // Allow scrolling
+        };
+    }
+
+    // Calculate the minimum push distance to resolve a collision
+    function calculatePushVector(dragged, target) {
+        // Calculate overlap on each axis
+        const overlapLeft = (dragged.x + dragged.width) - target.x;
+        const overlapRight = (target.x + target.width) - dragged.x;
+        const overlapTop = (dragged.y + dragged.height) - target.y;
+        const overlapBottom = (target.y + target.height) - dragged.y;
+
+        // Find the minimum push direction
+        const minX = overlapLeft < overlapRight ? -overlapLeft : overlapRight;
+        const minY = overlapTop < overlapBottom ? -overlapTop : overlapBottom;
+
+        // Push in the direction with smallest overlap
+        if (Math.abs(minX) < Math.abs(minY)) {
+            return { x: minX, y: 0 };
+        } else {
+            return { x: 0, y: minY };
+        }
+    }
+
+    // Try to push a widget and return the new positions if successful
+    function tryPushWidgets(draggedInstance, allWidgets, depth = 0) {
+        if (depth > 5) return null; // Prevent infinite recursion
+
+        const PADDING = 20;
+        const bounds = getContainerBounds();
+        const pushResults = new Map(); // instanceId -> new position
+
+        // Find all widgets that collide with the dragged widget
+        const collidingWidgets = allWidgets.filter(w =>
+            w.instanceId !== draggedInstance.instanceId &&
+            checkCollision(draggedInstance, w)
+        );
+
+        if (collidingWidgets.length === 0) {
+            return pushResults; // No collisions, success
+        }
+
+        for (const target of collidingWidgets) {
+            const pushVector = calculatePushVector(draggedInstance, target);
+            const newX = target.x + pushVector.x;
+            const newY = target.y + pushVector.y;
+
+            // Check bounds
+            if (newX < PADDING || newY < PADDING ||
+                newX + target.width > bounds.width - PADDING) {
+                return null; // Can't push, would go out of bounds
+            }
+
+            // Create a test rect for the pushed widget
+            const pushedRect = {
+                ...target,
+                x: newX,
+                y: newY,
+                instanceId: target.instanceId
+            };
+
+            // Check if this push causes new collisions (excluding the dragged widget)
+            const wouldCollide = allWidgets.some(w =>
+                w.instanceId !== draggedInstance.instanceId &&
+                w.instanceId !== target.instanceId &&
+                checkCollision(pushedRect, w)
+            );
+
+            if (wouldCollide) {
+                // Try recursive push
+                const recursiveResult = tryPushWidgets(
+                    pushedRect,
+                    allWidgets.filter(w => w.instanceId !== target.instanceId),
+                    depth + 1
+                );
+                if (recursiveResult === null) {
+                    return null; // Can't push cascade
+                }
+                // Merge recursive results
+                for (const [id, pos] of recursiveResult) {
+                    pushResults.set(id, pos);
+                }
+            }
+
+            pushResults.set(target.instanceId, { x: newX, y: newY });
+        }
+
+        return pushResults;
     }
     
     // Global instances
@@ -737,14 +942,12 @@
                 });
             }
         } else {
-            // Render all widgets
+            // Render all widgets (freeform - no sorting needed)
             console.log('[Dashboard] Rendering widgets:', dashboardState.widgets);
-            dashboardState.widgets
-                .sort((a, b) => a.position - b.position)
-                .forEach(instance => {
-                    console.log('[Dashboard] Rendering widget:', instance.widgetId, instance.instanceId);
-                    renderWidgetCard(grid, instance);
-                });
+            dashboardState.widgets.forEach(instance => {
+                console.log('[Dashboard] Rendering widget:', instance.widgetId, instance.instanceId);
+                renderWidgetCard(grid, instance);
+            });
         }
     }
     
@@ -770,21 +973,18 @@
             console.error('[Dashboard] Widget manifest not found for:', instance.widgetId);
             return;
         }
-        console.log('[Dashboard] Rendering card for:', instance.widgetId);
-    
+        console.log('[Dashboard] Rendering card for:', instance.widgetId, 'at', instance.x, instance.y);
+
         // Create widget wrapper
         const card = document.createElement('div');
-        card.className = `workbench-card widget-card widget-size-${instance.size}`;
+        card.className = 'workbench-card widget-card';
         card.dataset.instanceId = instance.instanceId;
-        card.draggable = true;
-    
-        // Apply custom size if set
-        if (instance.settings._customWidth) {
-            card.style.width = instance.settings._customWidth + 'px';
-        }
-        if (instance.settings._customHeight) {
-            card.style.height = instance.settings._customHeight + 'px';
-        }
+
+        // Apply absolute positioning
+        card.style.left = instance.x + 'px';
+        card.style.top = instance.y + 'px';
+        card.style.width = instance.width + 'px';
+        card.style.height = instance.height + 'px';
     
         // Widget header
         const header = document.createElement('div');
@@ -865,140 +1065,290 @@
     }
     
     function initWidgetResize(card, handle, instance) {
-        let isResizing = false;
-        let startX = 0;
-        let startY = 0;
-        let startWidth = 0;
-        let startHeight = 0;
-    
+        let resizeState = null;
+
         handle.addEventListener('mousedown', (e) => {
             e.preventDefault();
             e.stopPropagation();
-    
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-    
-            const rect = card.getBoundingClientRect();
-            startWidth = rect.width;
-            startHeight = rect.height;
-    
+
+            resizeState = {
+                startX: e.clientX,
+                startY: e.clientY,
+                startWidth: instance.width,
+                startHeight: instance.height
+            };
+
             card.classList.add('widget-resizing');
             document.body.style.cursor = 'nwse-resize';
             document.body.style.userSelect = 'none';
+
+            document.addEventListener('mousemove', handleResizeMove);
+            document.addEventListener('mouseup', handleResizeEnd);
         });
-    
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
-    
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-    
-            const newWidth = Math.max(200, startWidth + deltaX);
-            const newHeight = Math.max(150, startHeight + deltaY);
-    
+
+        function handleResizeMove(e) {
+            if (!resizeState) return;
+
+            const deltaX = e.clientX - resizeState.startX;
+            const deltaY = e.clientY - resizeState.startY;
+
+            const newWidth = Math.max(200, resizeState.startWidth + deltaX);
+            const newHeight = Math.max(150, resizeState.startHeight + deltaY);
+
+            // Create test rect to check collisions
+            const testRect = {
+                ...instance,
+                width: newWidth,
+                height: newHeight
+            };
+
+            // Try to push widgets
+            const pushResults = tryPushWidgets(testRect, dashboardState.widgets);
+
+            // Clear previous push indicators
+            document.querySelectorAll('.widget-card').forEach(el => {
+                if (el !== card) {
+                    el.classList.remove('widget-being-pushed');
+                }
+            });
+
+            if (pushResults === null) {
+                // Can't resize - don't update
+                return;
+            }
+
+            // Update visual size
             card.style.width = newWidth + 'px';
             card.style.height = newHeight + 'px';
-    
-            // Store custom size
-            instance.settings._customWidth = newWidth;
-            instance.settings._customHeight = newHeight;
-        });
-    
-        document.addEventListener('mouseup', () => {
-            if (!isResizing) return;
-    
-            isResizing = false;
+
+            // Apply pushes visually
+            for (const [id, pos] of pushResults) {
+                const pushedCard = document.querySelector(`[data-instance-id="${id}"]`);
+                if (pushedCard) {
+                    pushedCard.classList.add('widget-being-pushed');
+                    pushedCard.style.left = pos.x + 'px';
+                    pushedCard.style.top = pos.y + 'px';
+                }
+            }
+
+            // Store pending changes
+            resizeState.newWidth = newWidth;
+            resizeState.newHeight = newHeight;
+            resizeState.pendingPushes = pushResults;
+        }
+
+        function handleResizeEnd() {
+            if (!resizeState) return;
+
+            document.removeEventListener('mousemove', handleResizeMove);
+            document.removeEventListener('mouseup', handleResizeEnd);
+
             card.classList.remove('widget-resizing');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-    
-            // Save the new size
-            dashboardState.saveWidget(instance);
-        });
+
+            // Clear push indicators
+            document.querySelectorAll('.widget-card').forEach(el => {
+                el.classList.remove('widget-being-pushed');
+            });
+
+            // Apply changes if valid
+            if (resizeState.newWidth !== undefined) {
+                instance.width = resizeState.newWidth;
+                instance.height = resizeState.newHeight;
+
+                // Apply pushes
+                if (resizeState.pendingPushes && resizeState.pendingPushes.size > 0) {
+                    for (const [id, pos] of resizeState.pendingPushes) {
+                        const pushedWidget = dashboardState.widgets.find(w => w.instanceId === id);
+                        if (pushedWidget) {
+                            pushedWidget.x = pos.x;
+                            pushedWidget.y = pos.y;
+                        }
+                    }
+                }
+
+                dashboardState.save();
+            } else {
+                // Revert size
+                card.style.width = instance.width + 'px';
+                card.style.height = instance.height + 'px';
+
+                // Revert pushed widgets
+                dashboardState.widgets.forEach(w => {
+                    if (w.instanceId !== instance.instanceId) {
+                        const widgetCard = document.querySelector(`[data-instance-id="${w.instanceId}"]`);
+                        if (widgetCard) {
+                            widgetCard.style.left = w.x + 'px';
+                            widgetCard.style.top = w.y + 'px';
+                        }
+                    }
+                });
+            }
+
+            resizeState = null;
+        }
     }
     
-    // Shared drag state for all widgets
-    let currentDraggedCard = null;
-    let currentDraggedInstance = null;
-    
+    // ============================================
+    // FREEFORM DRAG-AND-DROP SYSTEM
+    // ============================================
+
+    let dragState = null; // { card, instance, startX, startY, offsetX, offsetY }
+
     function initWidgetDragDrop(card, instance) {
-        card.addEventListener('dragstart', (e) => {
-            // Prevent drag from starting on interactive elements
-            const target = e.target;
-            if (target.tagName === 'TEXTAREA' ||
-                target.tagName === 'INPUT' ||
-                target.tagName === 'BUTTON' ||
-                target.closest('.widget-body')) {
-                e.preventDefault();
+        const header = card.querySelector('.widget-header');
+        if (!header) return;
+
+        header.addEventListener('mousedown', (e) => {
+            // Prevent drag from starting on buttons
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
                 return;
             }
-    
-            currentDraggedCard = card;
-            currentDraggedInstance = instance;
-            card.classList.add('widget-dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/html', card.innerHTML);
+
+            e.preventDefault();
+            startDrag(card, instance, e);
         });
-    
-        card.addEventListener('dragend', (e) => {
-            card.classList.remove('widget-dragging');
-            // Remove all drop zone indicators
-            document.querySelectorAll('.widget-card').forEach(el => {
-                el.classList.remove('widget-drop-target');
+    }
+
+    function startDrag(card, instance, e) {
+        const rect = card.getBoundingClientRect();
+        const grid = document.getElementById('widget-dashboard-grid');
+        const gridRect = grid.getBoundingClientRect();
+
+        dragState = {
+            card,
+            instance,
+            startX: instance.x,
+            startY: instance.y,
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            gridOffsetX: gridRect.left,
+            gridOffsetY: gridRect.top,
+            scrollLeft: grid.scrollLeft,
+            scrollTop: grid.scrollTop
+        };
+
+        card.classList.add('widget-dragging');
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+
+        // Add document-level listeners
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('mouseup', handleDragEnd);
+    }
+
+    function handleDragMove(e) {
+        if (!dragState) return;
+
+        const { card, instance, offsetX, offsetY, gridOffsetX, gridOffsetY, scrollLeft, scrollTop } = dragState;
+        const grid = document.getElementById('widget-dashboard-grid');
+        const PADDING = 20;
+
+        // Calculate new position relative to grid
+        let newX = e.clientX - gridOffsetX - offsetX + grid.scrollLeft;
+        let newY = e.clientY - gridOffsetY - offsetY + grid.scrollTop;
+
+        // Clamp to bounds (left and top only - allow extending right/bottom)
+        newX = Math.max(PADDING, newX);
+        newY = Math.max(PADDING, newY);
+
+        // Update visual position immediately
+        card.style.left = newX + 'px';
+        card.style.top = newY + 'px';
+
+        // Create a test rect for collision detection
+        const testRect = {
+            ...instance,
+            x: newX,
+            y: newY
+        };
+
+        // Try to push widgets
+        const pushResults = tryPushWidgets(testRect, dashboardState.widgets);
+
+        // Clear previous push indicators
+        document.querySelectorAll('.widget-card').forEach(el => {
+            el.classList.remove('widget-being-pushed', 'widget-push-blocked');
+        });
+
+        if (pushResults === null) {
+            // Push blocked - show visual feedback
+            card.classList.add('widget-push-blocked');
+        } else {
+            card.classList.remove('widget-push-blocked');
+
+            // Apply pushes visually (but don't save yet)
+            for (const [id, pos] of pushResults) {
+                const pushedCard = document.querySelector(`[data-instance-id="${id}"]`);
+                if (pushedCard) {
+                    pushedCard.classList.add('widget-being-pushed');
+                    pushedCard.style.left = pos.x + 'px';
+                    pushedCard.style.top = pos.y + 'px';
+                }
+            }
+
+            // Store push results for when drag ends
+            dragState.pendingPushes = pushResults;
+            dragState.newX = newX;
+            dragState.newY = newY;
+        }
+    }
+
+    function handleDragEnd(e) {
+        if (!dragState) return;
+
+        const { card, instance, pendingPushes, newX, newY, startX, startY } = dragState;
+
+        // Remove document listeners
+        document.removeEventListener('mousemove', handleDragMove);
+        document.removeEventListener('mouseup', handleDragEnd);
+
+        // Clear visual states
+        card.classList.remove('widget-dragging', 'widget-push-blocked');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+
+        document.querySelectorAll('.widget-card').forEach(el => {
+            el.classList.remove('widget-being-pushed');
+        });
+
+        // Check if we have a valid drop position
+        if (pendingPushes !== undefined && newX !== undefined) {
+            // Update dragged widget position
+            instance.x = newX;
+            instance.y = newY;
+
+            // Apply all pushes to the data model
+            if (pendingPushes && pendingPushes.size > 0) {
+                for (const [id, pos] of pendingPushes) {
+                    const pushedWidget = dashboardState.widgets.find(w => w.instanceId === id);
+                    if (pushedWidget) {
+                        pushedWidget.x = pos.x;
+                        pushedWidget.y = pos.y;
+                    }
+                }
+            }
+
+            // Save all changes
+            dashboardState.save();
+            console.log('[Dashboard] Drag complete, saved new positions');
+        } else {
+            // Revert to original position
+            card.style.left = startX + 'px';
+            card.style.top = startY + 'px';
+
+            // Revert any pushed widgets
+            dashboardState.widgets.forEach(w => {
+                const widgetCard = document.querySelector(`[data-instance-id="${w.instanceId}"]`);
+                if (widgetCard && w.instanceId !== instance.instanceId) {
+                    widgetCard.style.left = w.x + 'px';
+                    widgetCard.style.top = w.y + 'px';
+                }
             });
-            currentDraggedCard = null;
-            currentDraggedInstance = null;
-        });
-    
-        card.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-    
-            if (currentDraggedCard && currentDraggedCard !== card) {
-                card.classList.add('widget-drop-target');
-            }
-        });
-    
-        card.addEventListener('dragleave', (e) => {
-            card.classList.remove('widget-drop-target');
-        });
-    
-        card.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-    
-            card.classList.remove('widget-drop-target');
-    
-            if (!currentDraggedCard || !currentDraggedInstance || currentDraggedCard === card) {
-                return;
-            }
-    
-            // Get current positions
-            const draggedPos = currentDraggedInstance.position;
-            const targetPos = instance.position;
-    
-            console.log('[Dashboard] Swapping positions:', draggedPos, '<->', targetPos);
-    
-            // Swap positions in the data
-            currentDraggedInstance.position = targetPos;
-            instance.position = draggedPos;
-    
-            // Update all widgets
-            dashboardState.saveWidget(currentDraggedInstance);
-            dashboardState.saveWidget(instance);
-    
-            // Re-render the dashboard to show new order
-            const grid = document.getElementById('widget-dashboard-grid');
-            if (grid) {
-                grid.innerHTML = '';
-                dashboardState.widgets
-                    .sort((a, b) => a.position - b.position)
-                    .forEach(inst => {
-                        renderWidgetCard(grid, inst);
-                    });
-            }
-        });
+        }
+
+        dragState = null;
     }
     
     function removeWidgetCard(instanceId) {
@@ -1079,7 +1429,7 @@
     function addWidgetToGrid(widgetId) {
         const instance = widgetRegistry.createInstance(widgetId);
         dashboardState.addWidget(instance);
-    
+
         const grid = document.getElementById('widget-dashboard-grid');
         if (!grid) {
             // If we're in empty state, re-render the whole dashboard
@@ -1087,14 +1437,23 @@
             showWidgetHint();
             return;
         }
-    
+
         // Clear empty state if present
         const emptyState = grid.querySelector('.widget-empty-state');
         if (emptyState) {
             emptyState.remove();
         }
-    
+
         renderWidgetCard(grid, instance);
+
+        // Scroll the new widget into view
+        setTimeout(() => {
+            const card = document.querySelector(`[data-instance-id="${instance.instanceId}"]`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 350); // Wait for mount animation
+
         showWidgetHint();
     }
     

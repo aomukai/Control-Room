@@ -5596,12 +5596,13 @@ input[type="password"].settings-control {
 }
 
 .workbench-dashboard {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px;
+    position: relative;
     width: 100%;
-    grid-auto-flow: dense;
-    align-items: start;
+    height: 100%;
+    min-height: 400px;
+    overflow: auto;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
 .workbench-card {
@@ -6450,17 +6451,13 @@ input[type="password"].settings-control {
     }
 }
 
-/* Widget Grid */
-.workbench-dashboard {
-    padding: 20px;
-}
-
-/* Widget Cards */
+/* Widget Cards - Freeform Canvas */
 .widget-card {
-    position: relative;
+    position: absolute;
     opacity: 0;
     transform: scale(0.95);
-    transition: all 0.3s ease;
+    transition: left 0.2s ease-out, top 0.2s ease-out, opacity 0.3s ease, transform 0.3s ease, border-color 0.15s ease;
+    box-sizing: border-box;
 }
 
 .widget-card.widget-mounting {
@@ -6502,35 +6499,17 @@ input[type="password"].settings-control {
     border-color: var(--accent-color);
 }
 
-/* Widget sizes */
+/* Widget default sizes (used if no explicit dimensions set) */
 .widget-size-small {
-    grid-column: span 1;
-    max-height: 500px;
+    /* Default: 280px x 220px */
 }
 
 .widget-size-medium {
-    grid-column: span 2;
-    max-height: 600px;
+    /* Default: 380px x 300px */
 }
 
 .widget-size-large {
-    grid-column: span 4;
-    max-height: 700px;
-}
-
-/* Responsive breakpoints */
-@media (max-width: 1200px) {
-    .widget-size-large {
-        grid-column: span 2;
-    }
-}
-
-@media (max-width: 768px) {
-    .widget-size-small,
-    .widget-size-medium,
-    .widget-size-large {
-        grid-column: span 1;
-    }
+    /* Default: 520px x 380px */
 }
 
 /* Widget Header */
@@ -6633,21 +6612,28 @@ input[type="password"].settings-control {
 
 /* Widget Drag and Drop */
 .widget-card.widget-dragging {
-    opacity: 0.5;
+    opacity: 0.85;
     cursor: grabbing;
+    z-index: 1000;
+    transition: none; /* Disable position transition while dragging */
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
-.widget-card.widget-drop-target {
-    border: 2px dashed var(--accent-color);
-    background: rgba(14, 99, 156, 0.1);
-    transform: scale(1.02);
+.widget-card.widget-being-pushed {
+    /* Pushed widgets animate smoothly */
+    transition: left 0.2s ease-out, top 0.2s ease-out;
 }
 
-.widget-card:not(.widget-resizing) {
+.widget-card.widget-push-blocked {
+    /* Visual feedback when push is blocked */
+    border-color: #dc3545;
+}
+
+.widget-header {
     cursor: grab;
 }
 
-.widget-card:not(.widget-resizing):active {
+.widget-header:active {
     cursor: grabbing;
 }
 
@@ -6663,7 +6649,10 @@ input[type="password"].settings-control {
 
 /* Empty State */
 .widget-empty-state {
-    grid-column: 1 / -1;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     display: flex;
     flex-direction: column;
     align-items: center;
