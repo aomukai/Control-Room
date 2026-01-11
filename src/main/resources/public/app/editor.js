@@ -5,7 +5,9 @@
     const showModal = window.modals ? window.modals.showModal : null;
     const escapeHtml = window.escapeHtml;
     const normalizeWorkspacePath = window.normalizeWorkspacePath;
-    const notificationStore = window.notificationStore;
+    function getNotificationStore() {
+        return window.notificationStore || null;
+    }
     const state = window.state;
     const elements = window.elements;
     const api = window.api;
@@ -428,7 +430,10 @@
         if (!force && file && file.content !== file.originalContent) {
             const confirmed = confirm(`${path} has unsaved changes. Close anyway?`);
             if (!confirmed) return;
-            notificationStore.editorDiscardWarning(path);
+            const store = getNotificationStore();
+            if (store) {
+                store.editorDiscardWarning(path);
+            }
         }
     
         // Remove tab element
@@ -536,15 +541,23 @@
             file.originalContent = file.content;
             updateDirtyStateForPath(state.activeFile);
             log(`Saved: ${state.activeFile}`, 'success');
-            notificationStore.editorSaveSuccess(state.activeFile);
+            const store = getNotificationStore();
+            if (store) {
+                store.editorSaveSuccess(state.activeFile);
+            }
         } catch (err) {
             log(`Failed to save: ${err.message}`, 'error');
-            notificationStore.editorSaveFailure(state.activeFile, err.message);
+            const store = getNotificationStore();
+            if (store) {
+                store.editorSaveFailure(state.activeFile, err.message);
+            }
         }
     }
     
     // Save all dirty files (iterates over openFiles, not tabs)
     async function saveAllFiles() {
+        let savedCount = 0;
+        let failedCount = 0;
         for (const [path, file] of state.openFiles) {
             if (file.content !== file.originalContent) {
                 try {
@@ -556,12 +569,29 @@
                     file.originalContent = file.content;
                     updateDirtyStateForPath(path);
                     log(`Saved: ${path}`, 'success');
-                    notificationStore.editorSaveSuccess(path);
+                    savedCount += 1;
+                    const store = getNotificationStore();
+                    if (store) {
+                        store.editorSaveSuccess(path);
+                    }
                 } catch (err) {
                     log(`Failed to save ${path}: ${err.message}`, 'error');
-                    notificationStore.editorSaveFailure(path, err.message);
+                    failedCount += 1;
+                    const store = getNotificationStore();
+                    if (store) {
+                        store.editorSaveFailure(path, err.message);
+                    }
                 }
             }
+        }
+        if (savedCount || failedCount) {
+            if (failedCount) {
+                log(`Save all completed: ${savedCount} saved, ${failedCount} failed`, 'warning');
+            } else {
+                log(`Save all completed: ${savedCount} saved`, 'success');
+            }
+        } else {
+            log('Save all completed: no changes', 'info');
         }
     }
     
@@ -973,7 +1003,10 @@
     
             if (results.length === 0) {
                 elements.searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
-                notificationStore.editorSearchNoResults(query, true);
+                const store = getNotificationStore();
+                if (store) {
+                    store.editorSearchNoResults(query, true);
+                }
                 return;
             }
     

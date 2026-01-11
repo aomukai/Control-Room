@@ -4684,52 +4684,25 @@
         renderAssistedList();
     }
 
-    // Initialize
-    function init() {
-        log('Control Room starting...', 'info');
-
-        initSplitters();
-        initMonaco();
-        initConsoleTabs();
-        initAIActions();
-        initSidebarButtons();
-        initEventListeners();
-        initMemoryModeratorControls();
-        initNotifications();
-        initWorkbenchNewsfeedSubscription(); // Newsfeed updates
-        loadFileTree();
-        loadAgents();
-        loadWorkspaceInfo();
-
-        // Initialize widget system
-        registerBuiltInWidgets();
-
-        // Set initial view mode (starts in Editor mode)
-        setViewMode('editor');
-
-        // Welcome message in chat
-        addChatMessage('assistant', 'Hello! I\'m your AI writing assistant. How can I help you with your creative writing project today?');
-
-        log('Control Room ready!', 'success');
-        log('Tip: Use the sidebar toggle to switch Workbench and Editor views.', 'info');
-    }
-
     window.dispatchNotificationAction = dispatchNotificationAction;
     window.isWorkbenchView = isWorkbenchView;
     window.showIssueCreateModal = showIssueCreateModal;
     window.loadIssues = loadIssues;
     window.log = log;
     window.loadAgents = loadAgents;
+    window.loadWorkspaceInfo = loadWorkspaceInfo;
+    window.initConsoleTabs = initConsoleTabs;
+    window.initAIActions = initAIActions;
+    window.initSidebarButtons = initSidebarButtons;
+    window.initEventListeners = initEventListeners;
+    window.initMemoryModeratorControls = initMemoryModeratorControls;
+    window.initNotifications = initNotifications;
+    window.setViewMode = setViewMode;
+    window.addChatMessage = addChatMessage;
     window.isEndpointWired = isEndpointWired;
     window.PROVIDERS_REQUIRE_KEY = PROVIDERS_REQUIRE_KEY;
     window.LOCAL_PROVIDERS = LOCAL_PROVIDERS;
     window.loadAgentStatuses = loadAgentStatuses;
     window.setSelectedAgentId = setSelectedAgentId;
 
-    // Start when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
 })();
