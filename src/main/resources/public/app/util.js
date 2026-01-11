@@ -2,6 +2,8 @@
 (function() {
     'use strict';
 
+    const escapeHtml = window.modals ? window.modals.escapeHtml : null;
+
     function normalizeWorkspacePath(path) {
         if (!path) return '';
 
@@ -73,6 +75,9 @@
         }
     }
 
+    if (escapeHtml) {
+        window.escapeHtml = escapeHtml;
+    }
     window.normalizeWorkspacePath = normalizeWorkspacePath;
     window.formatTimestamp = formatTimestamp;
     window.formatRelativeTime = formatRelativeTime;
