@@ -1240,22 +1240,22 @@
 
         // Only show "Open in New Tab" for files, not folders
         if (node.type === 'file') {
-            actions.push({ label: 'Explore', action: () => explorePath(node.path, node.type) });
-            actions.push({ label: 'Open in New Tab', action: () => openFileInNewTab(node.path) });
+            actions.push({ label: 'Explore', action: () => window.explorePath(node.path, node.type) });
+            actions.push({ label: 'Open in New Tab', action: () => window.openFileInNewTab(node.path) });
         }
 
         // For folders: add "New File Here" and "New Folder Here"
         if (node.type === 'folder') {
-            actions.push({ label: 'Explore', action: () => explorePath(node.path, node.type) });
-            actions.push({ label: 'New File Here...', action: () => promptNewFile('file', node.path) });
-            actions.push({ label: 'New Folder Here...', action: () => promptNewFile('folder', node.path) });
+            actions.push({ label: 'Explore', action: () => window.explorePath(node.path, node.type) });
+            actions.push({ label: 'New File Here...', action: () => window.promptNewFile('file', node.path) });
+            actions.push({ label: 'New Folder Here...', action: () => window.promptNewFile('folder', node.path) });
             actions.push({ divider: true });
         }
 
-        actions.push({ label: 'Rename', action: () => promptRename(node.path, node.type) });
-        actions.push({ label: 'Move...', action: () => promptMove(node.path, node.type) });
+        actions.push({ label: 'Rename', action: () => window.promptRename(node.path, node.type) });
+        actions.push({ label: 'Move...', action: () => window.promptMove(node.path, node.type) });
         actions.push({ divider: true });
-        actions.push({ label: 'Delete', action: () => promptDelete(node.path, node.type) });
+        actions.push({ label: 'Delete', action: () => window.promptDelete(node.path, node.type) });
 
         actions.forEach(item => {
             if (item.divider) {
@@ -4375,6 +4375,7 @@
     window.updateAgentLockState = updateAgentLockState;
     window.showAddAgentWizard = showAddAgentWizard;
     window.showWorkbenchChatModal = showWorkbenchChatModal;
+    window.showContextMenu = showContextMenu;
     window.showAgentContextMenu = showAgentContextMenu;
     window.showAgentProfileModal = showAgentProfileModal;
     window.showRoleSettingsModal = showRoleSettingsModal;
