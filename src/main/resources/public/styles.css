@@ -3822,14 +3822,50 @@ html, body {
     gap: 6px;
 }
 
-.issue-tag {
-    background: var(--bg-lighter);
-    color: var(--text-primary);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    border: 1px solid var(--border-color);
-}
+  .issue-tag {
+      background: var(--bg-lighter);
+      color: var(--text-primary);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      border: 1px solid var(--border-color);
+  }
+
+  .issue-roadmap-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-lighter);
+      color: var(--text-primary);
+  }
+
+  .issue-roadmap-pill.is-empty {
+      text-transform: none;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--bg-dark);
+  }
+
+  .issue-roadmap-controls {
+      flex: 1 1 100%;
+  }
+
+  .issue-roadmap-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+  }
+
+  .issue-roadmap-select {
+      min-width: 160px;
+      max-width: 220px;
+  }
 
 .issue-no-tags {
     color: var(--text-secondary);
@@ -6034,12 +6070,19 @@ input[type="password"].settings-control {
     margin-bottom: 0;
 }
 
-.issue-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-}
+  .issue-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+  }
+
+  .issue-card-header-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+  }
 
 .issue-card-id {
     font-size: 11px;
@@ -6047,13 +6090,24 @@ input[type="password"].settings-control {
     color: var(--text-secondary);
 }
 
-.issue-card-status {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
+  .issue-card-status {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 10px;
+  }
+
+  .issue-card-roadmap {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: rgba(87, 201, 245, 0.15);
+      color: var(--accent-hover);
+      border: 1px solid rgba(87, 201, 245, 0.4);
+  }
 
 .issue-status-open {
     background: rgba(78, 201, 176, 0.15);
