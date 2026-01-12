@@ -589,22 +589,30 @@
 
         modal.classList.add('agent-create-modal');
 
-        const leaderTemplate = {
-            id: 'assistant',
-            label: 'Chief of Staff',
-            role: 'assistant',
-            description: 'Mandatory agent who manages the rest of your team.',
-            skills: ['coordination', 'pacing', 'system health'],
-            goals: ['maintain team cadence', 'enforce guardrails'],
-            instructions: 'Coordinate the team and manage pacing. Avoid authoring creative canon unless asked.'
-        };
-
         const templates = [
             {
-                id: 'creative',
-                label: 'Creative Voice',
+                id: 'assistant',
+                label: 'Assistant',
+                role: 'assistant',
+                description: 'Chief of Staff who coordinates the rest of the team.',
+                skills: ['coordination', 'pacing', 'system health'],
+                goals: ['maintain team cadence', 'enforce guardrails'],
+                instructions: 'Coordinate the team and manage pacing. Avoid authoring creative canon unless asked.'
+            },
+            {
+                id: 'planner',
+                label: 'Planner',
+                role: 'planner',
+                description: 'Story structure, beats, and long-range arc.',
+                skills: ['structure', 'beats', 'timeline'],
+                goals: ['maintain story shape', 'catch structural issues'],
+                instructions: 'Focus on structure, beats, and timeline continuity.'
+            },
+            {
+                id: 'writer',
+                label: 'Writer',
                 role: 'writer',
-                description: 'Drafts prose, scene flow, and voice.',
+                description: 'Prose, dialogue, and scene flow.',
                 skills: ['prose', 'voice', 'scene flow'],
                 goals: ['write vivid scenes', 'maintain tone'],
                 instructions: 'Focus on prose, voice, and scene flow.'
@@ -613,7 +621,7 @@
                 id: 'editor',
                 label: 'Editor',
                 role: 'editor',
-                description: 'Clarity, grammar, and pacing.',
+                description: 'Clarity, grammar, and pacing polish.',
                 skills: ['clarity', 'grammar', 'pacing'],
                 goals: ['polish prose', 'remove friction'],
                 instructions: 'Focus on clarity, grammar, and pacing.'
@@ -622,28 +630,19 @@
                 id: 'critic',
                 label: 'Critic',
                 role: 'critic',
-                description: 'Feedback, themes, and logic.',
+                description: 'Feedback, themes, and logic stress tests.',
                 skills: ['feedback', 'themes', 'logic'],
                 goals: ['identify weak spots', 'stress-test ideas'],
                 instructions: 'Focus on feedback, themes, and logic.'
             },
             {
-                id: 'lore',
-                label: 'Lore Keeper',
+                id: 'continuity',
+                label: 'Continuity',
                 role: 'continuity',
-                description: 'Canon, worldbuilding, and consistency.',
+                description: 'Canon, worldbuilding, and consistency checks.',
                 skills: ['lore', 'canon', 'consistency'],
                 goals: ['protect canon', 'catch conflicts'],
                 instructions: 'Focus on lore consistency and canon.'
-            },
-            {
-                id: 'beta',
-                label: 'Beta Reader',
-                role: 'beta-reader',
-                description: 'Reader reaction and pacing feedback.',
-                skills: ['reader empathy', 'pacing', 'engagement'],
-                goals: ['surface confusion', 'flag slow sections'],
-                instructions: 'Provide reader reactions and pacing notes.'
             },
             {
                 id: 'custom',
@@ -657,7 +656,7 @@
         ];
 
         const hasAssistant = (state.agents.list || []).some(agent => isAssistantAgent(agent));
-        const availableTemplates = hasAssistant ? templates : [leaderTemplate, ...templates];
+        const availableTemplates = templates;
 
         const providers = [
             'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
@@ -688,13 +687,14 @@
             avatar: ''
         };
 
-        if (!hasAssistant) {
-            formState.templateId = leaderTemplate.id;
-            formState.role = leaderTemplate.role;
-            formState.skills = [...leaderTemplate.skills];
-            formState.goals = [...leaderTemplate.goals];
-            formState.instructions = leaderTemplate.instructions;
-        } else if (formState.templateId === leaderTemplate.id) {
+        const assistantTemplate = templates.find(template => template.id === 'assistant');
+        if (!hasAssistant && assistantTemplate) {
+            formState.templateId = assistantTemplate.id;
+            formState.role = assistantTemplate.role;
+            formState.skills = [...assistantTemplate.skills];
+            formState.goals = [...assistantTemplate.goals];
+            formState.instructions = assistantTemplate.instructions;
+        } else if (formState.templateId === 'assistant' && !assistantTemplate) {
             formState.templateId = availableTemplates[0].id;
             formState.role = availableTemplates[0].role;
             formState.skills = [...availableTemplates[0].skills];
@@ -823,8 +823,8 @@
             body.appendChild(roleError);
 
             const lockRole = !hasAssistant;
-            if (lockRole) {
-                roleInput.value = leaderTemplate.role;
+            if (lockRole && assistantTemplate) {
+                roleInput.value = assistantTemplate.role;
                 roleInput.disabled = true;
                 roleInput.title = 'Role is locked until a Chief of Staff exists.';
                 const lockedHint = document.createElement('div');
@@ -835,7 +835,7 @@
 
             const updateIdentityState = () => {
                 formState.name = nameInput.value;
-                formState.role = lockRole ? leaderTemplate.role : roleInput.value.trim();
+                formState.role = lockRole && assistantTemplate ? assistantTemplate.role : roleInput.value.trim();
                 const hasRole = Boolean(formState.role);
                 roleError.style.display = hasRole ? 'none' : 'block';
                 setNextEnabled(hasRole);

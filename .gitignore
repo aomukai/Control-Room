@@ -31,3 +31,6 @@ data/*.json
 
 # Local workspace UI state
 workspace/**/.controlroom/state/*.json
+
+# Workspace
+workspace/
