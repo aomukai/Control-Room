@@ -11,6 +11,121 @@
     const state = window.state;
     const elements = window.elements;
     const api = window.api;
+    const editorStateStorageKey = 'control-room:editor-state';
+    let expandedFolders = new Set();
+    let hasSavedExplorerState = false;
+    let isRestoringEditorState = false;
+    let editorStateRestored = false;
+
+    function getEditorStateKey() {
+        const root = state.workspace && state.workspace.root ? String(state.workspace.root) : '';
+        const name = state.workspace && state.workspace.name ? String(state.workspace.name) : '';
+        if (root) {
+            return `${editorStateStorageKey}:${root}`;
+        }
+        if (name) {
+            return `${editorStateStorageKey}:${name}`;
+        }
+        return editorStateStorageKey;
+    }
+
+    function loadEditorState() {
+        const key = getEditorStateKey();
+        const raw = localStorage.getItem(key);
+        if (!raw) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') {
+                return null;
+            }
+            return parsed;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function persistEditorState() {
+        if (isRestoringEditorState) {
+            return;
+        }
+        const openTabs = [];
+        for (const [, tabData] of state.openTabs) {
+            if (tabData && tabData.path) {
+                openTabs.push(tabData.path);
+            }
+        }
+        const payload = {
+            version: 1,
+            openTabs,
+            activePath: state.activeFile || '',
+            expandedFolders: Array.from(expandedFolders)
+        };
+        try {
+            localStorage.setItem(getEditorStateKey(), JSON.stringify(payload));
+        } catch (err) {
+            // ignore storage failures (quota or privacy mode)
+        }
+    }
+
+    function applyExpandedStateToTree() {
+        if (!elements.fileTree) return;
+        const items = elements.fileTree.querySelectorAll('.tree-item.tree-folder');
+        items.forEach(item => {
+            const folderPath = normalizeWorkspacePath(item.dataset.path || '');
+            if (!folderPath) return;
+            const children = item.nextElementSibling;
+            if (!children || !children.classList.contains('tree-children')) return;
+            if (expandedFolders.has(folderPath)) {
+                children.classList.add('expanded');
+                const icon = item.querySelector('.tree-icon');
+                if (icon) icon.textContent = 'ĐY"\'';
+            } else {
+                children.classList.remove('expanded');
+                const icon = item.querySelector('.tree-icon');
+                if (icon) icon.textContent = 'ĐY"?';
+            }
+        });
+    }
+
+    async function restoreEditorState() {
+        if (editorStateRestored) {
+            return;
+        }
+        editorStateRestored = true;
+        const saved = loadEditorState();
+        if (!saved) {
+            return;
+        }
+
+        if (Array.isArray(saved.expandedFolders)) {
+            expandedFolders = new Set(
+                saved.expandedFolders
+                    .map(path => normalizeWorkspacePath(path))
+                    .filter(Boolean)
+            );
+            hasSavedExplorerState = expandedFolders.size > 0;
+            applyExpandedStateToTree();
+        }
+
+        if (Array.isArray(saved.openTabs) && saved.openTabs.length > 0) {
+            isRestoringEditorState = true;
+            for (const path of saved.openTabs) {
+                if (path) {
+                    await openFileInNewTab(path);
+                }
+            }
+            if (saved.activePath) {
+                const activePath = normalizeWorkspacePath(saved.activePath);
+                const tabId = findTabIdByPath(activePath);
+                if (tabId) {
+                    setActiveTab(tabId);
+                }
+            }
+            isRestoringEditorState = false;
+        }
+    }
 
     function log(message, level) {
         if (window.log) {
@@ -183,6 +298,15 @@
                 e.stopPropagation();
                 const isExpanded = childContainer.classList.toggle('expanded');
                 icon.textContent = isExpanded ? '📂' : '📁';
+                const folderPath = normalizeWorkspacePath(node.path || '');
+                if (folderPath) {
+                    if (isExpanded) {
+                        expandedFolders.add(folderPath);
+                    } else {
+                        expandedFolders.delete(folderPath);
+                    }
+                    persistEditorState();
+                }
             });
     
             // Context menu for folders (rename/delete)
@@ -193,10 +317,17 @@
                 }
             });
     
-            // Auto-expand root level folders
-            if (depth === 1) {
+            const folderPath = normalizeWorkspacePath(node.path || '');
+            const shouldExpand = folderPath && expandedFolders.has(folderPath);
+            if (shouldExpand) {
                 childContainer.classList.add('expanded');
                 icon.textContent = '📂';
+            } else if (!hasSavedExplorerState && depth === 1) {
+                childContainer.classList.add('expanded');
+                icon.textContent = '📂';
+                if (folderPath) {
+                    expandedFolders.add(folderPath);
+                }
             }
         } else {
             item.addEventListener('click', (e) => {
@@ -371,6 +502,7 @@
         elements.btnRevealFile.disabled = !tabData.path;
         elements.btnOpenFolder.disabled = !tabData.path;
         elements.btnFind.disabled = !tabData.path;
+        persistEditorState();
     }
     
     function createTab(tabId, path) {
@@ -468,6 +600,7 @@
         }
     
         log(`Closed tab: ${path}`, 'info');
+        persistEditorState();
     }
     
     // Close all tabs matching a path (for file deletion)
@@ -724,6 +857,7 @@
     
             log(`Updated tab: ${oldFilePath} -> ${newFilePath}`, 'info');
         });
+        persistEditorState();
     }
     
     // Collect all folder paths from the file tree for move dialog
@@ -1167,4 +1301,5 @@
     window.performSearch = performSearch;
     window.getExplorerVisible = getExplorerVisible;
     window.setExplorerVisible = setExplorerVisible;
+    window.restoreEditorState = restoreEditorState;
 })();

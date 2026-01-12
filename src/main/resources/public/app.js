@@ -130,6 +130,9 @@
             state.workspace.icon = meta.icon || '';
             state.workspace.accentColor = meta.accentColor || '';
             updateWorkspaceButton();
+            if (window.restoreEditorState) {
+                await window.restoreEditorState();
+            }
         } catch (err) {
             log(`Failed to load Project info: ${err.message}`, 'error');
         }
