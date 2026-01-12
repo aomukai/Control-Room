@@ -167,10 +167,88 @@
         return { overlay, modal, body, confirmBtn, cancelBtn, close };
     }
 
+    /**
+     * Show a configurable modal with custom buttons.
+     * @param {Object} config - Modal configuration
+     * @param {string} config.title - Modal title
+     * @param {string} config.body - HTML content for modal body
+     * @param {Array} config.buttons - Array of button configs: { label, value, className }
+     * @param {Function} config.onResult - Called with button value when clicked
+     */
+    function showConfigurableModal(config) {
+        const { title, body, buttons = [], onResult } = config;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'modal-title';
+        titleEl.textContent = title || '';
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'modal-body';
+        bodyEl.innerHTML = body || '';
+
+        const buttonsEl = document.createElement('div');
+        buttonsEl.className = 'modal-buttons';
+
+        const close = () => overlay.remove();
+
+        buttons.forEach(btn => {
+            const button = document.createElement('button');
+            button.className = 'modal-btn';
+            if (btn.className === 'danger') {
+                button.classList.add('modal-btn-danger');
+            } else if (btn.className === 'primary') {
+                button.classList.add('modal-btn-primary');
+            } else {
+                button.classList.add('modal-btn-secondary');
+            }
+            button.textContent = btn.label;
+            button.addEventListener('click', () => {
+                close();
+                if (typeof onResult === 'function') {
+                    onResult(btn.value);
+                }
+            });
+            buttonsEl.appendChild(button);
+        });
+
+        modal.appendChild(titleEl);
+        modal.appendChild(bodyEl);
+        modal.appendChild(buttonsEl);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                close();
+                if (typeof onResult === 'function') {
+                    onResult(null);
+                }
+            }
+        });
+
+        const handleKeydown = (e) => {
+            if (e.key === 'Escape') {
+                close();
+                document.removeEventListener('keydown', handleKeydown);
+                if (typeof onResult === 'function') {
+                    onResult(null);
+                }
+            }
+        };
+        document.addEventListener('keydown', handleKeydown);
+    }
+
     // Expose to window
     window.modals = {
         escapeHtml,
         showModal,
+        showConfigurableModal,
         createModalShell
     };
 })();

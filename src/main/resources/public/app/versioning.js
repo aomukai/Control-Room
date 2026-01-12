@@ -4,7 +4,7 @@
 
     const state = window.state;
     const api = window.api;
-    const showModal = window.modals ? window.modals.showModal : null;
+    const showConfigurableModal = window.modals ? window.modals.showConfigurableModal : null;
 
     // DOM elements
     let fileTreeArea = null;
@@ -328,6 +328,9 @@
             if (window.showToast) {
                 window.showToast(`Published: ${result.snapshot.name}`, 'success');
             }
+
+            // Create Chief of Staff notification
+            await createChiefOfStaffNotification(result.snapshot);
         } catch (err) {
             log('Failed to publish snapshot: ' + err.message, 'error');
             if (window.showToast) {
@@ -341,12 +344,12 @@
 
     // Discard changes for a single file
     async function discardFileChanges(path) {
-        if (!showModal) {
+        if (!showConfigurableModal) {
             // Fallback to confirm
             if (!confirm(`Discard changes to ${path}?`)) return;
         } else {
             const confirmed = await new Promise(resolve => {
-                showModal({
+                showConfigurableModal({
                     title: 'Discard Changes',
                     body: `<p>Discard changes to <strong>${escapeHtml(path)}</strong> and restore the last published version?</p><p class="modal-warning">This cannot be undone.</p>`,
                     buttons: [
@@ -385,11 +388,11 @@
         if (currentChanges.length === 0) return;
 
         const confirmed = await new Promise(resolve => {
-            if (!showModal) {
+            if (!showConfigurableModal) {
                 resolve(confirm('Discard ALL changes and restore the last published state?'));
                 return;
             }
-            showModal({
+            showConfigurableModal({
                 title: 'Discard All Changes',
                 body: `<p>Discard <strong>${currentChanges.length} changed file${currentChanges.length !== 1 ? 's' : ''}</strong> and restore the last published state?</p><p class="modal-warning">This cannot be undone.</p>`,
                 buttons: [
@@ -435,8 +438,8 @@
             return `<div class="snapshot-file">${icon} ${escapeHtml(f.path)}</div>`;
         }).join('');
 
-        if (showModal) {
-            showModal({
+        if (showConfigurableModal) {
+            showConfigurableModal({
                 title: snapshot.name,
                 body: `
                     <div class="snapshot-details">
@@ -476,13 +479,13 @@
 
     // Show cleanup modal
     function showCleanupModal() {
-        if (!showModal) {
+        if (!showConfigurableModal) {
             const keepCount = prompt('Keep last N snapshots:', '10');
             if (keepCount) cleanupSnapshots(parseInt(keepCount, 10));
             return;
         }
 
-        showModal({
+        showConfigurableModal({
             title: 'Cleanup History',
             body: `
                 <p>Remove old snapshots to save space. This cannot be undone.</p>
@@ -526,6 +529,41 @@
             }
         } catch (err) {
             log('Failed to cleanup: ' + err.message, 'error');
+        }
+    }
+
+    // Create notification for Chief of Staff on publish
+    async function createChiefOfStaffNotification(snapshot) {
+        try {
+            const filesCount = snapshot.files ? snapshot.files.length : 0;
+            const wordsDelta = [];
+            if (snapshot.addedWords > 0) wordsDelta.push(`+${snapshot.addedWords}`);
+            if (snapshot.removedWords > 0) wordsDelta.push(`-${snapshot.removedWords}`);
+            const wordsStr = wordsDelta.length > 0 ? ` (${wordsDelta.join('/')} words)` : '';
+
+            await fetch('/api/notifications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    level: 'info',
+                    scope: 'project',
+                    category: 'system',
+                    message: `Snapshot published: ${snapshot.name}`,
+                    details: `${filesCount} file${filesCount !== 1 ? 's' : ''} saved to history${wordsStr}`,
+                    persistent: true,
+                    source: 'versioning',
+                    actionLabel: 'View History',
+                    actionPayload: { action: 'openVersioning', snapshotId: snapshot.id }
+                })
+            });
+
+            // Refresh notification badge if available
+            if (window.notifications && window.notifications.loadFromServer) {
+                window.notifications.loadFromServer();
+            }
+        } catch (err) {
+            // Non-critical, just log
+            log('Failed to create notification: ' + err.message, 'warn');
         }
     }
 
