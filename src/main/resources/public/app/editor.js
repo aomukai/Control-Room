@@ -961,17 +961,15 @@
         parentPath = normalizeWorkspacePath(parentPath);
         // Default placeholder based on type
         let placeholder = type === 'folder' ? 'folder-name' : 'file.txt';
-    
-        // If parentPath is provided, pre-fill with parent path prefix
-        if (parentPath) {
-            placeholder = parentPath + '/' + placeholder;
-        }
-    
+
         const title = parentPath ? `New ${type} in ${parentPath}` : `New ${type}`;
-    
+
         showModal(title, placeholder, async (path) => {
             path = normalizeWorkspacePath(path);
             if (!path) return;
+            if (parentPath && !path.includes('/')) {
+                path = normalizeWorkspacePath(`${parentPath}/${path}`);
+            }
     
             try {
                 await api('/api/file', {

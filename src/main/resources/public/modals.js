@@ -19,7 +19,7 @@
      * @param {Function} callback - Called with input value on confirm
      * @param {string} hint - Optional hint text below input
      */
-    function showModal(title, placeholder, callback, hint = '') {
+    function showModal(title, placeholder, callback, hint = '', initialValue = '') {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
 
@@ -42,6 +42,15 @@
         document.body.appendChild(overlay);
 
         const input = modal.querySelector('.modal-input');
+        if (initialValue) {
+            input.value = initialValue;
+            const length = input.value.length;
+            try {
+                input.setSelectionRange(length, length);
+            } catch (err) {
+                // ignore selection errors for unsupported inputs
+            }
+        }
         input.focus();
 
         const close = () => overlay.remove();
