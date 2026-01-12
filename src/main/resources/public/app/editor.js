@@ -80,11 +80,11 @@
             if (expandedFolders.has(folderPath)) {
                 children.classList.add('expanded');
                 const icon = item.querySelector('.tree-icon');
-                if (icon) icon.textContent = 'ĐY"\'';
+                if (icon) icon.textContent = '📂';
             } else {
                 children.classList.remove('expanded');
                 const icon = item.querySelector('.tree-icon');
-                if (icon) icon.textContent = 'ĐY"?';
+                if (icon) icon.textContent = '📁';
             }
         });
     }
@@ -427,16 +427,46 @@
             // Already loaded - nothing to do
             return;
         }
-    
+
         log(`Loading file: ${path}`, 'info');
         const content = await api(`/api/file?path=${encodeURIComponent(path)}`);
         const model = monaco.editor.createModel(content, getLanguageForFile(path));
-    
+
         state.openFiles.set(path, {
             model,
             content,
             originalContent: content
         });
+    }
+
+    // Force reload a file from disk (used after discarding changes)
+    async function reloadOpenFile(path) {
+        path = normalizeWorkspacePath(path);
+        const fileData = state.openFiles.get(path);
+        if (!fileData) return; // Not open, nothing to reload
+
+        try {
+            log(`Reloading file: ${path}`, 'info');
+            const content = await api(`/api/file?path=${encodeURIComponent(path)}`);
+
+            // Update model content
+            fileData.model.setValue(content);
+            fileData.content = content;
+            fileData.originalContent = content;
+
+            // Update dirty state
+            updateTabDirtyState(path);
+        } catch (err) {
+            log(`Failed to reload file ${path}: ${err.message}`, 'error');
+        }
+    }
+
+    // Reload all open files from disk
+    async function reloadAllOpenFiles() {
+        const paths = Array.from(state.openFiles.keys());
+        for (const path of paths) {
+            await reloadOpenFile(path);
+        }
     }
     
     // Find first tab ID for a given path
@@ -1281,6 +1311,18 @@
         elements.explorerPanel.classList.toggle('is-hidden', !visible);
         elements.btnToggleExplorer.classList.toggle('is-active', visible);
         localStorage.setItem('explorer-visible', visible ? '1' : '0');
+
+        // When showing the explorer panel, sync with versioning state
+        if (visible && window.versioning) {
+            window.versioning.syncWithExplorerState();
+            // Update button states based on versioning state
+            const commitBtn = document.getElementById('btn-commit');
+            if (commitBtn) {
+                commitBtn.classList.toggle('active', window.versioning.isActive());
+            }
+            // Explorer button should be inactive if versioning is shown
+            elements.btnToggleExplorer.classList.toggle('is-active', !window.versioning.isActive());
+        }
     }
 
     window.initSplitters = initSplitters;
@@ -1302,4 +1344,6 @@
     window.getExplorerVisible = getExplorerVisible;
     window.setExplorerVisible = setExplorerVisible;
     window.restoreEditorState = restoreEditorState;
+    window.reloadOpenFile = reloadOpenFile;
+    window.reloadAllOpenFiles = reloadAllOpenFiles;
 })();

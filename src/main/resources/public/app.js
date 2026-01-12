@@ -4030,6 +4030,17 @@
         if (elements.btnToggleExplorer) {
             elements.btnToggleExplorer.addEventListener('click', () => {
                 const isVisible = elements.explorerPanel && !elements.explorerPanel.classList.contains('is-hidden');
+
+                // If versioning panel is active and explorer is visible, switch to file tree
+                if (isVisible && window.versioning && window.versioning.isActive()) {
+                    window.versioning.showFileTreePanel();
+                    // Update button states
+                    const commitBtn = document.getElementById('btn-commit');
+                    if (commitBtn) commitBtn.classList.remove('active');
+                    elements.btnToggleExplorer.classList.add('is-active');
+                    return;
+                }
+
                 setExplorerVisible(!isVisible);
             });
         }

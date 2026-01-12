@@ -1,6 +1,8 @@
 package com.miniide;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.miniide.controllers.*;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.providers.ProviderModelsService;
@@ -16,7 +18,14 @@ import java.util.Map;
 public class Main {
 
     private static final String VERSION = "1.0.0";
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = createObjectMapper();
+
+    private static ObjectMapper createObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
+    }
     private static AppLogger logger;
     private static MemoryDecayScheduler decayScheduler;
     private static DecayConfigStore decayConfigStore;
@@ -103,7 +112,8 @@ public class Main {
                 new PatchController(projectContext, notificationStore, creditStore, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),
-                new TtsController(objectMapper)
+                new TtsController(objectMapper),
+                new VersioningController(objectMapper, config.getWorkspacePath())
             );
 
             controllers.forEach(c -> c.registerRoutes(app));

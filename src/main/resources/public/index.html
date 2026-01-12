@@ -39,7 +39,7 @@
                     </span>
                     <span class="btn-text">Search</span>
                 </button>
-                <button class="sidebar-btn" id="btn-commit" title="Create a New Local Version" aria-label="Create a New Local Version">
+                <button class="sidebar-btn" id="btn-commit" title="Save & History" aria-label="Save & History">
                     <span class="btn-icon">
                         <img src="assets/icons/heroicons_outline/arrow-path-rounded-square.svg" alt="">
                     </span>
@@ -99,6 +99,7 @@
             </div>
         </div>
         <div id="explorer-panel" class="explorer-panel">
+            <!-- File Tree Panel -->
             <div id="file-tree-area">
                 <div class="sidebar-divider"></div>
                 <div class="file-tree-header">
@@ -122,6 +123,53 @@
                     </div>
                 </div>
                 <div id="file-tree"></div>
+            </div>
+            <!-- Versioning Panel -->
+            <div id="versioning-area" style="display: none;">
+                <div class="sidebar-divider"></div>
+                <div class="file-tree-header">
+                    Version Control
+                    <div class="tree-actions">
+                        <button class="tree-action-btn" id="btn-refresh-changes" title="Refresh Changes" aria-label="Refresh Changes">
+                            <span class="btn-icon">
+                                <img src="assets/icons/heroicons_outline/arrow-path.svg" alt="">
+                            </span>
+                        </button>
+                    </div>
+                </div>
+                <div id="versioning-content">
+                    <!-- Publish Section -->
+                    <div class="versioning-section">
+                        <input type="text" id="snapshot-name-input" class="versioning-input" placeholder="Snapshot name (auto-generated if empty)">
+                        <button id="btn-publish-snapshot" class="versioning-btn primary" disabled>
+                            <img src="assets/icons/heroicons_outline/arrow-up-on-square.svg" alt="" class="btn-icon-img">
+                            Publish to History
+                        </button>
+                    </div>
+                    <!-- Changes List -->
+                    <div class="versioning-section">
+                        <div class="versioning-section-header">
+                            <span>Changes</span>
+                            <span id="changes-summary" class="changes-summary"></span>
+                        </div>
+                        <div id="changes-list" class="changes-list">
+                            <div class="no-changes">No changes detected</div>
+                        </div>
+                        <button id="btn-discard-all" class="versioning-btn danger" style="display: none;">
+                            Discard All Changes
+                        </button>
+                    </div>
+                    <!-- History Section -->
+                    <div class="versioning-section">
+                        <div class="versioning-section-header">
+                            <span>History</span>
+                            <button id="btn-cleanup-history" class="text-btn" title="Cleanup old snapshots">Cleanup</button>
+                        </div>
+                        <div id="snapshots-list" class="snapshots-list">
+                            <div class="no-snapshots">No snapshots yet</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <!-- Main Container -->
@@ -441,6 +489,7 @@
     <script src="app/util.js"></script>
     <script src="app/dom.js"></script>
     <script src="app/editor.js"></script>
+    <script src="app/versioning.js"></script>
     <script src="app/workbench.js"></script>
     <script src="app/agents.js"></script>
     <script src="app/widgets.js"></script>
