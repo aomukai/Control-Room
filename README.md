@@ -122,6 +122,10 @@ Output locations:
 
 ## API Overview
 
+These endpoints back the desktop UI and local automation. They are not
+authenticated by default, so treat them as local-only unless you add your own
+protection layer.
+
 Issues:
 
 - GET `/api/issues`
@@ -197,10 +201,11 @@ Notifications:
 
 ## Security Notes
 
-- Designed for local use only.
-- No authentication.
+- Designed for local use by default.
+- No authentication unless you add your own gateway or proxy.
+- API access includes provider keys and endpoints you configure.
 - Full access within the workspace directory.
-- Not intended to be exposed to the internet.
+- If you expose the API, add auth, TLS, and strict network controls.
 
 ## License
 
@@ -208,7 +213,8 @@ MIT
 
 ## Credits
 
-Control Room uses 
-[Heroicons](https://heroicons.com/) by Tailwind Labs,
-[Lucide] (https://lucide.dev/) by Lucide Contributors,
-[Piper] (https://github.com/rhasspy/piper)
+Control Room uses:
+
+- [Heroicons](https://heroicons.com/) by Tailwind Labs
+- [Lucide](https://lucide.dev/) by Lucide Contributors
+- [Piper](https://github.com/rhasspy/piper)
