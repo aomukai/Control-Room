@@ -5261,6 +5261,38 @@ input[type="password"].settings-control {
     text-align: center;
 }
 
+.agent-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 14px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.agent-empty-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px dashed var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: var(--text-secondary);
+}
+
+.agent-empty-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.agent-empty-text {
+    font-size: 12px;
+}
+
 .agent-item {
     display: flex;
     align-items: center;

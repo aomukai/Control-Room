@@ -446,9 +446,9 @@ public class AgentRegistry {
 
         try {
             Files.createDirectories(registryPath.getParent());
-            AgentsFile defaults = createDefaultAgentsFile();
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), defaults);
-            logger.info("Created default agent registry at " + registryPath);
+            AgentsFile emptyRegistry = new AgentsFile();
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), emptyRegistry);
+            logger.info("Created empty agent registry at " + registryPath);
         } catch (IOException e) {
             logger.error("Failed to create agent registry: " + e.getMessage(), e);
         }

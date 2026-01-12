@@ -188,8 +188,30 @@
 
         if (agents.length === 0) {
             const empty = document.createElement('div');
-            empty.className = 'agent-empty';
-            empty.textContent = 'No agents available';
+            empty.className = 'agent-empty-state';
+
+            const icon = document.createElement('div');
+            icon.className = 'agent-empty-icon';
+            icon.textContent = '+';
+
+            const title = document.createElement('div');
+            title.className = 'agent-empty-title';
+            title.textContent = 'Add your first agent';
+
+            const text = document.createElement('div');
+            text.className = 'agent-empty-text';
+            text.textContent = 'Create an archetype to begin delegating work.';
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn-primary';
+            button.textContent = '+ Add Agent';
+            button.addEventListener('click', () => showAddAgentWizard());
+
+            empty.appendChild(icon);
+            empty.appendChild(title);
+            empty.appendChild(text);
+            empty.appendChild(button);
             container.appendChild(empty);
             return;
         }
