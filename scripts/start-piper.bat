@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 REM Start Piper TTS server in background
 REM Called by run.bat - not meant to be run directly
 
@@ -19,21 +20,21 @@ REM Start Piper HTTP server in background (requires default model + data-dir for
 echo  [*] Starting Piper TTS server on port 5050...
 start /B /MIN "Piper TTS" python -m piper.http_server -m data\voices\en_US-amy-medium.onnx --data-dir data\voices --port 5050 >nul 2>&1
 
-REM Wait for Piper to initialize (Python + ONNX model loading takes a few seconds)
-timeout /t 4 /nobreak >nul
-netstat -an | findstr ":5050.*LISTENING" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo  [OK] Piper TTS server started
-    exit /b 0
+REM Wait for Piper to initialize (poll port readiness up to ~15 seconds)
+set "PIPER_READY="
+for /l %%i in (1,1,15) do (
+    for /f %%s in ('powershell -NoProfile -Command "(Test-NetConnection -ComputerName 127.0.0.1 -Port 5050).TcpTestSucceeded"') do (
+        set "PIPER_READY=%%s"
+    )
+    if /i "!PIPER_READY!"=="True" goto :piper_ready
+    timeout /t 1 /nobreak >nul
 )
 
-REM Give it one more chance with a longer wait
-timeout /t 3 /nobreak >nul
-netstat -an | findstr ":5050.*LISTENING" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo  [OK] Piper TTS server started (slow init)
+:piper_ready
+if /i "%PIPER_READY%"=="True" (
+    echo  [OK] Piper TTS server started
     exit /b 0
 ) else (
-    echo  [!] Piper TTS failed to start (is piper-tts installed?)
-    exit /b 1
+    echo  [!] Piper is still starting; continuing without waiting.
+    exit /b 0
 )

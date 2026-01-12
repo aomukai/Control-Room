@@ -6296,9 +6296,10 @@ input[type="password"].settings-control {
     -webkit-appearance: none;
     appearance: none;
     width: 160px;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: 2px;
+    height: 6px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     cursor: pointer;
     outline: none;
 }
@@ -6309,9 +6310,10 @@ input[type="password"].settings-control {
     width: 14px;
     height: 14px;
     background: var(--accent);
+    border: 2px solid var(--bg-dark);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 
 .settings-slider::-webkit-slider-thumb:hover {
@@ -6320,19 +6322,20 @@ input[type="password"].settings-control {
 
 .settings-slider::-moz-range-track {
     width: 100%;
-    height: 4px;
-    background: var(--border-color);
-    border-radius: 2px;
+    height: 6px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
 }
 
 .settings-slider::-moz-range-thumb {
     width: 14px;
     height: 14px;
     background: var(--accent);
-    border: none;
+    border: 2px solid var(--bg-dark);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 
 .settings-slider::-moz-range-thumb:hover {
