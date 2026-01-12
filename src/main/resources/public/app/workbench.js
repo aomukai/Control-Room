@@ -107,6 +107,14 @@
             showIssueCreateModal();
         });
 
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'workbench-panel-btn';
+        refreshBtn.textContent = 'Refresh';
+        refreshBtn.addEventListener('click', () => {
+            loadIssues();
+        });
+
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'workbench-panel-btn';
@@ -114,9 +122,10 @@
         closeBtn.addEventListener('click', close);
 
         actions.appendChild(newIssueBtn);
+        actions.appendChild(refreshBtn);
         actions.appendChild(closeBtn);
 
-        renderIssueBoard(body);
+        renderIssueBoard(body, { compactHeader: true });
     }
 
     function renderWorkbenchNewsfeed() {
@@ -195,15 +204,18 @@
         renderWorkbenchNewsfeed();
     }
 
-    function renderIssueBoard(container) {
+    function renderIssueBoard(container, options = {}) {
         const target = container || document.getElementById('workbench-chat-content');
         if (!target) return;
+        const compactHeader = Boolean(options.compactHeader);
 
         target.innerHTML = `
-            <div class="issue-board">
+            <div class="issue-board${compactHeader ? ' issue-board-compact' : ''}">
                 <div class="issue-board-header">
                     <div class="issue-board-title">
-                        <span class="issue-board-icon">ÐY"<</span>
+                        <span class="issue-board-icon">
+                            <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="" class="issue-board-icon-img">
+                        </span>
                         <span>Issue Board</span>
                     </div>
                     <div class="issue-board-actions">
@@ -211,7 +223,10 @@
                             New Issue
                         </button>
                         <button type="button" class="issue-board-btn" id="issue-board-refresh" title="Refresh">
-                            <span>Å¯</span>
+                            <span class="issue-board-refresh-icon">
+                                <img src="assets/icons/heroicons_outline/arrow-path.svg" alt="" class="issue-board-icon-img">
+                            </span>
+                            <span>Refresh</span>
                         </button>
                     </div>
                 </div>
@@ -787,3 +802,4 @@
     window.refreshIssueModal = refreshIssueModal;
     window.extractRoadmapStatus = extractRoadmapStatus;
 })();
+

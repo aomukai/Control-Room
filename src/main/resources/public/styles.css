@@ -5980,6 +5980,10 @@ input[type="password"].settings-control {
     border-bottom: 1px solid var(--border-color);
 }
 
+.issue-board-compact .issue-board-header {
+    display: none;
+}
+
 .issue-board-title {
     display: flex;
     align-items: center;
@@ -5990,7 +5994,17 @@ input[type="password"].settings-control {
 }
 
 .issue-board-icon {
-    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+}
+
+.issue-board-icon-img {
+    width: 16px;
+    height: 16px;
+    filter: brightness(0.85);
 }
 
 .issue-board-actions {
@@ -5999,6 +6013,9 @@ input[type="password"].settings-control {
 }
 
 .issue-board-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     background: var(--bg-lighter);
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
