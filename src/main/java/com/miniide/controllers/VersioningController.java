@@ -3,8 +3,10 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.miniide.AppConfig;
 import com.miniide.AppLogger;
+import com.miniide.IssueMemoryService;
+import com.miniide.ProjectContext;
+import com.miniide.models.Agent;
 import com.miniide.models.Snapshot;
 import com.miniide.models.SnapshotFile;
 import io.javalin.Javalin;
@@ -34,11 +36,16 @@ public class VersioningController implements Controller {
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
     private final Path workspaceRoot;
+    private final IssueMemoryService issueService;
+    private final ProjectContext projectContext;
 
-    public VersioningController(ObjectMapper objectMapper, Path workspaceRoot) {
+    public VersioningController(ObjectMapper objectMapper, Path workspaceRoot,
+                                IssueMemoryService issueService, ProjectContext projectContext) {
         this.objectMapper = objectMapper;
         this.workspaceRoot = workspaceRoot;
         this.logger = AppLogger.get();
+        this.issueService = issueService;
+        this.projectContext = projectContext;
     }
 
     @Override
@@ -50,6 +57,7 @@ public class VersioningController implements Controller {
         app.post("/api/versioning/discard", this::discardChanges);
         app.post("/api/versioning/restore", this::restoreFile);
         app.get("/api/versioning/snapshot/{id}", this::getSnapshot);
+        app.get("/api/versioning/snapshot/{id}/file", this::getSnapshotFile);
         app.get("/api/versioning/file-history", this::getFileHistory);
         app.delete("/api/versioning/snapshot/{id}", this::deleteSnapshot);
         app.post("/api/versioning/cleanup", this::cleanupSnapshots);
@@ -80,19 +88,24 @@ public class VersioningController implements Controller {
      */
     private void getChanges(Context ctx) {
         try {
-            List<Map<String, Object>> changes = detectChanges();
+            List<Map<String, Object>> fileChanges = detectChanges(false);
+            List<Map<String, Object>> folderChanges = detectFolderChanges();
+            List<Map<String, Object>> changes = new ArrayList<>();
+            changes.addAll(fileChanges);
+            changes.addAll(folderChanges);
 
             // Calculate word deltas
             int addedWords = 0;
             int removedWords = 0;
-            for (Map<String, Object> change : changes) {
+            for (Map<String, Object> change : fileChanges) {
                 addedWords += (int) change.getOrDefault("addedWords", 0);
                 removedWords += (int) change.getOrDefault("removedWords", 0);
             }
 
             ctx.json(Map.of(
                 "changes", changes,
-                "fileCount", changes.size(),
+                "fileCount", fileChanges.size(),
+                "folderCount", folderChanges.size(),
                 "addedWords", addedWords,
                 "removedWords", removedWords
             ));
@@ -125,7 +138,7 @@ public class VersioningController implements Controller {
                 ? json.get("name").asText()
                 : generateDefaultName();
 
-            List<Map<String, Object>> changes = detectChanges();
+            List<Map<String, Object>> changes = detectChanges(false);
             if (changes.isEmpty()) {
                 ctx.status(400).json(Map.of("error", "No changes to publish"));
                 return;
@@ -146,6 +159,7 @@ public class VersioningController implements Controller {
             for (Map<String, Object> change : changes) {
                 String filePath = (String) change.get("path");
                 String status = (String) change.get("status");
+                String previousPath = (String) change.getOrDefault("previousPath", "");
                 totalAdded += (int) change.getOrDefault("addedWords", 0);
                 totalRemoved += (int) change.getOrDefault("removedWords", 0);
 
@@ -167,6 +181,9 @@ public class VersioningController implements Controller {
                 }
 
                 SnapshotFile snapshotFile = new SnapshotFile(filePath, status, contentHash);
+                if (previousPath != null && !previousPath.isBlank()) {
+                    snapshotFile.setPreviousPath(previousPath);
+                }
                 snapshot.addFile(snapshotFile);
             }
 
@@ -180,6 +197,9 @@ public class VersioningController implements Controller {
 
             // Update baseline hashes
             updateBaseline();
+
+            // Create Chief of Staff issue
+            createChiefOfStaffIssue(snapshot);
 
             logger.info("Published snapshot: " + name + " (" + changes.size() + " files)");
             ctx.json(Map.of(
@@ -207,14 +227,43 @@ public class VersioningController implements Controller {
                 }
             }
 
-            List<Map<String, Object>> changes = detectChanges();
+            List<Map<String, Object>> changes = detectChanges(false);
+            Map<String, Map<String, Object>> changeByPath = changes.stream()
+                .filter(change -> change.get("path") != null)
+                .collect(Collectors.toMap(
+                    change -> (String) change.get("path"),
+                    change -> change,
+                    (existing, replacement) -> existing
+                ));
+
             List<String> toRestore = all
                 ? changes.stream().map(c -> (String) c.get("path")).collect(Collectors.toList())
                 : paths;
 
             int restored = 0;
             for (String filePath : toRestore) {
-                if (restoreFileFromLastSnapshot(filePath)) {
+                Map<String, Object> change = changeByPath.get(filePath);
+                if (change == null) {
+                    continue;
+                }
+                String status = String.valueOf(change.getOrDefault("status", ""));
+                String previousPath = String.valueOf(change.getOrDefault("previousPath", ""));
+
+                boolean restoredFile = false;
+                if ("added".equals(status)) {
+                    restoredFile = deletePathIfExists(filePath);
+                } else if ("renamed".equals(status)) {
+                    if (previousPath != null && !previousPath.isBlank()) {
+                        restoredFile = restoreFileFromLastSnapshot(previousPath);
+                        if (!previousPath.equals(filePath)) {
+                            deletePathIfExists(filePath);
+                        }
+                    }
+                } else {
+                    restoredFile = restoreFileFromLastSnapshot(filePath);
+                }
+
+                if (restoredFile) {
                     restored++;
                 }
             }
@@ -298,6 +347,55 @@ public class VersioningController implements Controller {
             ctx.json(snapshot);
         } catch (Exception e) {
             logger.error("Failed to get snapshot: " + e.getMessage(), e);
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    /**
+     * Get file content for a specific snapshot.
+     */
+    private void getSnapshotFile(Context ctx) {
+        try {
+            String snapshotId = ctx.pathParam("id");
+            String filePath = ctx.queryParam("path");
+            if (filePath == null || filePath.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Path parameter required"));
+                return;
+            }
+
+            Snapshot snapshot = findSnapshotById(snapshotId);
+            if (snapshot == null) {
+                ctx.status(404).json(Map.of("error", "Snapshot not found"));
+                return;
+            }
+
+            SnapshotFile snapshotFile = snapshot.getFiles().stream()
+                .filter(f -> f.getPath().equals(filePath))
+                .findFirst()
+                .orElse(null);
+
+            if (snapshotFile == null) {
+                ctx.status(404).json(Map.of("error", "File not found in snapshot"));
+                return;
+            }
+
+            if ("deleted".equals(snapshotFile.getStatus())) {
+                ctx.status(404).json(Map.of("error", "File deleted in snapshot"));
+                return;
+            }
+            if (snapshotFile.getContentHash() == null || snapshotFile.getContentHash().isBlank()) {
+                ctx.status(404).json(Map.of("error", "Snapshot content missing"));
+                return;
+            }
+
+            String content = loadSnapshotContent(snapshotFile.getContentHash());
+            ctx.json(Map.of(
+                "path", filePath,
+                "snapshotId", snapshotId,
+                "content", content
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to get snapshot file: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
         }
     }
@@ -408,12 +506,17 @@ public class VersioningController implements Controller {
         objectMapper.writerWithDefaultPrettyPrinter().writeValue(snapshotsPath.toFile(), snapshots);
     }
 
-    private List<Map<String, Object>> detectChanges() throws IOException {
+    private List<Map<String, Object>> detectChanges(boolean includeFolders) throws IOException {
         List<Map<String, Object>> changes = new ArrayList<>();
         Map<String, String> baseline = loadBaseline();
+        Map<String, Integer> baselineWordCounts = loadBaselineWordCounts();
 
         // Get current file hashes
         Map<String, String> currentHashes = getCurrentFileHashes();
+        Map<String, Integer> currentWordCounts = getCurrentWordCounts(currentHashes.keySet());
+
+        // Track candidates for rename detection
+        Map<String, String> deletedByHash = new HashMap<>();
 
         // Check for modified and added files
         for (Map.Entry<String, String> entry : currentHashes.entrySet()) {
@@ -423,41 +526,91 @@ public class VersioningController implements Controller {
 
             if (baselineHash == null) {
                 // New file
-                changes.add(createChangeEntry(path, "added", currentHash));
+                changes.add(createChangeEntry(path, "added", currentHash, "", currentWordCounts, baselineWordCounts));
             } else if (!baselineHash.equals(currentHash)) {
                 // Modified file
-                changes.add(createChangeEntry(path, "modified", currentHash));
+                changes.add(createChangeEntry(path, "modified", currentHash, "", currentWordCounts, baselineWordCounts));
             }
         }
 
         // Check for deleted files
         for (String path : baseline.keySet()) {
             if (!currentHashes.containsKey(path)) {
-                changes.add(createChangeEntry(path, "deleted", ""));
+                String baselineHash = baseline.get(path);
+                if (baselineHash != null) {
+                    deletedByHash.put(baselineHash, path);
+                }
+                changes.add(createChangeEntry(path, "deleted", "", "", currentWordCounts, baselineWordCounts));
             }
+        }
+
+        // Detect renames by matching hashes between added and deleted entries
+        List<Map<String, Object>> renamed = new ArrayList<>();
+        Iterator<Map<String, Object>> iterator = changes.iterator();
+        while (iterator.hasNext()) {
+            Map<String, Object> change = iterator.next();
+            String status = String.valueOf(change.getOrDefault("status", ""));
+            if (!"added".equals(status)) {
+                continue;
+            }
+            String hash = String.valueOf(change.getOrDefault("hash", ""));
+            String previousPath = deletedByHash.get(hash);
+            if (previousPath != null) {
+                change.put("status", "renamed");
+                change.put("previousPath", previousPath);
+                change.put("addedWords", 0);
+                change.put("removedWords", 0);
+                renamed.add(change);
+            }
+        }
+
+        // Remove deleted entries that were matched as renames
+        if (!renamed.isEmpty()) {
+            Set<String> renamedFrom = renamed.stream()
+                .map(entry -> String.valueOf(entry.getOrDefault("previousPath", "")))
+                .collect(Collectors.toSet());
+            changes.removeIf(change ->
+                "deleted".equals(String.valueOf(change.getOrDefault("status", "")))
+                    && renamedFrom.contains(String.valueOf(change.getOrDefault("path", "")))
+            );
+        }
+
+        if (includeFolders) {
+            changes.addAll(detectFolderChanges());
         }
 
         return changes;
     }
 
-    private Map<String, Object> createChangeEntry(String path, String status, String hash) {
+    private Map<String, Object> createChangeEntry(String path, String status, String hash, String previousPath,
+                                                  Map<String, Integer> currentWordCounts,
+                                                  Map<String, Integer> baselineWordCounts) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("path", path);
         entry.put("status", status);
         entry.put("hash", hash);
+        if (previousPath != null && !previousPath.isBlank()) {
+            entry.put("previousPath", previousPath);
+        }
 
         // Simple word count estimation for text files
-        if (!status.equals("deleted")) {
-            try {
-                Path filePath = workspaceRoot.resolve(path);
-                if (Files.exists(filePath) && isTextFile(path)) {
-                    String content = Files.readString(filePath);
-                    int words = countWords(content);
-                    entry.put("addedWords", words);
-                    entry.put("removedWords", 0);
-                }
-            } catch (Exception e) {
-                // Ignore word count errors
+        if (isTextFile(path)) {
+            int currentWords = currentWordCounts.getOrDefault(path, 0);
+            int baselineWords = baselineWordCounts.getOrDefault(path, 0);
+
+            if ("added".equals(status)) {
+                entry.put("addedWords", currentWords);
+                entry.put("removedWords", 0);
+            } else if ("deleted".equals(status)) {
+                entry.put("addedWords", 0);
+                entry.put("removedWords", baselineWords);
+            } else if ("modified".equals(status)) {
+                int diff = currentWords - baselineWords;
+                entry.put("addedWords", Math.max(diff, 0));
+                entry.put("removedWords", Math.max(-diff, 0));
+            } else if ("renamed".equals(status)) {
+                entry.put("addedWords", 0);
+                entry.put("removedWords", 0);
             }
         }
 
@@ -545,6 +698,20 @@ public class VersioningController implements Controller {
         }
     }
 
+    private boolean deletePathIfExists(String filePath) {
+        try {
+            Path targetPath = workspaceRoot.resolve(filePath);
+            if (Files.exists(targetPath)) {
+                Files.delete(targetPath);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("Failed to delete path: " + filePath, e);
+            return false;
+        }
+    }
+
     private String generateDefaultName() {
         // Format: project_name_YYYYMMDD_HHMM
         String projectName = workspaceRoot.getFileName().toString();
@@ -557,7 +724,20 @@ public class VersioningController implements Controller {
             .withZone(ZoneId.systemDefault());
         String timestamp = formatter.format(Instant.now());
 
-        return normalized + "_" + timestamp;
+        String baseName = normalized + "_" + timestamp;
+        try {
+            List<Snapshot> snapshots = loadSnapshots();
+            long count = snapshots.stream()
+                .filter(snapshot -> snapshot.getName() != null && snapshot.getName().startsWith(baseName))
+                .count();
+            if (count > 0) {
+                return baseName + "_" + (count + 1);
+            }
+        } catch (Exception e) {
+            // Ignore naming conflicts if snapshots cannot be read
+        }
+
+        return baseName;
     }
 
     private String hashContent(byte[] content) {
@@ -585,5 +765,174 @@ public class VersioningController implements Controller {
     private int countWords(String text) {
         if (text == null || text.isBlank()) return 0;
         return text.split("\\s+").length;
+    }
+
+    private Snapshot findSnapshotById(String snapshotId) throws IOException {
+        List<Snapshot> snapshots = loadSnapshots();
+        return snapshots.stream()
+            .filter(snapshot -> snapshot.getId().equals(snapshotId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String loadSnapshotContent(String contentHash) throws IOException {
+        Path blobPath = workspaceRoot.resolve(HISTORY_DIR).resolve(CONTENT_DIR)
+            .resolve("blobs").resolve(contentHash);
+        if (!Files.exists(blobPath)) {
+            throw new IOException("Content blob not found");
+        }
+        return Files.readString(blobPath, StandardCharsets.UTF_8);
+    }
+
+    private void createChiefOfStaffIssue(Snapshot snapshot) {
+        if (issueService == null || projectContext == null || snapshot == null) {
+            return;
+        }
+
+        Agent chief = resolveChiefOfStaff();
+        if (chief == null) {
+            logger.warn("No Chief of Staff found for snapshot issue.");
+            return;
+        }
+
+        StringBuilder body = new StringBuilder();
+        body.append("A snapshot was published to History.\n\n");
+        body.append("**Snapshot**: ").append(snapshot.getName()).append("\n");
+        body.append("**Published**: ").append(snapshot.getPublishedAt()).append("\n");
+        body.append("**Files**: ").append(snapshot.getFiles().size()).append("\n");
+        body.append("**Words**: +").append(snapshot.getAddedWords())
+            .append(" / -").append(snapshot.getRemovedWords()).append("\n\n");
+
+        body.append("**Changed files:**\n");
+        for (SnapshotFile file : snapshot.getFiles()) {
+            String status = file.getStatus() != null ? file.getStatus().toUpperCase() : "UNKNOWN";
+            body.append("- [").append(status).append("] ").append(file.getPath());
+            if (file.getPreviousPath() != null && !file.getPreviousPath().isBlank()) {
+                body.append(" (from ").append(file.getPreviousPath()).append(")");
+            }
+            body.append("\n");
+        }
+
+        issueService.createIssue(
+            "Snapshot published: " + snapshot.getName(),
+            body.toString(),
+            "system",
+            chief.getName(),
+            List.of("snapshot", "versioning"),
+            "normal"
+        );
+    }
+
+    private Agent resolveChiefOfStaff() {
+        if (projectContext == null || projectContext.agents() == null) {
+            return null;
+        }
+        List<Agent> agents = projectContext.agents().listEnabledAgents();
+        for (Agent agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            String role = agent.getRole() != null ? agent.getRole().trim().toLowerCase() : "";
+            if ("assistant".equals(role) || "chief of staff".equals(role) || Boolean.TRUE.equals(agent.getCanBeTeamLead())) {
+                return agent;
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Integer> getCurrentWordCounts(Set<String> paths) {
+        Map<String, Integer> wordCounts = new HashMap<>();
+        for (String path : paths) {
+            if (!isTextFile(path)) {
+                continue;
+            }
+            try {
+                Path filePath = workspaceRoot.resolve(path);
+                if (Files.exists(filePath)) {
+                    String content = Files.readString(filePath);
+                    wordCounts.put(path, countWords(content));
+                }
+            } catch (Exception e) {
+                // Ignore word count errors
+            }
+        }
+        return wordCounts;
+    }
+
+    private Map<String, Integer> loadBaselineWordCounts() {
+        Map<String, Integer> counts = new HashMap<>();
+        try {
+            List<Snapshot> snapshots = loadSnapshots();
+            if (snapshots.isEmpty()) {
+                return counts;
+            }
+            Snapshot latest = snapshots.get(0);
+            for (SnapshotFile file : latest.getFiles()) {
+                if (!isTextFile(file.getPath())) {
+                    continue;
+                }
+                if ("deleted".equals(file.getStatus())) {
+                    continue;
+                }
+                if (file.getContentHash() == null || file.getContentHash().isBlank()) {
+                    continue;
+                }
+                try {
+                    String content = loadSnapshotContent(file.getContentHash());
+                    counts.put(file.getPath(), countWords(content));
+                } catch (Exception e) {
+                    // Ignore file read errors
+                }
+            }
+        } catch (Exception e) {
+            // Ignore baseline word count errors
+        }
+        return counts;
+    }
+
+    private List<Map<String, Object>> detectFolderChanges() throws IOException {
+        Set<String> baselineFolders = getFolderSet(loadBaseline().keySet());
+        Set<String> currentFolders = getFolderSet(getCurrentFileHashes().keySet());
+
+        List<Map<String, Object>> changes = new ArrayList<>();
+
+        for (String folder : currentFolders) {
+            if (!baselineFolders.contains(folder)) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("path", folder);
+                entry.put("status", "added");
+                entry.put("isFolder", true);
+                changes.add(entry);
+            }
+        }
+
+        for (String folder : baselineFolders) {
+            if (!currentFolders.contains(folder)) {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("path", folder);
+                entry.put("status", "deleted");
+                entry.put("isFolder", true);
+                changes.add(entry);
+            }
+        }
+
+        return changes;
+    }
+
+    private Set<String> getFolderSet(Set<String> filePaths) {
+        Set<String> folders = new HashSet<>();
+        for (String path : filePaths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            String normalized = path.replace('\\', '/');
+            int index = normalized.lastIndexOf('/');
+            while (index > 0) {
+                String folder = normalized.substring(0, index);
+                folders.add(folder);
+                index = folder.lastIndexOf('/');
+            }
+        }
+        return folders;
     }
 }

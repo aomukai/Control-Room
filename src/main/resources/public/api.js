@@ -328,6 +328,59 @@
         }
     };
 
+    // Versioning API
+    const versioningApi = {
+        async status() {
+            return api('/api/versioning/status');
+        },
+        async changes() {
+            return api('/api/versioning/changes');
+        },
+        async snapshots() {
+            return api('/api/versioning/snapshots');
+        },
+        async publish(name) {
+            return api('/api/versioning/publish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+        },
+        async discard(payload) {
+            return api('/api/versioning/discard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
+        async restore(payload) {
+            return api('/api/versioning/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
+        async snapshot(id) {
+            return api(`/api/versioning/snapshot/${encodeURIComponent(id)}`);
+        },
+        async snapshotFile(id, path) {
+            return api(`/api/versioning/snapshot/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`);
+        },
+        async fileHistory(path) {
+            return api(`/api/versioning/file-history?path=${encodeURIComponent(path)}`);
+        },
+        async deleteSnapshot(id) {
+            return api(`/api/versioning/snapshot/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        },
+        async cleanup(keepCount) {
+            return api('/api/versioning/cleanup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keepCount })
+            });
+        }
+    };
+
     // File API
     const fileApi = {
         async getTree() {
@@ -518,5 +571,6 @@
     window.memoryApi = memoryApi;
     window.notificationsApi = notificationsApi;
     window.workspaceActionsApi = workspaceActionsApi;
+    window.versioningApi = versioningApi;
 
 })();

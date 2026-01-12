@@ -6630,6 +6630,22 @@ input[type="password"].settings-control {
     text-overflow: ellipsis;
 }
 
+.change-previous {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.change-item.is-folder .change-filename {
+    font-weight: 600;
+}
+
+.change-item.is-folder {
+    cursor: default;
+}
+
 .change-action {
     flex-shrink: 0;
     display: flex;
@@ -6658,6 +6674,111 @@ input[type="password"].settings-control {
     width: 12px;
     height: 12px;
     filter: brightness(0.7);
+}
+
+/* History viewer */
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.history-list-item {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.15s ease, border 0.15s ease;
+}
+
+.history-list-item:hover {
+    background: var(--bg-lighter);
+    border-color: var(--accent);
+}
+
+.history-list-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.history-list-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.history-modal {
+    width: min(90vw, 1200px);
+    max-width: 90vw;
+}
+
+.history-header {
+    margin-bottom: 12px;
+}
+
+.history-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.history-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.history-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    min-height: 400px;
+}
+
+.history-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.history-panel-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    background: var(--bg-medium);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.history-editor {
+    flex: 1;
+    min-height: 320px;
+}
+
+.history-fallback {
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+    border: none;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    resize: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+}
+
+@media (max-width: 900px) {
+    .history-split {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Snapshots List */

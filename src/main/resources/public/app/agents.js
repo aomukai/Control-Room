@@ -1264,6 +1264,11 @@
         if (node.type === 'file') {
             actions.push({ label: 'Explore', action: () => window.explorePath(node.path, node.type) });
             actions.push({ label: 'Open in New Tab', action: () => window.openFileInNewTab(node.path) });
+            actions.push({ label: 'View History', action: () => {
+                if (window.showFileHistory) {
+                    window.showFileHistory(node.path);
+                }
+            } });
         }
 
         // For folders: add "New File Here" and "New Folder Here"

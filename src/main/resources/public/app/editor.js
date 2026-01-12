@@ -532,6 +532,9 @@
         elements.btnRevealFile.disabled = !tabData.path;
         elements.btnOpenFolder.disabled = !tabData.path;
         elements.btnFind.disabled = !tabData.path;
+        if (elements.btnViewHistory) {
+            elements.btnViewHistory.disabled = !tabData.path;
+        }
         persistEditorState();
     }
     
@@ -626,6 +629,9 @@
                 elements.btnRevealFile.disabled = true;
                 elements.btnOpenFolder.disabled = true;
                 elements.btnFind.disabled = true;
+                if (elements.btnViewHistory) {
+                    elements.btnViewHistory.disabled = true;
+                }
             }
         }
     

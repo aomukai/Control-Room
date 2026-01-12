@@ -39,7 +39,7 @@
                     </span>
                     <span class="btn-text">Search</span>
                 </button>
-                <button class="sidebar-btn" id="btn-commit" title="Save & History" aria-label="Save & History">
+                <button class="sidebar-btn" id="btn-commit" title="Manual Save & History" aria-label="Manual Save & History">
                     <span class="btn-icon">
                         <img src="assets/icons/heroicons_outline/archive-box-arrow-down.svg" alt="">
                     </span>
@@ -198,6 +198,10 @@
                             <button class="tab-action-btn" id="btn-create-issue" title="Create Issue" aria-label="Create Issue">
                                 <span class="btn-icon">+</span>
                                 <span class="btn-text">New Issue</span>
+                            </button>
+                            <button class="tab-action-btn" id="btn-view-history" title="View History" aria-label="View History" disabled>
+                                <span class="btn-icon">H</span>
+                                <span class="btn-text">History</span>
                             </button>
                             <button class="tab-action-btn" id="btn-reveal-file" title="Reveal File in Explorer" disabled>
                                 <span class="btn-icon">📍</span>
@@ -490,6 +494,7 @@
     <script src="app/dom.js"></script>
     <script src="app/editor.js"></script>
     <script src="app/versioning.js"></script>
+    <script src="app/history.js"></script>
     <script src="app/workbench.js"></script>
     <script src="app/agents.js"></script>
     <script src="app/widgets.js"></script>

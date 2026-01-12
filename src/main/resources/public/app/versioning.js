@@ -4,6 +4,7 @@
 
     const state = window.state;
     const api = window.api;
+    const versioningApi = window.versioningApi;
     const showConfigurableModal = window.modals ? window.modals.showConfigurableModal : null;
 
     // DOM elements
@@ -76,7 +77,10 @@
             showFileTreePanel();
         }
 
-        // Update sidebar button states
+        updateSidebarButtons();
+    }
+
+    function updateSidebarButtons() {
         const commitBtn = document.getElementById('btn-commit');
         const explorerBtn = document.getElementById('btn-toggle-explorer');
         if (commitBtn) {
@@ -128,10 +132,7 @@
     // Fetch and display changes
     async function refreshChanges() {
         try {
-            const response = await fetch('/api/versioning/changes');
-            if (!response.ok) throw new Error('Failed to fetch changes');
-
-            const data = await response.json();
+            const data = versioningApi ? await versioningApi.changes() : await api('/api/versioning/changes');
             currentChanges = data.changes || [];
 
             renderChanges(currentChanges, data);
@@ -155,7 +156,12 @@
         // Update summary
         if (changesSummary) {
             const parts = [];
-            parts.push(`${summary.fileCount} file${summary.fileCount !== 1 ? 's' : ''}`);
+            const fileCount = summary.fileCount || 0;
+            const folderCount = summary.folderCount || 0;
+            parts.push(`${fileCount} file${fileCount !== 1 ? 's' : ''}`);
+            if (folderCount > 0) {
+                parts.push(`${folderCount} folder${folderCount !== 1 ? 's' : ''}`);
+            }
             if (summary.addedWords > 0 || summary.removedWords > 0) {
                 const wordParts = [];
                 if (summary.addedWords > 0) wordParts.push(`+${summary.addedWords}`);
@@ -169,19 +175,27 @@
         changesList.innerHTML = changes.map(change => {
             const statusIcon = getStatusIcon(change.status);
             const statusClass = `status-${change.status}`;
-            const fileName = change.path.split('/').pop();
-            const dirPath = change.path.substring(0, change.path.lastIndexOf('/')) || '';
+            const isFolder = change.isFolder;
+            const path = change.path || '';
+            const fileName = path.split('/').pop();
+            const dirPath = path.substring(0, path.lastIndexOf('/')) || '';
+            const previousPath = change.previousPath || '';
+            const previousLabel = previousPath ? `<span class="change-previous">from ${escapeHtml(previousPath)}</span>` : '';
+            const actionButton = isFolder ? '' : `
+                    <button class="change-action" title="Discard changes" data-action="discard">
+                        <img src="assets/icons/heroicons_outline/arrow-left.svg" alt="Discard">
+                    </button>
+                `;
 
             return `
-                <div class="change-item ${statusClass}" data-path="${escapeAttr(change.path)}">
+                <div class="change-item ${statusClass}${isFolder ? ' is-folder' : ''}" data-path="${escapeAttr(path)}" data-status="${escapeAttr(change.status || '')}">
                     <span class="change-status">${statusIcon}</span>
-                    <span class="change-file" title="${escapeAttr(change.path)}">
+                    <span class="change-file" title="${escapeAttr(path)}">
                         <span class="change-filename">${escapeHtml(fileName)}</span>
                         ${dirPath ? `<span class="change-dir">${escapeHtml(dirPath)}</span>` : ''}
+                        ${previousLabel}
                     </span>
-                    <button class="change-action" title="Discard changes" data-action="discard">
-                        <img src="assets/icons/heroicons_outline/x-mark.svg" alt="Discard">
-                    </button>
+                    ${actionButton}
                 </div>
             `;
         }).join('');
@@ -200,6 +214,13 @@
         changesList.querySelectorAll('.change-item').forEach(item => {
             item.addEventListener('click', () => {
                 const path = item.dataset.path;
+                const status = item.dataset.status;
+                if (item.classList.contains('is-folder')) {
+                    return;
+                }
+                if (status === 'deleted') {
+                    return;
+                }
                 if (window.openFileInNewTab) {
                     window.openFileInNewTab(path);
                 }
@@ -222,10 +243,7 @@
     // Load and display snapshots
     async function loadSnapshots() {
         try {
-            const response = await fetch('/api/versioning/snapshots');
-            if (!response.ok) throw new Error('Failed to fetch snapshots');
-
-            const data = await response.json();
+            const data = versioningApi ? await versioningApi.snapshots() : await api('/api/versioning/snapshots');
             currentSnapshots = data.snapshots || [];
 
             renderSnapshots(currentSnapshots);
@@ -247,9 +265,11 @@
             const date = new Date(snapshot.publishedAt);
             const timeAgo = formatTimeAgo(date);
             const filesCount = snapshot.files ? snapshot.files.length : 0;
+            const fileNames = snapshot.files ? snapshot.files.map(file => file.path).filter(Boolean) : [];
+            const tooltip = fileNames.length > 0 ? `Changed files:\n${fileNames.join('\n')}` : '';
 
             return `
-                <div class="snapshot-item" data-id="${escapeAttr(snapshot.id)}">
+                <div class="snapshot-item" data-id="${escapeAttr(snapshot.id)}" title="${escapeAttr(tooltip)}">
                     <div class="snapshot-header">
                         <span class="snapshot-name">${escapeHtml(snapshot.name)}</span>
                         <span class="snapshot-time" title="${date.toLocaleString()}">${timeAgo}</span>
@@ -291,7 +311,7 @@
         if (publishBtn) {
             const hasChanges = currentChanges.length > 0;
             publishBtn.disabled = !hasChanges;
-            publishBtn.title = hasChanges ? 'Publish changes to history' : 'No changes to publish';
+            publishBtn.title = hasChanges ? 'Publish changes to history' : 'No changes to save.';
         }
     }
 
@@ -305,18 +325,13 @@
             publishBtn.disabled = true;
             publishBtn.textContent = 'Publishing...';
 
-            const response = await fetch('/api/versioning/publish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Failed to publish');
-            }
-
-            const result = await response.json();
+            const result = versioningApi
+                ? await versioningApi.publish(name)
+                : await api('/api/versioning/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
             log(`Published snapshot: ${result.snapshot.name}`, 'success');
 
             // Clear input and refresh
@@ -363,13 +378,15 @@
         }
 
         try {
-            const response = await fetch('/api/versioning/discard', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: [path] })
-            });
-
-            if (!response.ok) throw new Error('Failed to discard changes');
+            if (versioningApi) {
+                await versioningApi.discard({ paths: [path] });
+            } else {
+                await api('/api/versioning/discard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paths: [path] })
+                });
+            }
 
             log(`Discarded changes to ${path}`, 'info');
             await refreshChanges();
@@ -406,15 +423,13 @@
         if (!confirmed) return;
 
         try {
-            const response = await fetch('/api/versioning/discard', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ all: true })
-            });
-
-            if (!response.ok) throw new Error('Failed to discard changes');
-
-            const result = await response.json();
+            const result = versioningApi
+                ? await versioningApi.discard({ all: true })
+                : await api('/api/versioning/discard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ all: true })
+                });
             log(`Discarded ${result.restoredCount} files`, 'info');
             await refreshChanges();
 
@@ -464,11 +479,11 @@
     // Delete a snapshot
     async function deleteSnapshot(snapshotId) {
         try {
-            const response = await fetch(`/api/versioning/snapshot/${snapshotId}`, {
-                method: 'DELETE'
-            });
-
-            if (!response.ok) throw new Error('Failed to delete snapshot');
+            if (versioningApi) {
+                await versioningApi.deleteSnapshot(snapshotId);
+            } else {
+                await api(`/api/versioning/snapshot/${snapshotId}`, { method: 'DELETE' });
+            }
 
             log('Snapshot deleted', 'info');
             await loadSnapshots();
@@ -512,15 +527,13 @@
     // Cleanup old snapshots
     async function cleanupSnapshots(keepCount) {
         try {
-            const response = await fetch('/api/versioning/cleanup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keepCount })
-            });
-
-            if (!response.ok) throw new Error('Failed to cleanup');
-
-            const result = await response.json();
+            const result = versioningApi
+                ? await versioningApi.cleanup(keepCount)
+                : await api('/api/versioning/cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keepCount })
+                });
             log(`Cleaned up ${result.removed} snapshots, ${result.remaining} remaining`, 'info');
             await loadSnapshots();
 
@@ -553,7 +566,7 @@
                     persistent: true,
                     source: 'versioning',
                     actionLabel: 'View History',
-                    actionPayload: { action: 'openVersioning', snapshotId: snapshot.id }
+                    actionPayload: { kind: 'openVersioning', snapshotId: snapshot.id }
                 })
             });
 
@@ -588,7 +601,16 @@
         loadSnapshots,
         syncWithExplorerState,
         showFileTreePanel,
-        isActive: () => isVersioningPanelActive
+        isActive: () => isVersioningPanelActive,
+        openVersioningPanel: async (snapshotId) => {
+            isVersioningPanelActive = true;
+            showVersioningPanel();
+            updateSidebarButtons();
+            if (snapshotId) {
+                await loadSnapshots();
+                showSnapshotDetails(snapshotId);
+            }
+        }
     };
 
     // Initialize when DOM is ready

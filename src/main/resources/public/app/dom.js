@@ -26,6 +26,7 @@
         diffContent: document.getElementById('diff-content'),
         closeDiff: document.getElementById('close-diff'),
         btnCreateIssue: document.getElementById('btn-create-issue'),
+        btnViewHistory: document.getElementById('btn-view-history'),
         btnRevealFile: document.getElementById('btn-reveal-file'),
         btnOpenFolder: document.getElementById('btn-open-folder'),
         btnFind: document.getElementById('btn-find'),

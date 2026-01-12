@@ -1887,7 +1887,7 @@
         }
 
         // Support both 'kind' (new) and 'type' (legacy) keys
-        const actionKind = payload.kind || payload.type;
+        const actionKind = payload.kind || payload.type || payload.action;
 
         switch (actionKind) {
             case 'open-notification-center':
@@ -1923,6 +1923,15 @@
                 log(`Patch review requested: ${payload.patchId || 'unknown'}`, 'info');
                 closeNotificationCenter();
                 showPatchReviewModal(payload.patchId, 'editor'); // Default to editor view from notifications
+                break;
+            case 'openVersioning':
+            case 'open-versioning':
+                closeNotificationCenter();
+                if (window.versioning && window.versioning.openVersioningPanel) {
+                    window.versioning.openVersioningPanel(payload.snapshotId || null);
+                } else {
+                    log('Versioning panel not available', 'warning');
+                }
                 break;
             default:
                 openNotificationCenter(notification.id);
@@ -4140,6 +4149,18 @@
                 log(`Failed to open containing folder: ${err.message}`, 'error');
             }
         });
+
+        if (elements.btnViewHistory) {
+            elements.btnViewHistory.addEventListener('click', () => {
+                if (!state.activeFile) {
+                    log('No active file to view history', 'warning');
+                    return;
+                }
+                if (window.showFileHistory) {
+                    window.showFileHistory(state.activeFile);
+                }
+            });
+        }
 
         // Find button - triggers Monaco find widget
         elements.btnFind.addEventListener('click', () => {
