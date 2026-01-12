@@ -28,6 +28,12 @@ if not exist "gradle\wrapper\gradle-wrapper.jar" (
     echo.
 )
 
+REM Start Piper TTS server if voices are installed
+if exist "data\voices\en_US-amy-medium.onnx" (
+    call scripts\start-piper.bat
+    echo.
+)
+
 echo  [*] Building and starting server...
 echo  [*] Browser will open automatically when ready.
 echo.

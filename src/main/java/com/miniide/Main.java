@@ -102,7 +102,8 @@ public class Main {
                 memoryController,
                 new PatchController(projectContext, notificationStore, creditStore, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
-                new DashboardController(dashboardLayoutStore, objectMapper)
+                new DashboardController(dashboardLayoutStore, objectMapper),
+                new TtsController(objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));

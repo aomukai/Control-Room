@@ -208,4 +208,7 @@ MIT
 
 ## Credits
 
-Uses [Heroicons](https://heroicons.com/) by Tailwind Labs.
+Control Room uses 
+[Heroicons](https://heroicons.com/) by Tailwind Labs,
+[Lucide] (https://lucide.dev/) by Lucide Contributors,
+[Piper] (https://github.com/rhasspy/piper)

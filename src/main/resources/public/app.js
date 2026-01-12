@@ -2189,6 +2189,10 @@
                             <span class="nav-icon"><img src="assets/icons/heroicons_outline/command-line.svg" alt=""></span>
                             Shortcuts
                         </div>
+                        <div class="settings-nav-item" data-section="tts">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/speaker-wave.svg" alt=""></span>
+                            Text-to-Speech
+                        </div>
                     </div>
                     <div class="settings-nav-footer">
                         Control Room v0.1
@@ -2581,6 +2585,90 @@
                             </div>
                         </section>
 
+                        <!-- TTS Section -->
+                        <section class="settings-section" id="settings-tts">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/speaker-wave.svg" alt="">
+                                    Text-to-Speech
+                                </h3>
+                                <p>Configure voice synthesis for reading text aloud.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Voice Settings</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Default Voice</span>
+                                            <span class="settings-label-desc">Voice used for text-to-speech</span>
+                                        </div>
+                                        <select class="settings-control settings-control-wide" id="settings-tts-voice">
+                                            <option value="">Loading voices...</option>
+                                        </select>
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Speed</span>
+                                            <span class="settings-label-desc">Playback speed (0.5x to 2.0x)</span>
+                                        </div>
+                                        <div class="settings-inline">
+                                            <input type="range" class="settings-slider" id="settings-tts-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+                                            <span class="settings-slider-value" id="settings-tts-speed-value">1.0x</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Preview</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Test Text</span>
+                                            <span class="settings-label-desc">Text to read aloud</span>
+                                        </div>
+                                        <input type="text" class="settings-control settings-control-wide" id="settings-tts-preview-text" value="The quick brown fox jumps over the lazy dog.">
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-inline">
+                                            <button class="settings-button settings-button-primary" type="button" id="settings-tts-test">
+                                                Test Voice
+                                            </button>
+                                            <button class="settings-button" type="button" id="settings-tts-stop" disabled>
+                                                Stop
+                                            </button>
+                                            <span class="settings-status" id="settings-tts-status"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Add More Voices</div>
+                                <div class="settings-card">
+                                    <div class="settings-subsection">
+                                        <p class="settings-hint">
+                                            Download Piper voice models (.onnx + .onnx.json) and drop them in the voices folder.
+                                        </p>
+                                        <div class="settings-row">
+                                            <div class="settings-inline">
+                                                <button class="settings-button" type="button" id="settings-tts-browse-voices">
+                                                    Browse Voices
+                                                </button>
+                                                <button class="settings-button" type="button" id="settings-tts-open-folder">
+                                                    Open Voices Folder
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p class="settings-hint settings-hint-muted">
+                                            Voices are loaded on app startup. Restart Control Room after adding new voices.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                     </div>
                 </main>
             </div>
@@ -2620,6 +2708,7 @@
         });
 
         initSettingsWiring();
+        initTtsSettingsWiring();
     }
 
     async function initSettingsWiring() {
@@ -2833,6 +2922,324 @@
         });
 
         await refreshSettingsData();
+    }
+
+    async function initTtsSettingsWiring() {
+        const voiceSelect = document.getElementById('settings-tts-voice');
+        const speedSlider = document.getElementById('settings-tts-speed');
+        const speedValue = document.getElementById('settings-tts-speed-value');
+        const previewText = document.getElementById('settings-tts-preview-text');
+        const testBtn = document.getElementById('settings-tts-test');
+        const stopBtn = document.getElementById('settings-tts-stop');
+        const statusEl = document.getElementById('settings-tts-status');
+        const browseVoicesBtn = document.getElementById('settings-tts-browse-voices');
+        const openFolderBtn = document.getElementById('settings-tts-open-folder');
+
+        if (!voiceSelect || !speedSlider) return;
+
+        let currentAudio = null;
+        let currentUtterance = null; // For system voice
+        let systemVoicesCache = [];
+
+        // Get flag emoji for language code
+        const getLangFlag = (langCode) => {
+            if (!langCode) return '';
+            const flags = {
+                'en-US': '\u{1F1FA}\u{1F1F8}', 'en-GB': '\u{1F1EC}\u{1F1E7}', 'en-AU': '\u{1F1E6}\u{1F1FA}',
+                'de-DE': '\u{1F1E9}\u{1F1EA}', 'de-AT': '\u{1F1E6}\u{1F1F9}', 'de-CH': '\u{1F1E8}\u{1F1ED}',
+                'fr-FR': '\u{1F1EB}\u{1F1F7}', 'fr-CA': '\u{1F1E8}\u{1F1E6}',
+                'es-ES': '\u{1F1EA}\u{1F1F8}', 'es-MX': '\u{1F1F2}\u{1F1FD}',
+                'it-IT': '\u{1F1EE}\u{1F1F9}', 'ja-JP': '\u{1F1EF}\u{1F1F5}',
+                'zh-CN': '\u{1F1E8}\u{1F1F3}', 'zh-TW': '\u{1F1F9}\u{1F1FC}',
+                'ko-KR': '\u{1F1F0}\u{1F1F7}', 'ru-RU': '\u{1F1F7}\u{1F1FA}',
+                'pt-BR': '\u{1F1E7}\u{1F1F7}', 'pt-PT': '\u{1F1F5}\u{1F1F9}',
+                'nl-NL': '\u{1F1F3}\u{1F1F1}', 'pl-PL': '\u{1F1F5}\u{1F1F1}',
+                'sv-SE': '\u{1F1F8}\u{1F1EA}', 'da-DK': '\u{1F1E9}\u{1F1F0}',
+                'nb-NO': '\u{1F1F3}\u{1F1F4}', 'fi-FI': '\u{1F1EB}\u{1F1EE}',
+            };
+            // Try exact match first, then language prefix
+            const normalized = langCode.replace('_', '-');
+            if (flags[normalized]) return flags[normalized];
+            const lang = normalized.split('-')[0];
+            for (const [key, flag] of Object.entries(flags)) {
+                if (key.startsWith(lang + '-')) return flag;
+            }
+            return '';
+        };
+
+        // Get system voices (Web Speech API)
+        const getSystemVoices = () => {
+            return new Promise(resolve => {
+                const voices = speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    resolve(voices);
+                } else {
+                    // Chrome loads voices async
+                    speechSynthesis.onvoiceschanged = () => {
+                        resolve(speechSynthesis.getVoices());
+                    };
+                    // Timeout fallback
+                    setTimeout(() => resolve(speechSynthesis.getVoices()), 500);
+                }
+            });
+        };
+
+        // Load voices and settings
+        const loadTtsData = async () => {
+            try {
+                const [voicesData, settingsData] = await Promise.all([
+                    fetch('/api/tts/voices').then(r => r.json()),
+                    fetch('/api/tts/settings').then(r => r.json())
+                ]);
+
+                // Get system voices
+                systemVoicesCache = await getSystemVoices();
+
+                // Populate voice dropdown with optgroups
+                voiceSelect.innerHTML = '';
+
+                // Piper voices group
+                const piperVoices = voicesData.voices || [];
+                if (piperVoices.length > 0) {
+                    const piperGroup = document.createElement('optgroup');
+                    piperGroup.label = 'Piper (Local Neural TTS)';
+                    piperVoices.forEach(voice => {
+                        const opt = document.createElement('option');
+                        opt.value = 'piper:' + voice.id;
+                        // Extract lang from voice id (e.g., "en_US-amy-medium" -> "en-US")
+                        const langMatch = voice.id.match(/^([a-z]{2})_([A-Z]{2})/);
+                        const langCode = langMatch ? `${langMatch[1]}-${langMatch[2]}` : '';
+                        const flag = getLangFlag(langCode);
+                        opt.textContent = flag ? `${flag} ${voice.name}` : voice.name;
+                        opt.dataset.type = 'piper';
+                        if (settingsData.voice === 'piper:' + voice.id || settingsData.voice === voice.id) {
+                            opt.selected = true;
+                        }
+                        piperGroup.appendChild(opt);
+                    });
+                    voiceSelect.appendChild(piperGroup);
+                }
+
+                // System voices group
+                if (systemVoicesCache.length > 0) {
+                    const systemGroup = document.createElement('optgroup');
+                    systemGroup.label = 'System Voices';
+
+                    // Sort by language, then name
+                    const sortedVoices = [...systemVoicesCache].sort((a, b) => {
+                        const langA = a.lang || '';
+                        const langB = b.lang || '';
+                        if (langA !== langB) return langA.localeCompare(langB);
+                        return a.name.localeCompare(b.name);
+                    });
+
+                    sortedVoices.forEach(voice => {
+                        const opt = document.createElement('option');
+                        opt.value = 'system:' + voice.name;
+                        // Format: "Name (Language)" with flag emoji if possible
+                        const langFlag = getLangFlag(voice.lang);
+                        opt.textContent = `${langFlag} ${voice.name}`;
+                        opt.dataset.type = 'system';
+                        opt.dataset.voiceName = voice.name;
+                        if (settingsData.voice === 'system:' + voice.name) {
+                            opt.selected = true;
+                        }
+                        systemGroup.appendChild(opt);
+                    });
+                    voiceSelect.appendChild(systemGroup);
+                }
+
+                // Fallback if no voices at all
+                if (piperVoices.length === 0 && systemVoicesCache.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No voices available';
+                    voiceSelect.appendChild(opt);
+                }
+
+                // Set speed
+                speedSlider.value = settingsData.speed || 1.0;
+                speedValue.textContent = speedSlider.value + 'x';
+            } catch (err) {
+                console.error('Failed to load TTS settings:', err);
+                voiceSelect.innerHTML = '<option value="">Error loading voices</option>';
+            }
+        };
+
+        // Save settings
+        const saveSettings = async () => {
+            try {
+                await fetch('/api/tts/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        voice: voiceSelect.value,
+                        speed: parseFloat(speedSlider.value)
+                    })
+                });
+            } catch (err) {
+                console.error('Failed to save TTS settings:', err);
+            }
+        };
+
+        // Update speed display and save
+        speedSlider.addEventListener('input', () => {
+            speedValue.textContent = speedSlider.value + 'x';
+        });
+        speedSlider.addEventListener('change', saveSettings);
+        voiceSelect.addEventListener('change', saveSettings);
+
+        // Stop any current playback (Piper audio or system speech)
+        const stopPlayback = () => {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
+            if (currentUtterance) {
+                speechSynthesis.cancel();
+                currentUtterance = null;
+            }
+            testBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusEl.textContent = '';
+        };
+
+        // Play with system voice (Web Speech API)
+        const playSystemVoice = (text, voiceName, speed) => {
+            const utterance = new SpeechSynthesisUtterance(text);
+            const voice = systemVoicesCache.find(v => v.name === voiceName);
+            if (voice) {
+                utterance.voice = voice;
+            }
+            utterance.rate = speed; // 0.1 to 10, default 1
+
+            utterance.onend = () => {
+                currentUtterance = null;
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+                statusEl.textContent = '';
+            };
+
+            utterance.onerror = (e) => {
+                console.error('System TTS error:', e);
+                currentUtterance = null;
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+                statusEl.textContent = 'Speech error';
+            };
+
+            currentUtterance = utterance;
+            statusEl.textContent = 'Speaking...';
+            speechSynthesis.speak(utterance);
+        };
+
+        // Play with Piper (server-side)
+        const playPiperVoice = async (text, voiceId, speed) => {
+            statusEl.textContent = 'Generating audio...';
+
+            const response = await fetch('/api/tts/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: text,
+                    voice: voiceId,
+                    speed: speed
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'TTS request failed');
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            currentAudio = new Audio(audioUrl);
+
+            currentAudio.addEventListener('ended', () => {
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+                statusEl.textContent = '';
+                URL.revokeObjectURL(audioUrl);
+                currentAudio = null;
+            });
+
+            currentAudio.addEventListener('error', (e) => {
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+                statusEl.textContent = 'Playback error';
+                URL.revokeObjectURL(audioUrl);
+                currentAudio = null;
+            });
+
+            statusEl.textContent = 'Playing...';
+            await currentAudio.play();
+        };
+
+        // Test voice
+        testBtn.addEventListener('click', async () => {
+            const text = previewText.value.trim();
+            if (!text) {
+                statusEl.textContent = 'Enter some text to preview';
+                return;
+            }
+
+            const voiceValue = voiceSelect.value;
+            if (!voiceValue) {
+                statusEl.textContent = 'No voice selected';
+                return;
+            }
+
+            // Stop any current playback
+            stopPlayback();
+
+            testBtn.disabled = true;
+            stopBtn.disabled = false;
+
+            try {
+                const speed = parseFloat(speedSlider.value);
+
+                if (voiceValue.startsWith('system:')) {
+                    // System voice (Web Speech API)
+                    const voiceName = voiceValue.substring(7);
+                    playSystemVoice(text, voiceName, speed);
+                } else {
+                    // Piper voice (strip 'piper:' prefix if present)
+                    const voiceId = voiceValue.startsWith('piper:') ? voiceValue.substring(6) : voiceValue;
+                    await playPiperVoice(text, voiceId, speed);
+                }
+            } catch (err) {
+                console.error('TTS test failed:', err);
+                statusEl.textContent = err.message || 'TTS failed';
+                testBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        });
+
+        // Stop playback
+        stopBtn.addEventListener('click', stopPlayback);
+
+        // Browse voices (open Piper samples page)
+        browseVoicesBtn.addEventListener('click', () => {
+            window.open('https://rhasspy.github.io/piper-samples/', '_blank');
+        });
+
+        // Open voices folder
+        openFolderBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/tts/open-folder', { method: 'POST' });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to open folder');
+                }
+            } catch (err) {
+                console.error('Failed to open voices folder:', err);
+                notificationStore.error('Failed to open voices folder: ' + err.message, 'global');
+            }
+        });
+
+        // Initial load
+        await loadTtsData();
     }
 
     // ============================================
