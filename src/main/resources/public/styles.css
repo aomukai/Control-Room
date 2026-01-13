@@ -3903,7 +3903,6 @@ html, body {
     font-size: 14px;
     line-height: 1.6;
     color: var(--text-primary);
-    white-space: pre-wrap;
     word-wrap: break-word;
 }
 
@@ -3969,8 +3968,56 @@ html, body {
     font-size: 13px;
     line-height: 1.5;
     color: var(--text-primary);
-    white-space: pre-wrap;
     word-wrap: break-word;
+}
+
+.issue-markdown h1,
+.issue-markdown h2,
+.issue-markdown h3 {
+    margin: 12px 0 8px;
+    color: var(--text-bright);
+}
+
+.issue-markdown p {
+    margin: 8px 0;
+}
+
+.issue-markdown ul,
+.issue-markdown ol {
+    margin: 8px 0 8px 20px;
+}
+
+.issue-markdown li {
+    margin: 4px 0;
+}
+
+.issue-markdown code {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1px 4px;
+}
+
+.issue-markdown pre {
+    margin: 10px 0;
+    padding: 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.issue-markdown pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.markdown-empty {
+    color: var(--text-secondary);
+    font-style: italic;
 }
 
 .issue-no-comments {

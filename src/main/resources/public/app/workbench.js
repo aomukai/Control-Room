@@ -3,6 +3,7 @@
     'use strict';
 
     let issueActivityAgentId = null;
+    const renderSimpleMarkdown = window.renderSimpleMarkdown;
     const ROADMAP_STATUS_MAP = {
         idea: 'Idea',
         plan: 'Plan',
@@ -322,7 +323,7 @@
         if (state.issueBoard.error) {
             container.innerHTML = `
                 <div class="issue-board-error">
-                    <span class="issue-error-icon">sÿ</span>
+                    <span class="issue-error-icon">!</span>
                     <span>${escapeHtml(state.issueBoard.error)}</span>
                     <button type="button" class="issue-retry-btn" onclick="loadIssues()">Retry</button>
                 </div>
@@ -343,7 +344,7 @@
         if (issues.length === 0) {
             container.innerHTML = `
                 <div class="issue-board-empty">
-                    <span class="issue-empty-icon">ÐY"ð</span>
+                    <span class="issue-empty-icon">--</span>
                     <span class="issue-empty-text">No issues found</span>
                     <span class="issue-empty-hint">Issues created by agents will appear here</span>
                 </div>
@@ -400,8 +401,8 @@
                 <span class="issue-card-priority ${priorityClass}" title="${issue.priority} priority">
                     ${priorityIcon}
                 </span>
-                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">Å' ${escapeHtml(issue.assignedTo)}</span>` : ''}
-                ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">ÐY'ª ${commentCount}</span>` : ''}
+                ${issue.assignedTo ? `<span class="issue-card-assignee" title="Assigned to ${issue.assignedTo}">Assignee: ${escapeHtml(issue.assignedTo)}</span>` : ''}
+                ${commentCount > 0 ? `<span class="issue-card-comments" title="${commentCount} comment${commentCount !== 1 ? 's' : ''}">Comments: ${commentCount}</span>` : ''}
                 <span class="issue-card-time" title="${formatTimestamp(issue.updatedAt)}">${formatRelativeTime(issue.updatedAt)}</span>
             </div>
             <div class="issue-card-actions">
@@ -444,12 +445,20 @@
 
     function getPriorityIcon(priority) {
         switch (priority) {
-            case 'urgent': return 'ÐY"ï';
-            case 'high': return 'ÐYYÿ';
-            case 'normal': return 'ÐY"æ';
-            case 'low': return 's¦';
-            default: return 'ÐY"æ';
+            case 'urgent': return 'Urgent';
+            case 'high': return 'High';
+            case 'normal': return 'Normal';
+            case 'low': return 'Low';
+            default: return 'Normal';
         }
+    }
+
+    function formatIssueBody(text, emptyFallback = '') {
+        if (typeof renderSimpleMarkdown === 'function') {
+            return renderSimpleMarkdown(text, { emptyFallback });
+        }
+        const fallback = text || emptyFallback || '';
+        return escapeHtml ? escapeHtml(fallback) : fallback;
     }
 
     async function openIssueModal(issueId) {
@@ -594,7 +603,7 @@
                                 <span class="comment-timestamp">${formatRelativeTime(comment.timestamp)}</span>
                                 ${actionBadge}
                             </div>
-                            <div class="comment-body">${escapeHtml(comment.body || '')}</div>
+                            <div class="comment-body issue-markdown">${formatIssueBody(comment.body || '')}</div>
                         </div>
                     `;
                 }).join('');
@@ -664,7 +673,7 @@
 
                     <div class="issue-body-section">
                         <h3 class="issue-section-title">Description</h3>
-                        <div class="issue-body-content">${escapeHtml(issue.body || 'No description provided.')}</div>
+                        <div class="issue-body-content issue-markdown">${formatIssueBody(issue.body || '', 'No description provided.')}</div>
                     </div>
 
                     <div class="issue-comments-section">
@@ -802,4 +811,5 @@
     window.refreshIssueModal = refreshIssueModal;
     window.extractRoadmapStatus = extractRoadmapStatus;
 })();
+
 

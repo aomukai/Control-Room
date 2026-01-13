@@ -136,6 +136,89 @@
         return { content: cleaned, stopHook: hook, stopHookDetail: inlineDetail };
     }
 
+    function renderSimpleMarkdown(text, options = {}) {
+        const fallbackText = options.emptyFallback || '';
+        const raw = String(text || '');
+        if (!raw.trim()) {
+            return fallbackText ? `<div class="markdown-empty">${escapeHtml ? escapeHtml(fallbackText) : fallbackText}</div>` : '';
+        }
+
+        const parts = raw.split('```');
+        const rendered = parts.map((part, index) => {
+            const isCode = index % 2 === 1;
+            if (isCode) {
+                const code = escapeHtml ? escapeHtml(part.trim()) : part.trim();
+                return `<pre><code>${code}</code></pre>`;
+            }
+
+            let html = escapeHtml ? escapeHtml(part) : part;
+
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+            const lines = html.split('\n');
+            let output = '';
+            let inUl = false;
+            let inOl = false;
+
+            const closeLists = () => {
+                if (inUl) {
+                    output += '</ul>';
+                    inUl = false;
+                }
+                if (inOl) {
+                    output += '</ol>';
+                    inOl = false;
+                }
+            };
+
+            lines.forEach((line) => {
+                if (/^\s*[-*+]\s+/.test(line)) {
+                    if (!inUl) {
+                        closeLists();
+                        output += '<ul>';
+                        inUl = true;
+                    }
+                    const item = line.replace(/^\s*[-*+]\s+/, '');
+                    output += `<li>${item}</li>`;
+                    return;
+                }
+
+                if (/^\s*\d+\.\s+/.test(line)) {
+                    if (!inOl) {
+                        closeLists();
+                        output += '<ol>';
+                        inOl = true;
+                    }
+                    const item = line.replace(/^\s*\d+\.\s+/, '');
+                    output += `<li>${item}</li>`;
+                    return;
+                }
+
+                closeLists();
+                if (!line.trim()) {
+                    output += '<br>';
+                    return;
+                }
+                if (/^\s*<h[1-3]>/.test(line)) {
+                    output += line;
+                    return;
+                }
+                output += `${line}<br>`;
+            });
+
+            closeLists();
+            output = output.replace(/(<br>\s*)+$/g, '');
+            return output;
+        }).join('');
+
+        return rendered;
+    }
+
     if (escapeHtml) {
         window.escapeHtml = escapeHtml;
     }
@@ -147,4 +230,5 @@
     window.formatStatus = formatStatus;
     window.buildChatPrompt = buildChatPrompt;
     window.extractStopHook = extractStopHook;
+    window.renderSimpleMarkdown = renderSimpleMarkdown;
 })();
