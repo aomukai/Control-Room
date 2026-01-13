@@ -53,6 +53,12 @@ public class IssueController implements Controller {
         "circuit-breaker-triggered",
         "hallucination-detected"
     );
+    private static final Set<String> EVIDENCE_REASONS = Set.of(
+        "evidence-verified",
+        "evidence-verified-precise",
+        "evidence-outcome-upgrade",
+        "evidence-failed-verification"
+    );
     private static final Set<String> MODERATOR_REASONS = Set.of(
         "moderator-commendation",
         "moderator-penalty",
@@ -342,6 +348,14 @@ public class IssueController implements Controller {
         if (!COMMENT_CREDIT_AMOUNTS.containsKey(reason)) {
             return;
         }
+        if (SYSTEM_ONLY_REASONS.contains(reason) && !isSystemAuthor(comment)) {
+            logger.warn("Skipped system-only credit reason from non-system comment: " + reason);
+            return;
+        }
+        if (MODERATOR_REASONS.contains(reason) && !isModeratorAuthor(comment)) {
+            logger.warn("Skipped moderator-only credit reason from non-moderator comment: " + reason);
+            return;
+        }
         String agentId = resolveAgentId(comment.getAuthor());
         if (agentId == null) {
             return;
@@ -349,6 +363,21 @@ public class IssueController implements Controller {
 
         double amount = COMMENT_CREDIT_AMOUNTS.get(reason);
         String verifiedBy = resolveVerifiedBy(reason);
+        CreditEvent.CreditContext context = null;
+        if (EVIDENCE_REASONS.contains(reason)) {
+            context = parseCreditContext(comment.getAction().getDetails());
+            if (context == null || isBlank(context.getTrigger())) {
+                logger.warn("Skipped evidence credit without trigger context: " + reason);
+                return;
+            }
+            if ("evidence-outcome-upgrade".equals(reason) && isBlank(context.getOutcome())) {
+                logger.warn("Skipped evidence-outcome-upgrade without outcome context");
+                return;
+            }
+            if (isBlank(context.getOutcome())) {
+                context.setOutcome("no-action-yet");
+            }
+        }
 
         CreditEvent event = new CreditEvent();
         event.setAgentId(agentId);
@@ -356,6 +385,9 @@ public class IssueController implements Controller {
         event.setReason(reason);
         event.setVerifiedBy(verifiedBy);
         event.setTimestamp(System.currentTimeMillis());
+        if (context != null) {
+            event.setContext(context);
+        }
         CreditEvent.RelatedEntity related = new CreditEvent.RelatedEntity();
         related.setType("comment");
         related.setId(issueId + ":" + comment.getTimestamp());
@@ -366,6 +398,116 @@ public class IssueController implements Controller {
         } catch (Exception e) {
             logger.warn("Failed to award comment credit: " + e.getMessage());
         }
+    }
+
+    private boolean isSystemAuthor(Comment comment) {
+        String author = comment != null ? comment.getAuthor() : null;
+        return author != null && author.trim().equalsIgnoreCase("system");
+    }
+
+    private boolean isModeratorAuthor(Comment comment) {
+        String author = comment != null ? comment.getAuthor() : null;
+        return author != null && author.trim().equalsIgnoreCase("moderator");
+    }
+
+    private CreditEvent.CreditContext parseCreditContext(String details) {
+        if (details == null || details.isBlank()) {
+            return null;
+        }
+        String trimmed = details.trim();
+        CreditEvent.CreditContext context = new CreditEvent.CreditContext();
+        boolean setAny = false;
+
+        if (trimmed.startsWith("{")) {
+            try {
+                JsonNode node = objectMapper.readTree(trimmed);
+                if (node.hasNonNull("trigger")) {
+                    context.setTrigger(node.get("trigger").asText());
+                    setAny = true;
+                }
+                if (node.hasNonNull("triggeredBy")) {
+                    context.setTriggeredBy(node.get("triggeredBy").asText());
+                    setAny = true;
+                }
+                if (node.hasNonNull("triggerRef")) {
+                    context.setTriggerRef(node.get("triggerRef").asText());
+                    setAny = true;
+                }
+                if (node.hasNonNull("outcome")) {
+                    context.setOutcome(node.get("outcome").asText());
+                    setAny = true;
+                }
+                if (node.hasNonNull("outcomeRef")) {
+                    context.setOutcomeRef(node.get("outcomeRef").asText());
+                    setAny = true;
+                }
+            } catch (Exception ignored) {
+                // fall through to string parsing
+            }
+        }
+
+        if (!setAny) {
+            String trigger = extractDetailValue(trimmed, "trigger");
+            if (!isBlank(trigger)) {
+                context.setTrigger(trigger);
+                setAny = true;
+            }
+            String triggeredBy = extractDetailValue(trimmed, "triggeredBy");
+            if (!isBlank(triggeredBy)) {
+                context.setTriggeredBy(triggeredBy);
+                setAny = true;
+            }
+            String triggerRef = extractDetailValue(trimmed, "triggerRef");
+            if (!isBlank(triggerRef)) {
+                context.setTriggerRef(triggerRef);
+                setAny = true;
+            }
+            String outcome = extractDetailValue(trimmed, "outcome");
+            if (!isBlank(outcome)) {
+                context.setOutcome(outcome);
+                setAny = true;
+            }
+            String outcomeRef = extractDetailValue(trimmed, "outcomeRef");
+            if (!isBlank(outcomeRef)) {
+                context.setOutcomeRef(outcomeRef);
+                setAny = true;
+            }
+        }
+
+        return setAny ? context : null;
+    }
+
+    private String extractDetailValue(String text, String key) {
+        if (text == null || key == null) {
+            return null;
+        }
+        String lower = text.toLowerCase();
+        String lowerKey = key.toLowerCase();
+        int idx = lower.indexOf(lowerKey);
+        if (idx < 0) {
+            return null;
+        }
+        int colon = lower.indexOf(':', idx);
+        int equals = lower.indexOf('=', idx);
+        int sep = colon == -1 ? equals : (equals == -1 ? colon : Math.min(colon, equals));
+        if (sep == -1 || sep + 1 >= text.length()) {
+            return null;
+        }
+        String tail = text.substring(sep + 1).trim();
+        int end = tail.length();
+        for (int i = 0; i < tail.length(); i++) {
+            char ch = tail.charAt(i);
+            if (ch == ';' || ch == '\n' || ch == ',') {
+                end = i;
+                break;
+            }
+        }
+        String value = tail.substring(0, end).trim();
+        return value.isEmpty() ? null : value;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private String resolveVerifiedBy(String reason) {

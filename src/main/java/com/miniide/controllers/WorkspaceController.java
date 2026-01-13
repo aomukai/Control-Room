@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppConfig;
 import com.miniide.AppLogger;
+import com.miniide.CreditStore;
 import com.miniide.ProjectContext;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -20,12 +21,14 @@ import java.util.Map;
 public class WorkspaceController implements Controller {
 
     private final ProjectContext projectContext;
+    private final CreditStore creditStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
     private final boolean devMode;
 
-    public WorkspaceController(ProjectContext projectContext, ObjectMapper objectMapper, boolean devMode) {
+    public WorkspaceController(ProjectContext projectContext, CreditStore creditStore, ObjectMapper objectMapper, boolean devMode) {
         this.projectContext = projectContext;
+        this.creditStore = creditStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
         this.devMode = devMode;
@@ -191,6 +194,9 @@ public class WorkspaceController implements Controller {
             Files.createDirectories(target);
             AppConfig.persistWorkspaceSelection(root, trimmed);
             projectContext.switchWorkspace(target);
+            if (creditStore != null) {
+                creditStore.switchWorkspace(target);
+            }
 
             logger.info("Workspace selection updated to " + target + " (live switch applied)");
             ctx.json(Map.of(

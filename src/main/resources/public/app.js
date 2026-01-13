@@ -4880,6 +4880,12 @@
 
                 const author = prompt('Author (agent name or id):', 'system') || 'system';
                 const body = `Credit hook: ${reason}`;
+                let details = 'Dev Tools credit hook';
+                const reasonKey = reason.trim().toLowerCase();
+                if (reasonKey.startsWith('evidence-')) {
+                    const outcome = reasonKey === 'evidence-outcome-upgrade' ? 'resolved-issue' : 'no-action-yet';
+                    details = `trigger: manual; outcome: ${outcome}; note: Dev Tools credit hook`;
+                }
 
                 try {
                     await issueApi.addComment(issueIdValue, {
@@ -4887,7 +4893,7 @@
                         body,
                         action: {
                             type: reason,
-                            details: 'Dev Tools credit hook'
+                            details
                         }
                     });
                     await refreshIssueModal(issueIdValue);

@@ -17,8 +17,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class CreditStore {
-
-    private static final String STORAGE_PATH = "data/credits.json";
     private static final Set<String> SYSTEM_ONLY_REASONS = Set.of(
         "evidence-verified",
         "evidence-verified-precise",
@@ -26,6 +24,12 @@ public class CreditStore {
         "evidence-failed-verification",
         "circuit-breaker-triggered",
         "hallucination-detected"
+    );
+    private static final Set<String> EVIDENCE_REASONS = Set.of(
+        "evidence-verified",
+        "evidence-verified-precise",
+        "evidence-outcome-upgrade",
+        "evidence-failed-verification"
     );
     private static final Set<String> VERIFIED_REASONS = Set.of(
         "evidence-verified",
@@ -37,8 +41,14 @@ public class CreditStore {
     );
 
     private final Map<String, CreditEvent> events = new ConcurrentHashMap<>();
+    private Path storagePath;
 
-    public CreditStore() {
+    public CreditStore(Path workspaceRoot) {
+        switchWorkspace(workspaceRoot);
+    }
+
+    public synchronized void switchWorkspace(Path workspaceRoot) {
+        this.storagePath = resolveStoragePath(workspaceRoot);
         loadFromDisk();
     }
 
@@ -128,6 +138,16 @@ public class CreditStore {
         if (SYSTEM_ONLY_REASONS.contains(event.getReason())
             && !"system".equals(event.getVerifiedBy())) {
             throw new IllegalArgumentException("system-only credit reason requires verifiedBy=system");
+        }
+        if (EVIDENCE_REASONS.contains(event.getReason())) {
+            CreditEvent.CreditContext context = event.getContext();
+            if (context == null || isBlank(context.getTrigger())) {
+                throw new IllegalArgumentException("evidence credit requires trigger context");
+            }
+            if ("evidence-outcome-upgrade".equals(event.getReason())
+                && isBlank(context.getOutcome())) {
+                throw new IllegalArgumentException("evidence-outcome-upgrade requires outcome context");
+            }
         }
     }
 
@@ -253,14 +273,19 @@ public class CreditStore {
     }
 
     private void loadFromDisk() {
-        Path path = Paths.get(STORAGE_PATH);
+        events.clear();
+        if (storagePath == null) {
+            logWarning("No credit storage path resolved; starting empty.");
+            return;
+        }
+        Path path = storagePath;
         if (!Files.exists(path)) {
-            logWarning("No credit storage found at " + STORAGE_PATH + "; starting empty.");
+            logWarning("No credit storage found at " + path + "; starting empty.");
             return;
         }
 
         try {
-            List<CreditEvent> stored = JsonStorage.readJsonList(STORAGE_PATH, CreditEvent[].class);
+            List<CreditEvent> stored = JsonStorage.readJsonList(path.toString(), CreditEvent[].class);
             for (CreditEvent event : stored) {
                 if (event != null && event.getId() != null) {
                     events.put(event.getId(), event);
@@ -268,16 +293,21 @@ public class CreditStore {
             }
             log("Loaded " + stored.size() + " credit event(s) from disk.");
         } catch (Exception e) {
-            logWarning("Failed to load credits from " + STORAGE_PATH + ": " + e.getMessage());
+            logWarning("Failed to load credits from " + path + ": " + e.getMessage());
         }
     }
 
     private void saveAll() {
+        if (storagePath == null) {
+            logWarning("Skipping credit save: no storage path resolved.");
+            return;
+        }
         try {
+            Files.createDirectories(storagePath.getParent());
             List<CreditEvent> data = new ArrayList<>(events.values());
-            JsonStorage.writeJsonList(STORAGE_PATH, data);
+            JsonStorage.writeJsonList(storagePath.toString(), data);
         } catch (Exception e) {
-            logWarning("Failed to save credits to " + STORAGE_PATH + ": " + e.getMessage());
+            logWarning("Failed to save credits to " + storagePath + ": " + e.getMessage());
         }
     }
 
@@ -293,5 +323,16 @@ public class CreditStore {
         if (logger != null) {
             logger.warn("[CreditStore] " + message);
         }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private Path resolveStoragePath(Path workspaceRoot) {
+        if (workspaceRoot == null) {
+            return Paths.get("data/credits.json");
+        }
+        return workspaceRoot.resolve(".control-room").resolve("credits").resolve("credits.json");
     }
 }
