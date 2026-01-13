@@ -4703,6 +4703,42 @@
             }
         ));
 
+        backendSection.appendChild(createRow(
+            'Frontend init check',
+            'Verify Monaco/Split globals and editor instance wiring.',
+            'Run',
+            async (btn) => {
+                btn.disabled = true;
+                setStatus('Status: running frontend init check...');
+                try {
+                    const checks = [
+                        { label: 'Split', ok: typeof window.Split === 'function' },
+                        { label: 'require', ok: typeof window.require === 'function' },
+                        { label: 'monaco', ok: Boolean(window.monaco && window.monaco.editor) },
+                        { label: 'monaco.editor', ok: Boolean(window.monaco && typeof window.monaco.editor.create === 'function') },
+                        { label: 'editor.instance', ok: Boolean(state && state.editor && typeof state.editor.getModel === 'function') },
+                        { label: 'editor.dom', ok: Boolean(elements && elements.monacoEditor) }
+                    ];
+
+                    const failures = checks.filter(check => !check.ok).map(check => check.label);
+                    const time = new Date().toLocaleTimeString();
+                    if (failures.length === 0) {
+                        setStatus(`Status: frontend init check OK (${time})`);
+                        notificationStore.success('Frontend init check succeeded.', 'editor');
+                    } else {
+                        setStatus(`Status: frontend init check FAILED (${failures.length}/${checks.length})`);
+                        notificationStore.error(`Frontend init check failed: ${failures.join(', ')}`, 'editor');
+                        failures.forEach(label => log(`Frontend init check failed: ${label}`, 'error'));
+                    }
+                } catch (err) {
+                    setStatus(`Status: frontend init check failed (${err.message})`);
+                    notificationStore.error(`Frontend init check failed: ${err.message}`, 'editor');
+                } finally {
+                    btn.disabled = false;
+                }
+            }
+        ));
+
         const localSection = document.createElement('div');
         localSection.className = 'dev-tools-section';
         const localTitle = document.createElement('div');
