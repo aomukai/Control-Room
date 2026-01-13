@@ -3919,7 +3919,7 @@
 
         try {
             if (agentId) {
-                await withAgentActivity(agentId, 'processing', runChat, 'Responding to chat');
+                await withAgentTurn(agentId, 'processing', runChat, 'Responding to chat');
             } else {
                 await runChat();
             }
@@ -4766,6 +4766,382 @@
             }
         ));
 
+        const memorySection = document.createElement('div');
+        memorySection.className = 'dev-tools-section';
+        const memoryTitle = document.createElement('div');
+        memoryTitle.className = 'dev-tools-section-title';
+        memoryTitle.textContent = 'Memory';
+        memorySection.appendChild(memoryTitle);
+
+        const memoryIntro = document.createElement('div');
+        memoryIntro.className = 'dev-tools-item-desc';
+        memoryIntro.textContent = 'Create multi-level memory from a seed text using the Chief of Staff.';
+        memorySection.appendChild(memoryIntro);
+
+        const memoryRow = document.createElement('div');
+        memoryRow.className = 'dev-tools-row dev-tools-row-stack';
+
+        const memoryForm = document.createElement('div');
+        memoryForm.className = 'dev-tools-controls';
+
+        const seedAgentLabel = document.createElement('label');
+        seedAgentLabel.className = 'modal-label';
+        seedAgentLabel.textContent = 'Agent';
+        const seedAgentSelect = document.createElement('select');
+        seedAgentSelect.className = 'modal-select';
+
+        const seedModelLabel = document.createElement('div');
+        seedModelLabel.className = 'dev-tools-item-desc';
+        seedModelLabel.textContent = 'Model: unset';
+
+        const seedTagsLabel = document.createElement('label');
+        seedTagsLabel.className = 'modal-label';
+        seedTagsLabel.textContent = 'Tags (comma or newline)';
+        const seedTagsInput = document.createElement('textarea');
+        seedTagsInput.className = 'modal-input';
+        seedTagsInput.rows = 2;
+        seedTagsInput.placeholder = 'canon, chapter-6';
+
+        const seedTextLabel = document.createElement('label');
+        seedTextLabel.className = 'modal-label';
+        seedTextLabel.textContent = 'Seed text';
+        const seedTextInput = document.createElement('textarea');
+        seedTextInput.className = 'modal-input';
+        seedTextInput.rows = 6;
+        seedTextInput.placeholder = 'Paste a short paragraph or two...';
+
+        const seedActions = document.createElement('div');
+        seedActions.className = 'dev-tools-controls';
+        const seedCreateBtn = document.createElement('button');
+        seedCreateBtn.type = 'button';
+        seedCreateBtn.className = 'modal-btn modal-btn-primary';
+        seedCreateBtn.textContent = 'Create 5-Level Memory';
+        seedActions.appendChild(seedCreateBtn);
+        const seedDownloadBtn = document.createElement('button');
+        seedDownloadBtn.type = 'button';
+        seedDownloadBtn.className = 'modal-btn modal-btn-secondary';
+        seedDownloadBtn.textContent = 'Save memtest.json';
+        seedActions.appendChild(seedDownloadBtn);
+
+        const seedFeedback = document.createElement('div');
+        seedFeedback.className = 'dev-tools-status';
+        seedFeedback.textContent = '';
+        const seedResult = document.createElement('div');
+        seedResult.className = 'dev-tools-item-desc';
+        seedResult.textContent = '';
+
+        memoryForm.appendChild(seedAgentLabel);
+        memoryForm.appendChild(seedAgentSelect);
+        memoryForm.appendChild(seedModelLabel);
+        memoryForm.appendChild(seedTagsLabel);
+        memoryForm.appendChild(seedTagsInput);
+        memoryForm.appendChild(seedTextLabel);
+        memoryForm.appendChild(seedTextInput);
+        memoryForm.appendChild(seedActions);
+        memoryForm.appendChild(seedFeedback);
+        memoryForm.appendChild(seedResult);
+        memoryRow.appendChild(memoryForm);
+        memorySection.appendChild(memoryRow);
+
+        const parseListInput = (input) => {
+            if (!input || !input.value) return [];
+            return input.value
+                .split(/[,\\n]/)
+                .map(s => s.trim())
+                .filter(Boolean);
+        };
+
+        const parseJsonFromText = (text) => {
+            if (!text) return null;
+            const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+            const match = cleaned.match(/\{[\s\S]*\}/);
+            if (!match) return null;
+            const raw = match[0].trim();
+            try {
+                const parsed = JSON.parse(raw);
+                if (typeof parsed === 'string' && parsed.trim().startsWith('{')) {
+                    return JSON.parse(parsed);
+                }
+                return parsed;
+            } catch (_) {
+                return null;
+            }
+        };
+
+        const summarizeFallback = (text, sentenceCount = 2) => {
+            if (!text) return '';
+            const sentences = text
+                .replace(/\\s+/g, ' ')
+                .split(/(?<=[.!?])\\s+/)
+                .filter(Boolean);
+            return sentences.slice(0, sentenceCount).join(' ');
+        };
+
+        const normalizeLevels = (levels) => {
+            if (!levels || typeof levels !== 'object') {
+                return null;
+            }
+            const normalized = {};
+            ['L4', 'L3', 'L2', 'L1'].forEach((key) => {
+                const value = levels[key] || levels[key.toLowerCase()] || levels[key.toUpperCase()];
+                if (typeof value === 'string' && value.trim()) {
+                    normalized[key] = value.trim();
+                }
+            });
+            return Object.keys(normalized).length ? normalized : null;
+        };
+
+        const stripEmbeddedLevels = (text) => {
+            if (!text) return '';
+            const marker = /\bL[1-4]\s*:/i;
+            const match = marker.exec(text);
+            if (!match) return text.trim();
+            return text.slice(0, match.index).trim();
+        };
+
+        const clampSummary = (text, maxSentences) => {
+            if (!text) return '';
+            const sentences = text
+                .replace(/\s+/g, ' ')
+                .split(/(?<=[.!?])\s+/)
+                .filter(Boolean);
+            return sentences.slice(0, maxSentences).join(' ');
+        };
+
+        const makeSemanticTrace = (text, seedText) => {
+            const base = text || summarizeFallback(seedText, 1);
+            let cleaned = clampSummary(base, 1)
+                .replace(/\[[^\]]+\]/g, '') // strip citation brackets
+                .replace(/"[^"]*"/g, '') // drop quoted phrases
+                .replace(/\([^)]*\)/g, '') // drop parentheticals
+                .replace(/\d+([.,]\d+)?/g, '') // drop numbers/dates
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (!cleaned) {
+                cleaned = summarizeFallback(seedText, 1);
+            }
+            const words = cleaned.split(' ').filter(Boolean);
+            let trace = words.slice(0, 16).join(' ');
+            trace = trace.replace(/\b(is|is a|is an|is the|a|an|the|of|to|in|for|with)$/i, '').trim();
+            if (!trace) {
+                trace = summarizeFallback(seedText, 1);
+            }
+            if (!/[.!?]$/.test(trace)) {
+                trace = `${trace}.`;
+            }
+            return trace;
+        };
+
+        const enforceSummaryLevels = (levels, seedText) => {
+            const base = levels || {};
+            const fallback = {
+                L4: summarizeFallback(seedText, 4),
+                L3: summarizeFallback(seedText, 3),
+                L2: summarizeFallback(seedText, 2),
+                L1: summarizeFallback(seedText, 1)
+            };
+            const cleaned = {
+                L4: stripEmbeddedLevels(base.L4 || ''),
+                L3: stripEmbeddedLevels(base.L3 || ''),
+                L2: stripEmbeddedLevels(base.L2 || ''),
+                L1: stripEmbeddedLevels(base.L1 || '')
+            };
+            const clamped = {
+                L4: clampSummary(cleaned.L4, 4),
+                L3: clampSummary(cleaned.L3, 3),
+                L2: clampSummary(cleaned.L2, 2),
+                L1: makeSemanticTrace(cleaned.L1, seedText)
+            };
+            ['L4', 'L3', 'L2', 'L1'].forEach((key) => {
+                if (!clamped[key]) {
+                    clamped[key] = fallback[key];
+                }
+            });
+            return clamped;
+        };
+
+        let lastSeedLevels = null;
+
+        const downloadSeedJson = () => {
+            if (!lastSeedLevels) {
+                setSeedFeedback('No memory JSON available yet.', 'warning');
+                return;
+            }
+            const payload = JSON.stringify(lastSeedLevels, null, 2);
+            const blob = new Blob([payload], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'memtest.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            setSeedFeedback('Saved memtest.json.', 'success');
+        };
+
+        const setSeedFeedback = (text, level = 'info') => {
+            seedFeedback.textContent = text || '';
+            seedFeedback.dataset.level = level;
+        };
+
+        const setSeedResult = (text, level = 'info') => {
+            seedResult.textContent = text || '';
+            seedResult.dataset.level = level;
+        };
+
+        const loadSeedAgents = async () => {
+            if (!state.agents.list || state.agents.list.length === 0) {
+                await window.loadAgents();
+            }
+            let endpoints = {};
+            try {
+                endpoints = await agentEndpointsApi.list();
+            } catch (err) {
+                endpoints = {};
+            }
+            seedAgentSelect.innerHTML = '';
+            const agents = state.agents.list || [];
+            const isAssistant = window.isAssistantAgent || (() => false);
+            const sorted = agents.slice().sort((a, b) => {
+                const aIsLead = isAssistant(a) ? 1 : 0;
+                const bIsLead = isAssistant(b) ? 1 : 0;
+                if (aIsLead !== bIsLead) return bIsLead - aIsLead;
+                return (a.name || '').localeCompare(b.name || '');
+            });
+            sorted.forEach(agent => {
+                const option = document.createElement('option');
+                option.value = agent.id;
+                const label = agent.name ? `${agent.name} (${agent.role || 'role'})` : agent.id;
+                option.textContent = label;
+                seedAgentSelect.appendChild(option);
+            });
+            const updateModelLabel = () => {
+                const selectedId = seedAgentSelect.value;
+                const agent = agents.find(item => item.id === selectedId);
+                const endpoint = endpoints?.[selectedId] || agent?.endpoint || null;
+                if (endpoint && endpoint.provider && endpoint.model) {
+                    seedModelLabel.textContent = `Model: ${endpoint.provider} / ${endpoint.model}`;
+                } else {
+                    seedModelLabel.textContent = 'Model: unset';
+                }
+            };
+            seedAgentSelect.addEventListener('change', updateModelLabel);
+            updateModelLabel();
+        };
+
+        const createMemoryFromSeed = async () => {
+            const seedText = seedTextInput.value.trim();
+            if (!seedText) {
+                setSeedFeedback('Seed text is required.', 'error');
+                notificationStore.warning('Seed text is required.', 'workbench');
+                return;
+            }
+            const agentId = seedAgentSelect.value;
+            if (!agentId) {
+                setSeedFeedback('Select an agent first.', 'error');
+                notificationStore.warning('Select an agent first.', 'workbench');
+                return;
+            }
+
+            setSeedFeedback('Generating memory levels...', 'info');
+            setSeedResult('');
+            seedCreateBtn.disabled = true;
+
+            const tags = parseListInput(seedTagsInput);
+            let levels = null;
+            lastSeedLevels = null;
+
+            try {
+                const prompt = [
+                    'Return ONLY valid JSON. No markdown, no preface, no explanation.',
+                    'Output schema: {"L4":"...","L3":"...","L2":"...","L1":"..."}',
+                    'Each value must be a short string. Do not use bullets or lists.',
+                    'L4: most detailed summary; keep full fidelity with key facts, names, numbers.',
+                    'L3: concise summary; keep all important info, shorter than L4.',
+                    'L2: aggressive summary, MAX 2 sentences.',
+                    'L1: single sentence semantic trace (what it was about, no details).',
+                    'Do not include quotes inside values unless escaped.',
+                    '',
+                    'Text:',
+                    seedText
+                ].join('\\n');
+
+                const response = await api('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: prompt, agentId })
+                });
+                levels = normalizeLevels(parseJsonFromText(response && response.content ? response.content : ''));
+
+                if (!levels) {
+                    const retryPrompt = [
+                        'Return ONLY JSON, nothing else.',
+                        '{"L4":"...","L3":"...","L2":"...","L1":"..."}',
+                        'L4 most detailed; L3 concise but complete; L2 max 2 sentences; L1 single sentence semantic trace.',
+                        'Text:',
+                        seedText
+                    ].join('\\n');
+                    const retry = await api('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: retryPrompt, agentId })
+                    });
+                    levels = normalizeLevels(parseJsonFromText(retry && retry.content ? retry.content : ''));
+                }
+            } catch (err) {
+                levels = null;
+            }
+
+            const enforced = enforceSummaryLevels(levels, seedText);
+            levels = enforced;
+
+            try {
+                lastSeedLevels = { L4: levels.L4, L3: levels.L3, L2: levels.L2, L1: levels.L1 };
+                const memory = await memoryApi.create({
+                    agentId,
+                    topicKey: null,
+                    defaultLevel: 3,
+                    pinnedMinLevel: null,
+                    tags
+                });
+
+                const versions = [
+                    { level: 5, content: seedText, kind: 'source' },
+                    { level: 4, content: levels.L4 || levels.l4 || '', kind: 'summarize' },
+                    { level: 3, content: levels.L3 || levels.l3 || '', kind: 'summarize' },
+                    { level: 2, content: levels.L2 || levels.l2 || '', kind: 'compress' },
+                    { level: 1, content: levels.L1 || levels.l1 || '', kind: 'trace' }
+                ].filter(entry => entry.content);
+
+                const created = [];
+                for (const entry of versions) {
+                    const version = await memoryApi.addVersion(memory.id, {
+                        repLevel: entry.level,
+                        content: entry.content,
+                        derivationKind: entry.kind
+                    });
+                    created.push(version.id || `${entry.level}`);
+                }
+
+                const detail = `Memory ${memory.id} created. Versions: ${created.join(', ')}`;
+                setSeedFeedback('Memory created successfully.', 'success');
+                setSeedResult(detail, 'success');
+                notificationStore.success(detail, 'workbench');
+                seedTextInput.value = '';
+                downloadSeedJson();
+            } catch (err) {
+                setSeedFeedback(`Failed to create memory: ${err.message}`, 'error');
+                notificationStore.error(`Failed to create memory: ${err.message}`, 'workbench');
+            } finally {
+                seedCreateBtn.disabled = false;
+            }
+        };
+
+        seedCreateBtn.addEventListener('click', createMemoryFromSeed);
+        seedDownloadBtn.addEventListener('click', downloadSeedJson);
+        void loadSeedAgents();
+
         const localSection = document.createElement('div');
         localSection.className = 'dev-tools-section';
         const localTitle = document.createElement('div');
@@ -5172,6 +5548,7 @@
         };
 
         body.appendChild(backendSection);
+        body.appendChild(memorySection);
         body.appendChild(localSection);
         body.appendChild(assistedSection);
         body.appendChild(plannerSection);

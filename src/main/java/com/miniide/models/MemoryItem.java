@@ -13,7 +13,10 @@ public class MemoryItem {
     private Integer pinnedMinLevel;
     private String state; // active | archived | expired
     private Long lastAccessedAt;
+    private Long lastAccessedActivation;
+    private Integer totalAccessCount;
     private String projectEpoch;
+    private java.util.List<String> tags;
     private Long activeLockUntil;
     private String activeLockReason;
     private Long createdAt;
@@ -91,12 +94,36 @@ public class MemoryItem {
         this.lastAccessedAt = lastAccessedAt;
     }
 
+    public Long getLastAccessedActivation() {
+        return lastAccessedActivation;
+    }
+
+    public void setLastAccessedActivation(Long lastAccessedActivation) {
+        this.lastAccessedActivation = lastAccessedActivation;
+    }
+
+    public Integer getTotalAccessCount() {
+        return totalAccessCount;
+    }
+
+    public void setTotalAccessCount(Integer totalAccessCount) {
+        this.totalAccessCount = totalAccessCount;
+    }
+
     public String getProjectEpoch() {
         return projectEpoch;
     }
 
     public void setProjectEpoch(String projectEpoch) {
         this.projectEpoch = projectEpoch;
+    }
+
+    public java.util.List<String> getTags() {
+        return tags;
+    }
+
+    public void setTags(java.util.List<String> tags) {
+        this.tags = tags;
     }
 
     public Long getActiveLockUntil() {

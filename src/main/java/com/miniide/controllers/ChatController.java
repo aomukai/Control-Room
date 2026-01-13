@@ -3,6 +3,7 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.AgentTurnGate;
 import com.miniide.MemoryService;
 import com.miniide.ProjectContext;
 import com.miniide.models.Agent;
@@ -19,6 +20,7 @@ import java.util.Map;
  */
 public class ChatController implements Controller {
 
+    private static final AgentTurnGate AGENT_TURN_GATE = new AgentTurnGate();
     private final ProjectContext projectContext;
     private final SettingsService settingsService;
     private final ProviderChatService providerChatService;
@@ -91,7 +93,12 @@ public class ChatController implements Controller {
                     apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
                 }
 
-                String response = providerChatService.chat(provider, apiKey, endpoint, message);
+                memoryService.recordAgentActivation(agentId);
+                final String providerName = provider;
+                final String keyRef = apiKey;
+                final var agentEndpoint = endpoint;
+                final String prompt = message;
+                String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, prompt));
                 ctx.json(buildResponse(response, memoryResult, memoryId, requestMore));
                 return;
             }

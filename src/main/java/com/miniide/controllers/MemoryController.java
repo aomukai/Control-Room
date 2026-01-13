@@ -60,8 +60,9 @@ public class MemoryController implements Controller {
             String topicKey = json.has("topicKey") ? json.get("topicKey").asText(null) : null;
             Integer defaultLevel = json.has("defaultLevel") ? json.get("defaultLevel").asInt() : null;
             Integer pinnedMinLevel = json.has("pinnedMinLevel") ? json.get("pinnedMinLevel").asInt() : null;
+            List<String> tags = parseStringList(json.get("tags"));
 
-            MemoryItem item = memoryService.createMemoryItem(agentId, topicKey, defaultLevel, pinnedMinLevel);
+            MemoryItem item = memoryService.createMemoryItem(agentId, topicKey, defaultLevel, pinnedMinLevel, tags);
             logger.info("Memory item created: " + item.getId());
             ctx.status(201).json(item);
         } catch (Exception e) {
@@ -282,8 +283,18 @@ public class MemoryController implements Controller {
             boolean pruneExpiredR5 = json.has("pruneExpiredR5") && json.get("pruneExpiredR5").asBoolean();
             boolean dryRun = json.has("dryRun") && json.get("dryRun").asBoolean();
             boolean collectReport = json.has("collectReport") && json.get("collectReport").asBoolean();
+            boolean useActivationDecay = !json.has("useActivationDecay") || json.get("useActivationDecay").asBoolean();
             List<String> excludeTopicKeys = parseStringList(json.get("excludeTopicKeys"));
             List<String> excludeAgentIds = parseStringList(json.get("excludeAgentIds"));
+            Map<Integer, Integer> decayThresholds = parseDecayThresholds(json.get("decayThresholds"));
+            Map<String, Double> relevanceWeights = parseDoubleMap(json.get("relevanceWeights"));
+            Map<String, Double> epochMultipliers = parseDoubleMap(json.get("epochMultipliers"));
+            double defaultRelevanceWeight = json.has("defaultRelevanceWeight")
+                ? json.get("defaultRelevanceWeight").asDouble(1.0)
+                : 1.0;
+            double globalEpochMultiplier = json.has("globalEpochMultiplier")
+                ? json.get("globalEpochMultiplier").asDouble(1.0)
+                : 1.0;
 
             MemoryService.DecaySettings settings = new MemoryService.DecaySettings();
             settings.setArchiveAfterMs(archiveDays * 24 * 60 * 60 * 1000L);
@@ -291,14 +302,21 @@ public class MemoryController implements Controller {
             settings.setPruneExpiredR5(pruneExpiredR5);
             settings.setCollectReport(collectReport);
             settings.setDryRun(dryRun);
+            settings.setUseActivationDecay(useActivationDecay);
             settings.setExcludeTopicKeys(excludeTopicKeys);
             settings.setExcludeAgentIds(excludeAgentIds);
+            settings.setDecayThresholds(decayThresholds);
+            settings.setRelevanceWeights(relevanceWeights);
+            settings.setEpochMultipliers(epochMultipliers);
+            settings.setDefaultRelevanceWeight(defaultRelevanceWeight);
+            settings.setGlobalEpochMultiplier(globalEpochMultiplier);
 
             MemoryService.DecayResult result = memoryService.runDecay(settings, dryRun);
 
             Map<String, Object> response = new HashMap<>();
             response.put("archived", result.getArchivedIds());
             response.put("expired", result.getExpiredIds());
+            response.put("demoted", result.getDemotedIds());
             response.put("prunable", result.getPrunableIds());
             response.put("prunedEvents", result.getPrunedEvents());
             response.put("lockedItems", result.getLockedItems());
@@ -310,6 +328,7 @@ public class MemoryController implements Controller {
             response.put("archiveAfterDays", archiveDays);
             response.put("expireAfterDays", expireDays);
             response.put("pruneExpiredR5", pruneExpiredR5);
+            response.put("useActivationDecay", useActivationDecay);
 
             ctx.json(response);
         } catch (Exception e) {
@@ -437,5 +456,47 @@ public class MemoryController implements Controller {
         } catch (Exception ignored) {
         }
         return List.of();
+    }
+
+    private Map<Integer, Integer> parseDecayThresholds(JsonNode node) {
+        Map<Integer, Integer> thresholds = new HashMap<>();
+        if (node == null || !node.isObject()) {
+            return thresholds;
+        }
+        node.fields().forEachRemaining(entry -> {
+            String key = entry.getKey();
+            JsonNode value = entry.getValue();
+            if (key == null || value == null || !value.isNumber()) {
+                return;
+            }
+            try {
+                int level = Integer.parseInt(key.trim());
+                int threshold = value.asInt();
+                if (level > 0 && threshold > 0) {
+                    thresholds.put(level, threshold);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        });
+        return thresholds;
+    }
+
+    private Map<String, Double> parseDoubleMap(JsonNode node) {
+        Map<String, Double> values = new HashMap<>();
+        if (node == null || !node.isObject()) {
+            return values;
+        }
+        node.fields().forEachRemaining(entry -> {
+            String key = entry.getKey();
+            JsonNode value = entry.getValue();
+            if (key == null || value == null || !value.isNumber()) {
+                return;
+            }
+            double num = value.asDouble();
+            if (num > 0) {
+                values.put(key, num);
+            }
+        });
+        return values;
     }
 }

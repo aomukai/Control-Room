@@ -60,9 +60,14 @@ public class OpenAiCompatibleChatProvider extends AbstractChatProvider {
         JsonNode choices = response.path("choices");
         if (choices.isArray() && choices.size() > 0) {
             JsonNode choice = choices.get(0);
-            JsonNode content = choice.path("message").path("content");
+            JsonNode messageNode = choice.path("message");
+            JsonNode content = messageNode.path("content");
             if (!content.isMissingNode() && !content.asText().isBlank()) {
                 return content.asText();
+            }
+            JsonNode reasoning = messageNode.path("reasoning");
+            if (!reasoning.isMissingNode() && !reasoning.asText().isBlank()) {
+                return reasoning.asText();
             }
             JsonNode text = choice.path("text");
             if (!text.isMissingNode()) {

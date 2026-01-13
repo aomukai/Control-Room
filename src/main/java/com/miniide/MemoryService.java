@@ -35,6 +35,7 @@ public class MemoryService {
     private final Map<String, MemoryVersion> versionsById = new ConcurrentHashMap<>();
     private final Map<String, List<R5Event>> eventsByItem = new ConcurrentHashMap<>();
     private final Map<String, R5Event> eventsById = new ConcurrentHashMap<>();
+    private final Map<String, Integer> agentActivationCounts = new ConcurrentHashMap<>();
 
     private final AtomicInteger memoryIdCounter = new AtomicInteger(0);
     private final AtomicInteger versionIdCounter = new AtomicInteger(0);
@@ -52,7 +53,8 @@ public class MemoryService {
         return items.containsKey(memoryId);
     }
 
-    public MemoryItem createMemoryItem(String agentId, String topicKey, Integer defaultLevel, Integer pinnedMinLevel) {
+    public MemoryItem createMemoryItem(String agentId, String topicKey, Integer defaultLevel, Integer pinnedMinLevel,
+                                       List<String> tags) {
         String id = "mem-" + memoryIdCounter.incrementAndGet();
         long now = System.currentTimeMillis();
 
@@ -65,6 +67,9 @@ public class MemoryService {
         item.setCreatedAt(now);
         item.setUpdatedAt(now);
         item.setLastAccessedAt(now);
+        item.setLastAccessedActivation((long) currentActivationCount(agentId));
+        item.setTotalAccessCount(0);
+        item.setTags(tags != null ? new ArrayList<>(tags) : new ArrayList<>());
 
         items.put(id, item);
         saveSnapshot();
@@ -87,7 +92,7 @@ public class MemoryService {
         versionsByItem.computeIfAbsent(memoryId, k -> new ArrayList<>()).add(version);
         versionsByItem.get(memoryId).sort(Comparator.comparingInt(MemoryVersion::getRepLevel));
 
-        touch(item, now);
+        touch(item, now, false);
         saveSnapshot();
         return version;
     }
@@ -109,9 +114,25 @@ public class MemoryService {
         eventsByItem.computeIfAbsent(memoryId, k -> new ArrayList<>()).add(event);
         eventsByItem.get(memoryId).sort(Comparator.comparingInt(R5Event::getSeq));
 
-        touch(item, now);
+        touch(item, now, false);
         saveSnapshot();
         return event;
+    }
+
+    public int recordAgentActivation(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return 0;
+        }
+        int next = agentActivationCounts.merge(agentId, 1, Integer::sum);
+        saveSnapshot();
+        return next;
+    }
+
+    public int getAgentActivationCount(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return 0;
+        }
+        return agentActivationCounts.getOrDefault(agentId, 0);
     }
 
     public MemoryResult getMemoryAtAutoLevel(String memoryId) {
@@ -123,7 +144,7 @@ public class MemoryService {
         if (version == null) {
             return new MemoryResult(item, null, false);
         }
-        touch(item, System.currentTimeMillis());
+        touch(item, System.currentTimeMillis(), true);
         return new MemoryResult(item, version, false);
     }
 
@@ -151,7 +172,7 @@ public class MemoryService {
 
         MemoryVersion chosen = next != null ? next : base;
         boolean escalated = next != null;
-        touch(item, System.currentTimeMillis());
+        touch(item, System.currentTimeMillis(), true);
         return new MemoryResult(item, chosen, escalated);
     }
 
@@ -200,7 +221,7 @@ public class MemoryService {
         item.setActiveVersionId(versionId);
         item.setActiveLockUntil(lockUntil);
         item.setActiveLockReason(reason != null && !reason.isBlank() ? reason : "manual-promote");
-        touch(item, now);
+        touch(item, now, false);
         saveSnapshot();
         return true;
     }
@@ -211,7 +232,7 @@ public class MemoryService {
             return false;
         }
         item.setPinnedMinLevel(level);
-        touch(item, System.currentTimeMillis());
+        touch(item, System.currentTimeMillis(), false);
         saveSnapshot();
         return true;
     }
@@ -222,7 +243,7 @@ public class MemoryService {
             return false;
         }
         item.setState(state);
-        touch(item, System.currentTimeMillis());
+        touch(item, System.currentTimeMillis(), false);
         saveSnapshot();
         return true;
     }
@@ -241,6 +262,11 @@ public class MemoryService {
         boolean collectReport = dryRun || settings.isCollectReport();
         List<String> excludeTopicKeys = settings.getExcludeTopicKeys();
         List<String> excludeAgentIds = settings.getExcludeAgentIds();
+        Map<Integer, Integer> decayThresholds = settings.getDecayThresholds();
+        Map<String, Double> relevanceWeights = settings.getRelevanceWeights();
+        Map<String, Double> epochMultipliers = settings.getEpochMultipliers();
+        double defaultRelevanceWeight = settings.getDefaultRelevanceWeight();
+        double globalEpochMultiplier = settings.getGlobalEpochMultiplier();
 
         for (MemoryItem item : items.values()) {
             if (isExcluded(item, excludeTopicKeys, excludeAgentIds)) {
@@ -249,6 +275,49 @@ public class MemoryService {
                     result.filteredIds.add(item.getId());
                 }
                 continue;
+            }
+
+            if (settings.isUseActivationDecay()) {
+                int currentLevel = normalizeLevel(item.getDefaultLevel());
+                int floorLevel = item.getPinnedMinLevel() != null
+                    ? Math.max(1, item.getPinnedMinLevel())
+                    : 1;
+                if (currentLevel < floorLevel) {
+                    currentLevel = floorLevel;
+                }
+
+                int activationCount = getAgentActivationCount(item.getAgentId());
+                long lastAccessActivation = item.getLastAccessedActivation() != null
+                    ? item.getLastAccessedActivation()
+                    : 0L;
+                long activationsSince = Math.max(0L, activationCount - lastAccessActivation);
+                int accessCount = item.getTotalAccessCount() != null ? item.getTotalAccessCount() : 0;
+
+                double relevanceWeight = resolveRelevanceWeight(item, relevanceWeights, defaultRelevanceWeight);
+                double epochMultiplier = resolveEpochMultiplier(item, epochMultipliers, globalEpochMultiplier);
+
+                double decayScore = (activationsSince * relevanceWeight * epochMultiplier)
+                    / (accessCount + 1.0);
+
+                int nextLevel = currentLevel;
+                while (nextLevel > floorLevel) {
+                    int threshold = decayThresholds.getOrDefault(nextLevel, defaultDecayThreshold(nextLevel));
+                    if (decayScore < threshold) {
+                        break;
+                    }
+                    nextLevel -= 1;
+                }
+
+                if (nextLevel != currentLevel) {
+                    if (!dryRun) {
+                        item.setDefaultLevel(nextLevel);
+                        touch(item, now, false);
+                    }
+                    result.demotedIds.add(item.getId());
+                    if (collectReport) {
+                        result.items.add(new DecayItemReport(item.getId(), "demoted", currentLevel, nextLevel));
+                    }
+                }
             }
 
             long lastAccess = item.getLastAccessedAt() != null
@@ -268,7 +337,7 @@ public class MemoryService {
                 && now - lastAccess >= archiveAfterMs) {
                 if (!dryRun) {
                     item.setState("archived");
-                    touch(item, now);
+                    touch(item, now, false);
                 }
                 result.archivedIds.add(item.getId());
                 if (collectReport) {
@@ -281,7 +350,7 @@ public class MemoryService {
                 && now - lastAccess >= expireAfterMs) {
                 if (!dryRun) {
                     item.setState("expired");
-                    touch(item, now);
+                    touch(item, now, false);
                 }
                 result.expiredIds.add(item.getId());
                 if (collectReport) {
@@ -380,9 +449,14 @@ public class MemoryService {
             .orElse(0) + 1;
     }
 
-    private void touch(MemoryItem item, long timestamp) {
+    private void touch(MemoryItem item, long timestamp, boolean countAccess) {
         item.setUpdatedAt(timestamp);
         item.setLastAccessedAt(timestamp);
+        if (countAccess) {
+            int accessCount = item.getTotalAccessCount() != null ? item.getTotalAccessCount() : 0;
+            item.setTotalAccessCount(accessCount + 1);
+            item.setLastAccessedActivation((long) currentActivationCount(item.getAgentId()));
+        }
     }
 
     private void loadFromDisk() {
@@ -393,6 +467,9 @@ public class MemoryService {
 
         try {
             MemoryStoreSnapshot snapshot = mapper.readValue(path.toFile(), MemoryStoreSnapshot.class);
+            if (snapshot.agentActivationCounts != null) {
+                agentActivationCounts.putAll(snapshot.agentActivationCounts);
+            }
             if (snapshot.items != null) {
                 for (MemoryItem item : snapshot.items) {
                     items.put(item.getId(), item);
@@ -430,6 +507,7 @@ public class MemoryService {
     private void saveSnapshot() {
         MemoryStoreSnapshot snapshot = new MemoryStoreSnapshot();
         snapshot.items = new ArrayList<>(items.values());
+        snapshot.agentActivationCounts = new HashMap<>(agentActivationCounts);
 
         List<MemoryVersion> versions = new ArrayList<>();
         versionsByItem.values().forEach(versions::addAll);
@@ -460,6 +538,70 @@ public class MemoryService {
             counter.set(Math.max(counter.get(), parsed));
         } catch (NumberFormatException ignored) {
         }
+    }
+
+    private int currentActivationCount(String agentId) {
+        return getAgentActivationCount(agentId);
+    }
+
+    private int normalizeLevel(Integer level) {
+        if (level == null) return DEFAULT_LEVEL;
+        return Math.max(1, Math.min(5, level));
+    }
+
+    private int defaultDecayThreshold(int level) {
+        switch (level) {
+            case 5:
+                return 30;
+            case 4:
+                return 60;
+            case 3:
+                return 120;
+            case 2:
+                return 200;
+            case 1:
+                return 500;
+            default:
+                return 120;
+        }
+    }
+
+    private double resolveRelevanceWeight(MemoryItem item, Map<String, Double> weights, double defaultWeight) {
+        List<String> tags = new ArrayList<>();
+        if (item.getTags() != null) {
+            tags.addAll(item.getTags());
+        }
+        if (item.getTopicKey() != null && !item.getTopicKey().isBlank()) {
+            tags.add(item.getTopicKey());
+        }
+        double weight = defaultWeight;
+        for (String tag : tags) {
+            if (tag == null) continue;
+            Double tagged = weights.get(tag);
+            if (tagged != null && tagged > 0) {
+                weight = Math.min(weight, tagged);
+            }
+        }
+        return weight > 0 ? weight : defaultWeight;
+    }
+
+    private double resolveEpochMultiplier(MemoryItem item, Map<String, Double> multipliers, double defaultMultiplier) {
+        List<String> tags = new ArrayList<>();
+        if (item.getTags() != null) {
+            tags.addAll(item.getTags());
+        }
+        if (item.getProjectEpoch() != null && !item.getProjectEpoch().isBlank()) {
+            tags.add(item.getProjectEpoch());
+        }
+        double multiplier = defaultMultiplier;
+        for (String tag : tags) {
+            if (tag == null) continue;
+            Double tagged = multipliers.get(tag);
+            if (tagged != null && tagged > multiplier) {
+                multiplier = tagged;
+            }
+        }
+        return multiplier > 0 ? multiplier : defaultMultiplier;
     }
 
     private void log(String message) {
@@ -506,8 +648,14 @@ public class MemoryService {
         private boolean collectReport;
         private boolean dryRun;
         private boolean notifyOnRun = true;
+        private boolean useActivationDecay = true;
         private List<String> excludeTopicKeys = new ArrayList<>();
         private List<String> excludeAgentIds = new ArrayList<>();
+        private Map<Integer, Integer> decayThresholds = new HashMap<>();
+        private Map<String, Double> relevanceWeights = new HashMap<>();
+        private Map<String, Double> epochMultipliers = new HashMap<>();
+        private double defaultRelevanceWeight = 1.0;
+        private double globalEpochMultiplier = 1.0;
 
         public long getArchiveAfterMs() {
             return archiveAfterMs;
@@ -557,6 +705,14 @@ public class MemoryService {
             this.notifyOnRun = notifyOnRun;
         }
 
+        public boolean isUseActivationDecay() {
+            return useActivationDecay;
+        }
+
+        public void setUseActivationDecay(boolean useActivationDecay) {
+            this.useActivationDecay = useActivationDecay;
+        }
+
         public List<String> getExcludeTopicKeys() {
             return excludeTopicKeys;
         }
@@ -572,11 +728,56 @@ public class MemoryService {
         public void setExcludeAgentIds(List<String> excludeAgentIds) {
             this.excludeAgentIds = excludeAgentIds != null ? excludeAgentIds : new ArrayList<>();
         }
+
+        public Map<Integer, Integer> getDecayThresholds() {
+            return decayThresholds;
+        }
+
+        public void setDecayThresholds(Map<Integer, Integer> decayThresholds) {
+            this.decayThresholds = decayThresholds != null ? decayThresholds : new HashMap<>();
+        }
+
+        public Map<String, Double> getRelevanceWeights() {
+            return relevanceWeights;
+        }
+
+        public void setRelevanceWeights(Map<String, Double> relevanceWeights) {
+            this.relevanceWeights = relevanceWeights != null ? relevanceWeights : new HashMap<>();
+        }
+
+        public Map<String, Double> getEpochMultipliers() {
+            return epochMultipliers;
+        }
+
+        public void setEpochMultipliers(Map<String, Double> epochMultipliers) {
+            this.epochMultipliers = epochMultipliers != null ? epochMultipliers : new HashMap<>();
+        }
+
+        public double getDefaultRelevanceWeight() {
+            return defaultRelevanceWeight;
+        }
+
+        public void setDefaultRelevanceWeight(double defaultRelevanceWeight) {
+            if (defaultRelevanceWeight > 0) {
+                this.defaultRelevanceWeight = defaultRelevanceWeight;
+            }
+        }
+
+        public double getGlobalEpochMultiplier() {
+            return globalEpochMultiplier;
+        }
+
+        public void setGlobalEpochMultiplier(double globalEpochMultiplier) {
+            if (globalEpochMultiplier > 0) {
+                this.globalEpochMultiplier = globalEpochMultiplier;
+            }
+        }
     }
 
     public static class DecayResult {
         private final List<String> archivedIds = new ArrayList<>();
         private final List<String> expiredIds = new ArrayList<>();
+        private final List<String> demotedIds = new ArrayList<>();
         private final List<String> prunableIds = new ArrayList<>();
         private final List<String> lockedIds = new ArrayList<>();
         private final List<String> filteredIds = new ArrayList<>();
@@ -591,6 +792,10 @@ public class MemoryService {
 
         public List<String> getExpiredIds() {
             return expiredIds;
+        }
+
+        public List<String> getDemotedIds() {
+            return demotedIds;
         }
 
         public List<String> getPrunableIds() {
@@ -633,12 +838,21 @@ public class MemoryService {
     public static class DecayItemReport {
         private String memoryId;
         private String action; // archived | expired
+        private Integer fromLevel;
+        private Integer toLevel;
 
         public DecayItemReport() {}
 
         public DecayItemReport(String memoryId, String action) {
             this.memoryId = memoryId;
             this.action = action;
+        }
+
+        public DecayItemReport(String memoryId, String action, Integer fromLevel, Integer toLevel) {
+            this.memoryId = memoryId;
+            this.action = action;
+            this.fromLevel = fromLevel;
+            this.toLevel = toLevel;
         }
 
         public String getMemoryId() {
@@ -656,6 +870,22 @@ public class MemoryService {
         public void setAction(String action) {
             this.action = action;
         }
+
+        public Integer getFromLevel() {
+            return fromLevel;
+        }
+
+        public void setFromLevel(Integer fromLevel) {
+            this.fromLevel = fromLevel;
+        }
+
+        public Integer getToLevel() {
+            return toLevel;
+        }
+
+        public void setToLevel(Integer toLevel) {
+            this.toLevel = toLevel;
+        }
     }
 
     // ----- Snapshot DTO for persistence -----
@@ -663,5 +893,6 @@ public class MemoryService {
         public List<MemoryItem> items;
         public List<MemoryVersion> versions;
         public List<R5Event> events;
+        public Map<String, Integer> agentActivationCounts;
     }
 }

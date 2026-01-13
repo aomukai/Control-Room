@@ -88,6 +88,64 @@
         }
     }
 
+    const agentTurnQueue = [];
+    let agentTurnActive = false;
+    const agentTurnQueuedCount = new Map();
+
+    function updateQueuedCount(agentId, delta) {
+        if (!agentId) {
+            return;
+        }
+        const current = agentTurnQueuedCount.get(agentId) || 0;
+        const next = current + delta;
+        if (next <= 0) {
+            agentTurnQueuedCount.delete(agentId);
+        } else {
+            agentTurnQueuedCount.set(agentId, next);
+        }
+        renderAgentSidebar();
+    }
+
+    function getQueuedCount(agentId) {
+        return agentId ? (agentTurnQueuedCount.get(agentId) || 0) : 0;
+    }
+
+    function runNextAgentTurn() {
+        if (agentTurnActive) {
+            return;
+        }
+        const next = agentTurnQueue.shift();
+        if (!next) {
+            return;
+        }
+        updateQueuedCount(next.agentId, -1);
+        agentTurnActive = true;
+        Promise.resolve()
+            .then(next.work)
+            .then(next.resolve, next.reject)
+            .finally(() => {
+                agentTurnActive = false;
+                runNextAgentTurn();
+            });
+    }
+
+    function enqueueAgentTurn(work, agentId) {
+        return new Promise((resolve, reject) => {
+            if (agentTurnActive || agentTurnQueue.length > 0) {
+                updateQueuedCount(agentId, 1);
+            }
+            agentTurnQueue.push({ work, resolve, reject, agentId });
+            runNextAgentTurn();
+        });
+    }
+
+    function withAgentTurn(agentId, activity, work, message) {
+        if (!agentId) {
+            return typeof work === 'function' ? work() : null;
+        }
+        return enqueueAgentTurn(() => withAgentActivity(agentId, activity, work, message), agentId);
+    }
+
     function getAgentSupervisionState(agent) {
         const state = agent && agent.supervisionState ? String(agent.supervisionState).toLowerCase() : 'none';
         if (state === 'assisted' || state === 'watched') {
@@ -337,6 +395,15 @@
                 icons.push(createAgentStatusIcon(
                     'assets/icons/lucide/executing.svg',
                     activityMessage || 'Producing output / taking action now.'
+                ));
+            }
+            const queuedCount = getQueuedCount(agent.id);
+            if (queuedCount > 0) {
+                const queuedLabel = queuedCount > 1 ? `${queuedCount} queued turns` : '1 queued turn';
+                icons.push(createAgentStatusIcon(
+                    'assets/icons/heroicons_outline/queue-list.svg',
+                    `Queued for turn (${queuedLabel}).`,
+                    'agent-status-icon-queued'
                 ));
             }
 
@@ -3128,11 +3195,11 @@
                 notificationStore.issueCreated(issue.id, issue.title, issue.openedBy, issue.assignedTo);
                 if (agent.id) {
                     try {
-                        const reply = await api('/api/ai/chat', {
+                        const reply = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ message: prompt, agentId: agent.id })
-                        });
+                        }), `Generating greeting for ${name}`);
                         if (reply && reply.content) {
                             await issueApi.addComment(issue.id, {
                                 author: name,
@@ -4097,7 +4164,7 @@
 
             try {
                 const requestMessage = buildChatPrompt ? buildChatPrompt(message, agent) : message;
-                const response = await withAgentActivity(agent.id, 'processing', () => api('/api/ai/chat', {
+                const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: requestMessage, agentId: agent.id })
@@ -4416,6 +4483,7 @@
     window.resolveAgentIdFromLabel = resolveAgentIdFromLabel;
     window.setAgentActivityState = setAgentActivityState;
     window.withAgentActivity = withAgentActivity;
+    window.withAgentTurn = withAgentTurn;
     window.renderAgentSidebar = renderAgentSidebar;
     window.ensureChiefOfStaff = ensureChiefOfStaff;
     window.updateAgentLockState = updateAgentLockState;
