@@ -6734,6 +6734,19 @@ input[type="password"].settings-control {
 .history-modal {
     width: min(90vw, 1200px);
     max-width: 90vw;
+    min-width: 640px;
+    min-height: 420px;
+    max-height: 90vh;
+    resize: both;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.history-modal .modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .history-header {
@@ -6756,7 +6769,8 @@ input[type="password"].settings-control {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
-    min-height: 400px;
+    min-height: 0;
+    flex: 1;
 }
 
 .history-panel {
@@ -6766,6 +6780,7 @@ input[type="password"].settings-control {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
+    min-height: 0;
 }
 
 .history-panel-title {
@@ -6780,7 +6795,7 @@ input[type="password"].settings-control {
 
 .history-editor {
     flex: 1;
-    min-height: 320px;
+    min-height: 0;
 }
 
 .history-fallback {
@@ -6798,6 +6813,13 @@ input[type="password"].settings-control {
 @media (max-width: 900px) {
     .history-split {
         grid-template-columns: 1fr;
+    }
+
+    .history-modal {
+        min-width: 0;
+        min-height: 320px;
+        width: 95vw;
+        max-width: 95vw;
     }
 }
 
