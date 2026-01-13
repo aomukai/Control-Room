@@ -4649,16 +4649,51 @@
 
         backendSection.appendChild(createRow(
             'Backend smoke test',
-            'Fetch workspace info to confirm the backend is responding.',
+            'Run a multi-endpoint smoke test (workspace, settings, agents, issues, credits, memory, versioning, patches, dashboard).',
             'Run',
             async (btn) => {
                 btn.disabled = true;
                 setStatus('Status: running backend smoke test...');
                 try {
-                    await workspaceApi.info();
+                    const checks = [
+                        { label: 'workspace', run: () => workspaceApi.info() },
+                        { label: 'settings.security', run: () => settingsApi.getSecurity() },
+                        { label: 'settings.keys', run: () => settingsApi.listKeys() },
+                        { label: 'agents', run: () => agentApi.list() },
+                        { label: 'agent.endpoints', run: () => agentEndpointsApi.list() },
+                        { label: 'notifications', run: () => notificationsApi.list() },
+                        { label: 'issues', run: () => issueApi.list() },
+                        { label: 'credits', run: () => creditApi.listEvents() },
+                        { label: 'memory.decay', run: () => memoryApi.getDecayStatus() },
+                        { label: 'dashboard.layout', run: () => fetch('/api/dashboard/layout').then(res => {
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            return res.json();
+                        }) },
+                        { label: 'versioning.snapshots', run: () => versioningApi.snapshots() },
+                        { label: 'patches', run: () => patchApi.list() }
+                    ];
+
+                    const results = await Promise.allSettled(checks.map(check => check.run()));
+                    const failures = [];
+                    results.forEach((result, index) => {
+                        if (result.status === 'rejected') {
+                            const reason = result.reason && result.reason.message
+                                ? result.reason.message
+                                : String(result.reason || 'Unknown error');
+                            failures.push(`${checks[index].label}: ${reason}`);
+                        }
+                    });
+
                     const time = new Date().toLocaleTimeString();
-                    setStatus(`Status: backend smoke test OK (${time})`);
-                    notificationStore.success('Backend smoke test succeeded.', 'editor');
+                    if (failures.length === 0) {
+                        setStatus(`Status: backend smoke test OK (${time})`);
+                        notificationStore.success('Backend smoke test succeeded.', 'editor');
+                    } else {
+                        const summary = `Failures: ${failures.length}/${checks.length}`;
+                        setStatus(`Status: backend smoke test FAILED (${summary})`);
+                        notificationStore.error(`Backend smoke test failed. ${summary}`, 'editor');
+                        failures.slice(0, 6).forEach((entry) => log(`Smoke test failure: ${entry}`, 'error'));
+                    }
                 } catch (err) {
                     setStatus(`Status: backend smoke test failed (${err.message})`);
                     notificationStore.error(`Backend smoke test failed: ${err.message}`, 'editor');
