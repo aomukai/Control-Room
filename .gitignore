@@ -1,3 +1,9 @@
+# === PRIVATE DEV PHASE (INTENTIONAL) ===
+# docs/ is *not* documentation right now. It contains private, operational project infrastructure.
+# Nothing in docs/ may be pushed to GitHub.
+# Release step: wipe docs/ contents, replace with public documentation, then REMOVE/CHANGE this rule.
+docs/
+
 # Gradle
 .gradle/
 **/.gradle/
@@ -21,6 +27,7 @@ Thumbs.db
 nul
 
 # Design Documents
+# Everything in docs/ is private and must not be uploaded to GitHub. It's critical infrastructure; keep local.
 docs/
 
 # Local agent registry data
