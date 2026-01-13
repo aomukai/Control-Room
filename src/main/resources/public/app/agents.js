@@ -5,6 +5,8 @@
     const createModalShell = window.modals ? window.modals.createModalShell : null;
     const escapeHtml = window.modals ? window.modals.escapeHtml : null;
     const canonicalizeRole = window.canonicalizeRole;
+    const buildChatPrompt = window.buildChatPrompt;
+    const extractStopHook = window.extractStopHook;
 
     function isAssistantAgent(agent) {
         if (!agent || agent.enabled === false) {
@@ -3952,7 +3954,7 @@
         return workbenchChats.get(agentId);
     }
 
-    function appendWorkbenchChatMessage(container, role, content, agentName) {
+    function appendWorkbenchChatMessage(container, role, content, agentName, meta = {}) {
         const msg = document.createElement('div');
         msg.className = `workbench-chat-message ${role}`;
 
@@ -3966,6 +3968,15 @@
 
         msg.appendChild(label);
         msg.appendChild(contentDiv);
+        if (meta && meta.stopHook) {
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'workbench-chat-message-meta';
+            const stop = document.createElement('span');
+            stop.className = 'chat-badge chat-badge-stop';
+            stop.textContent = `Stop: ${meta.stopHook}`;
+            metaDiv.appendChild(stop);
+            msg.appendChild(metaDiv);
+        }
         container.appendChild(msg);
         container.scrollTop = container.scrollHeight;
     }
@@ -4069,7 +4080,9 @@
         // Load chat history
         const log = getWorkbenchChatLog(agent.id);
         log.forEach(entry => {
-            appendWorkbenchChatMessage(history, entry.role, entry.content, agent.name);
+            appendWorkbenchChatMessage(history, entry.role, entry.content, agent.name, {
+                stopHook: entry.stopHook
+            });
         });
 
         // Send message handler
@@ -4083,14 +4096,19 @@
             log.push({ role: 'user', content: message });
 
             try {
+                const requestMessage = buildChatPrompt ? buildChatPrompt(message, agent) : message;
                 const response = await withAgentActivity(agent.id, 'processing', () => api('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message, agentId: agent.id })
+                    body: JSON.stringify({ message: requestMessage, agentId: agent.id })
                 }), `Responding to ${agent.name || 'agent'} chat`);
-                const reply = response.content || 'No response.';
-                appendWorkbenchChatMessage(history, 'assistant', reply, agent.name);
-                log.push({ role: 'assistant', content: reply });
+                const parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
+                const reply = parsed.content || 'No response.';
+                appendWorkbenchChatMessage(history, 'assistant', reply, agent.name, { stopHook: parsed.stopHook });
+                log.push({ role: 'assistant', content: reply, stopHook: parsed.stopHook, stopHookDetail: parsed.stopHookDetail });
+                if (parsed.stopHook) {
+                    notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                }
             } catch (err) {
                 const errorMessage = 'Sorry, I encountered an error. Please try again.';
                 appendWorkbenchChatMessage(history, 'assistant', errorMessage, agent.name);
@@ -4111,7 +4129,8 @@
             let description = '## Chat Log\n\n';
             log.forEach(entry => {
                 const speaker = entry.role === 'user' ? 'User' : agent.name || 'Agent';
-                description += `**${speaker}:** ${entry.content}\n\n`;
+                const stopLabel = entry.stopHook ? ` (stop hook: ${entry.stopHook})` : '';
+                description += `**${speaker}${stopLabel}:** ${entry.content}\n\n`;
             });
 
             // Find team lead

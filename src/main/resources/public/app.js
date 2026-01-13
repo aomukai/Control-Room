@@ -77,6 +77,8 @@
     const createModalShell = window.modals.createModalShell;
     // escapeHtml is now in modals.js (window.modals.escapeHtml)
     const escapeHtml = window.modals.escapeHtml;
+    const buildChatPrompt = window.buildChatPrompt;
+    const extractStopHook = window.extractStopHook;
     const canonicalizeRole = window.canonicalizeRole;
     const isAssistantAgent = window.isAssistantAgent;
     const resolveAgentIdFromLabel = window.resolveAgentIdFromLabel;
@@ -3789,7 +3791,7 @@
         contentDiv.textContent = content;
         msg.appendChild(contentDiv);
 
-        const hasMeta = meta && (meta.repLevel || meta.escalated || (meta.witnesses && meta.witnesses.length));
+        const hasMeta = meta && (meta.repLevel || meta.escalated || meta.stopHook || (meta.witnesses && meta.witnesses.length));
         if (hasMeta) {
             const metaDiv = document.createElement('div');
             metaDiv.className = 'chat-message-meta';
@@ -3803,6 +3805,12 @@
                 escalated.className = 'chat-badge';
                 escalated.textContent = 'Escalated';
                 metaDiv.appendChild(escalated);
+            }
+            if (meta.stopHook) {
+                const stop = document.createElement('span');
+                stop.className = 'chat-badge chat-badge-stop';
+                stop.textContent = `Stop: ${meta.stopHook}`;
+                metaDiv.appendChild(stop);
             }
 
             if (Array.isArray(meta.witnesses)) {
@@ -3833,7 +3841,8 @@
             elements.chatMemoryBadge.classList.add('hidden');
         }
         if (elements.chatEscalate) {
-            elements.chatEscalate.disabled = !state.chat.lastPayload;
+            const stopHookActive = state.chat.lastStopHook && state.chat.lastStopHook.hook;
+            elements.chatEscalate.disabled = !state.chat.lastPayload || stopHookActive;
         }
     }
 
@@ -3842,6 +3851,10 @@
         const previous = state.chat.lastPayload;
         const message = reroll && previous ? previous.message : draftMessage;
         if (!message) return;
+        if (reroll && state.chat.lastStopHook) {
+            notificationStore.warning(`Stop hook active: ${state.chat.lastStopHook.hook}`, 'editor');
+            return;
+        }
 
         if (!reroll) {
             elements.chatInput.value = '';
@@ -3851,6 +3864,8 @@
                 agentId: state.agents.selectedId || null,
                 memoryId: state.chat.memoryId
             };
+            state.chat.lastStopHook = null;
+            updateChatMemoryBadge(state.chat.lastResponseMeta);
         }
 
         elements.chatSend.disabled = true;
@@ -3858,9 +3873,11 @@
         log(`Chat: User message sent${reroll ? ' (reroll)' : ''}`, 'info');
 
         const agentId = (reroll && previous ? previous.agentId : state.agents.selectedId) || null;
+        const agent = agentId ? (state.agents.list || []).find(item => item.id === agentId) : null;
         const runChat = async () => {
+            const requestMessage = agent && buildChatPrompt ? buildChatPrompt(message, agent) : message;
             const payload = {
-                message,
+                message: requestMessage,
                 memoryId: state.chat.memoryId || undefined,
                 reroll
             };
@@ -3876,18 +3893,28 @@
                 body: JSON.stringify(payload)
             });
 
+            const rawContent = response && response.content ? response.content : '';
+            const parsed = extractStopHook ? extractStopHook(rawContent) : { content: rawContent, stopHook: null, stopHookDetail: '' };
             const meta = {
                 memoryId: response.memoryId || payload.memoryId,
                 repLevel: response.repLevel,
                 escalated: !!response.escalated,
-                witnesses: response.witnesses
+                witnesses: response.witnesses,
+                stopHook: parsed.stopHook
             };
+            state.chat.lastStopHook = parsed.stopHook
+                ? { hook: parsed.stopHook, detail: parsed.stopHookDetail }
+                : null;
             state.chat.lastResponseMeta = meta;
             updateChatMemoryBadge(meta);
 
-            const reply = response && response.content ? response.content : 'No response.';
+            const reply = parsed.content ? parsed.content : 'No response.';
             addChatMessage('assistant', reply, meta);
             log(`Chat: AI response received${meta.escalated ? ' (escalated)' : ''}`, 'success');
+            if (parsed.stopHook) {
+                log(`Chat stop hook: ${parsed.stopHook}`, 'warning');
+                notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'editor');
+            }
         };
 
         try {

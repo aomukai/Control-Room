@@ -62,7 +62,8 @@
         chat: {
             memoryId: null,
             lastPayload: null,
-            lastResponseMeta: null
+            lastResponseMeta: null,
+            lastStopHook: null
         },
         workspace: {
             name: '',

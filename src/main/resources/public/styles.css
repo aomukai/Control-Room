@@ -1025,6 +1025,12 @@ html, body {
     border: 1px solid var(--border-color);
 }
 
+.chat-badge-stop {
+    background: rgba(241, 76, 76, 0.12);
+    border-color: rgba(241, 76, 76, 0.4);
+    color: var(--error-color);
+}
+
 #agent-select {
     background: var(--bg-dark);
     border: 1px solid var(--border-color);
@@ -3545,6 +3551,11 @@ html, body {
 .workbench-chat-message.assistant .workbench-chat-message-content {
     background: rgba(14, 99, 156, 0.1);
     border-color: rgba(14, 99, 156, 0.18);
+}
+
+.workbench-chat-message-meta {
+    display: flex;
+    gap: 6px;
 }
 
 .workbench-chat-input-row {
