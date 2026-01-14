@@ -197,6 +197,9 @@ public class AgentController implements Controller {
                 ctx.status(400).json(Map.of("error", "Invalid agent endpoint payload"));
                 return;
             }
+            if (config != null && config.getModel() != null) {
+                projectContext.agents().syncModelRecord(id, config.getModel());
+            }
             Agent agent = projectContext.agents().getAgent(id);
             if (agent != null
                 && agent.getAssisted() != null

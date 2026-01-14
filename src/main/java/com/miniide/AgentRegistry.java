@@ -119,6 +119,7 @@ public class AgentRegistry {
                 }
                 if (updates.getEndpoint() != null) {
                     existing.setEndpoint(updates.getEndpoint());
+                    syncModelRecord(existing, updates.getEndpoint().getModel());
                     String newModel = updates.getEndpoint().getModel();
                     if (existing.getAssisted() != null && existing.getAssisted()
                         && existing.getAssistedModel() != null
@@ -251,6 +252,8 @@ public class AgentRegistry {
         agent.setTools(agent.getTools());
         agent.setAutoActions(agent.getAutoActions());
         agent.setPersonalitySliders(agent.getPersonalitySliders());
+        agent.setModelRecords(agent.getModelRecords());
+        syncModelRecord(agent, agent.getEndpoint() != null ? agent.getEndpoint().getModel() : null);
 
         agentsFile.getAgents().add(agent);
         if (!saveToDisk()) {
@@ -488,6 +491,11 @@ public class AgentRegistry {
                     agent.setRole(roleKey);
                     changed = true;
                 }
+                if (agent.getEndpoint() != null && agent.getEndpoint().getModel() != null) {
+                    if (syncModelRecord(agent, agent.getEndpoint().getModel())) {
+                        changed = true;
+                    }
+                }
             }
         }
 
@@ -523,6 +531,101 @@ public class AgentRegistry {
         }
 
         return changed;
+    }
+
+    public boolean syncModelRecord(String agentId, String modelId) {
+        Agent agent = getAgent(agentId);
+        if (agent == null) {
+            return false;
+        }
+        boolean updated = syncModelRecord(agent, modelId);
+        if (updated) {
+            agent.setUpdatedAt(System.currentTimeMillis());
+            saveToDisk();
+        }
+        return updated;
+    }
+
+    private boolean syncModelRecord(Agent agent, String modelId) {
+        if (agent == null || modelId == null || modelId.isBlank()) {
+            return false;
+        }
+        List<com.miniide.models.AgentModelRecord> records = agent.getModelRecords();
+        if (records == null) {
+            records = new ArrayList<>();
+            agent.setModelRecords(records);
+        }
+
+        String normalizedModel = modelId.trim();
+        String currentActiveModel = agent.getActiveModelId();
+        com.miniide.models.AgentModelRecord activeRecord = findActiveRecord(records, currentActiveModel);
+
+        if (currentActiveModel == null) {
+            agent.setActiveModelId(normalizedModel);
+            activeRecord = null;
+        }
+
+        if (activeRecord != null && activeRecord.getModelId() != null
+            && activeRecord.getModelId().equals(normalizedModel)) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (activeRecord != null) {
+            activeRecord.setActive(false);
+            activeRecord.setDeactivatedAt(now);
+        }
+
+        com.miniide.models.AgentModelRecord target = findRecord(records, normalizedModel);
+        if (target == null) {
+            target = createRecord(agent, normalizedModel, now);
+            records.add(target);
+        }
+        target.setActive(true);
+        if (target.getActivatedAt() <= 0) {
+            target.setActivatedAt(now);
+        }
+        target.setDeactivatedAt(null);
+        agent.setActiveModelId(normalizedModel);
+        return true;
+    }
+
+    private com.miniide.models.AgentModelRecord findRecord(List<com.miniide.models.AgentModelRecord> records, String modelId) {
+        if (records == null || modelId == null) {
+            return null;
+        }
+        for (com.miniide.models.AgentModelRecord record : records) {
+            if (record != null && modelId.equals(record.getModelId())) {
+                return record;
+            }
+        }
+        return null;
+    }
+
+    private com.miniide.models.AgentModelRecord findActiveRecord(List<com.miniide.models.AgentModelRecord> records, String activeModelId) {
+        if (records == null) {
+            return null;
+        }
+        for (com.miniide.models.AgentModelRecord record : records) {
+            if (record != null && record.isActive()) {
+                return record;
+            }
+        }
+        if (activeModelId != null) {
+            return findRecord(records, activeModelId);
+        }
+        return null;
+    }
+
+    private com.miniide.models.AgentModelRecord createRecord(Agent agent, String modelId, long now) {
+        com.miniide.models.AgentModelRecord record = new com.miniide.models.AgentModelRecord();
+        record.setModelId(modelId);
+        record.setRole(agent.getRole());
+        record.setActive(true);
+        record.setActivatedAt(now);
+        record.setCapabilityProfile(new com.miniide.models.AgentCapabilityProfile());
+        record.setPerformance(new com.miniide.models.AgentPerformanceStats());
+        return record;
     }
 
     private AgentsFile createDefaultAgentsFile() {

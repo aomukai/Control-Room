@@ -27,6 +27,8 @@ public class Agent {
     private Boolean isPrimaryForRole;
     private Boolean canBeTeamLead;
     private AgentMemoryProfile memoryProfile;
+    private List<AgentModelRecord> modelRecords = new ArrayList<>();
+    private String activeModelId;
     private Boolean assisted;
     private String assistedReason;
     private Long assistedSince;
@@ -172,6 +174,22 @@ public class Agent {
 
     public void setMemoryProfile(AgentMemoryProfile memoryProfile) {
         this.memoryProfile = memoryProfile;
+    }
+
+    public List<AgentModelRecord> getModelRecords() {
+        return modelRecords;
+    }
+
+    public void setModelRecords(List<AgentModelRecord> modelRecords) {
+        this.modelRecords = modelRecords != null ? new ArrayList<>(modelRecords) : new ArrayList<>();
+    }
+
+    public String getActiveModelId() {
+        return activeModelId;
+    }
+
+    public void setActiveModelId(String activeModelId) {
+        this.activeModelId = activeModelId;
     }
 
     public Boolean getAssisted() {
