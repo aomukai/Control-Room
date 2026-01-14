@@ -5705,6 +5705,33 @@ input[type="password"].settings-control {
     box-sizing: border-box;
 }
 
+/* Ambient breathing gradient background */
+.workbench-dashboard::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(ellipse at 30% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(59, 130, 246, 0.04) 0%, transparent 70%);
+    animation: ambientBreathing 8s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+@keyframes ambientBreathing {
+    0%, 100% {
+        opacity: 0.6;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+}
+
 .workbench-card {
     background: var(--bg-light);
     border: 1px solid var(--border-color);
@@ -7123,8 +7150,9 @@ input[type="password"].settings-control {
     position: absolute;
     opacity: 0;
     transform: scale(0.95);
-    transition: left 0.2s ease-out, top 0.2s ease-out, opacity 0.3s ease, transform 0.3s ease, border-color 0.15s ease;
+    transition: left 0.2s ease-out, top 0.2s ease-out, opacity 0.3s ease, transform 0.3s ease, border-color 0.15s ease, box-shadow 0.2s ease;
     box-sizing: border-box;
+    z-index: 1;
 }
 
 .widget-card.widget-mounting {
@@ -7164,6 +7192,15 @@ input[type="password"].settings-control {
 
 .widget-card:hover {
     border-color: var(--accent-color);
+    transform: translateY(-3px) scale(1);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Prevent hover lift during drag/resize */
+.widget-card.widget-dragging:hover,
+.widget-card.widget-resizing:hover {
+    transform: none;
+    box-shadow: none;
 }
 
 /* Widget default sizes (used if no explicit dimensions set) */
@@ -8076,4 +8113,87 @@ input[type="password"].settings-control {
 
 .widget-body:hover {
     background: rgba(255, 255, 255, 0.02);
+}
+
+/* ============================================
+   EMPTY STATE POLISH
+   ============================================ */
+
+.widget-empty-state {
+    animation: emptyStateFloat 3s ease-in-out infinite;
+}
+
+.widget-empty-icon {
+    animation: emptyIconPulse 2s ease-in-out infinite;
+}
+
+@keyframes emptyStateFloat {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+@keyframes emptyIconPulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.9;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+    /* Disable ambient breathing */
+    .workbench-dashboard::before {
+        animation: none;
+        opacity: 0.8;
+    }
+
+    /* Disable widget mount/unmount animations */
+    .widget-card.widget-mounting,
+    .widget-card.widget-unmounting {
+        animation: none;
+    }
+
+    .widget-card {
+        opacity: 1;
+        transform: scale(1);
+        transition: border-color 0.15s ease;
+    }
+
+    /* Disable empty state animations */
+    .widget-empty-state,
+    .widget-empty-icon {
+        animation: none;
+    }
+
+    /* Disable focus modal animations */
+    .widget-focus-overlay {
+        transition: none;
+    }
+
+    .widget-focus-modal {
+        transition: none;
+        transform: scale(1);
+    }
+
+    /* Disable hover lift */
+    .widget-card:hover {
+        transform: none;
+    }
+
+    /* Keep subtle visual feedback */
+    .widget-card:hover {
+        border-color: var(--accent-color);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
 }
