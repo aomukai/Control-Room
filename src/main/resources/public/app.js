@@ -5053,6 +5053,20 @@
             lastSeedLevels = null;
 
             try {
+                const runSeedChat = async (payload, messageLabel) => {
+                    if (agentId && typeof withAgentTurn === 'function') {
+                        return withAgentTurn(agentId, 'processing', () => api('/api/ai/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }), messageLabel);
+                    }
+                    return api('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                };
                 const prompt = [
                     'Return ONLY valid JSON. No markdown, no preface, no explanation.',
                     'Output schema: {"L4":"...","L3":"...","L2":"...","L1":"..."}',
@@ -5067,11 +5081,7 @@
                     seedText
                 ].join('\\n');
 
-                const response = await api('/api/ai/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: prompt, agentId })
-                });
+                const response = await runSeedChat({ message: prompt, agentId }, 'Generating memory summary');
                 levels = normalizeLevels(parseJsonFromText(response && response.content ? response.content : ''));
 
                 if (!levels) {
@@ -5082,11 +5092,7 @@
                         'Text:',
                         seedText
                     ].join('\\n');
-                    const retry = await api('/api/ai/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: retryPrompt, agentId })
-                    });
+                    const retry = await runSeedChat({ message: retryPrompt, agentId }, 'Retrying memory summary');
                     levels = normalizeLevels(parseJsonFromText(retry && retry.content ? retry.content : ''));
                 }
             } catch (err) {
