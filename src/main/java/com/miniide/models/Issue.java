@@ -18,6 +18,9 @@ public class Issue {
     private long createdAt;
     private long updatedAt;
     private Long closedAt;
+    private Long frozenAt;
+    private Long frozenUntil;
+    private String frozenReason;
 
     public Issue() {
     }
@@ -144,6 +147,30 @@ public class Issue {
         this.closedAt = closedAt;
     }
 
+    public Long getFrozenAt() {
+        return frozenAt;
+    }
+
+    public void setFrozenAt(Long frozenAt) {
+        this.frozenAt = frozenAt;
+    }
+
+    public Long getFrozenUntil() {
+        return frozenUntil;
+    }
+
+    public void setFrozenUntil(Long frozenUntil) {
+        this.frozenUntil = frozenUntil;
+    }
+
+    public String getFrozenReason() {
+        return frozenReason;
+    }
+
+    public void setFrozenReason(String frozenReason) {
+        this.frozenReason = frozenReason;
+    }
+
     @Override
     public String toString() {
         return "Issue{" +
@@ -158,6 +185,9 @@ public class Issue {
             ", createdAt=" + createdAt +
             ", updatedAt=" + updatedAt +
             ", closedAt=" + closedAt +
+            ", frozenAt=" + frozenAt +
+            ", frozenUntil=" + frozenUntil +
+            ", frozenReason='" + frozenReason + '\'' +
             '}';
     }
 

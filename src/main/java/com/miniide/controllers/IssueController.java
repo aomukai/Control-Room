@@ -3,8 +3,11 @@ package com.miniide.controllers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
+import com.miniide.CircuitBreakerConfig;
+import com.miniide.CircuitBreakerValidator;
 import com.miniide.CreditStore;
 import com.miniide.IssueMemoryService;
+import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
 import com.miniide.models.Comment;
 import com.miniide.models.CreditEvent;
@@ -26,8 +29,11 @@ public class IssueController implements Controller {
     private final IssueMemoryService issueService;
     private final ProjectContext projectContext;
     private final CreditStore creditStore;
+    private final NotificationStore notificationStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
+    private final CircuitBreakerConfig circuitBreakerConfig;
+    private final CircuitBreakerValidator circuitBreakerValidator;
     private static final Map<String, Double> COMMENT_CREDIT_AMOUNTS = Map.ofEntries(
         Map.entry("evidence-verified", 1.0),
         Map.entry("evidence-verified-precise", 2.0),
@@ -66,12 +72,15 @@ public class IssueController implements Controller {
     );
 
     public IssueController(IssueMemoryService issueService, ProjectContext projectContext,
-                           CreditStore creditStore, ObjectMapper objectMapper) {
+                           CreditStore creditStore, NotificationStore notificationStore, ObjectMapper objectMapper) {
         this.issueService = issueService;
         this.projectContext = projectContext;
         this.creditStore = creditStore;
+        this.notificationStore = notificationStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
+        this.circuitBreakerConfig = new CircuitBreakerConfig();
+        this.circuitBreakerValidator = new CircuitBreakerValidator();
     }
 
     @Override
@@ -254,6 +263,17 @@ public class IssueController implements Controller {
                 return;
             }
 
+            Optional<Issue> issueOpt = issueService.getIssue(issueId);
+            if (issueOpt.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + issueId));
+                return;
+            }
+            Issue issue = issueOpt.get();
+            if (isIssueFrozen(issue) && !canActOnFrozenIssue(author, issue)) {
+                ctx.status(403).json(Map.of("error", "Issue is frozen until " + issue.getFrozenUntil()));
+                return;
+            }
+
             Comment.CommentAction action = null;
             if (json.has("action") && json.get("action").isObject()) {
                 JsonNode actionNode = json.get("action");
@@ -264,10 +284,44 @@ public class IssueController implements Controller {
                 }
             }
 
-            Comment comment = issueService.addComment(issueId, author, body, action);
+            String impactLevel = json.has("impactLevel") ? json.get("impactLevel").asText(null) : null;
+            Comment.CommentEvidence evidence = parseEvidence(json.get("evidence"));
+
+            Comment comment = new Comment(author, body, System.currentTimeMillis(), action);
+            comment.setImpactLevel(impactLevel);
+            comment.setEvidence(evidence);
+
+            if (!isUserAuthor(comment)) {
+                CircuitBreakerValidator.ValidationResult validation = circuitBreakerValidator
+                    .validateComment(comment, issue, circuitBreakerConfig);
+                if (!validation.isValid()) {
+                    ctx.status(400).json(Map.of(
+                        "error", "Comment rejected by circuit breaker validation",
+                        "violations", validation.getViolations()
+                    ));
+                    return;
+                }
+                if (validation.isShouldFreeze()) {
+                    CircuitBreakerValidator.Violation violation = validation.getViolations().stream()
+                        .filter(v -> "freeze".equalsIgnoreCase(v.getSeverity()))
+                        .findFirst()
+                        .orElse(null);
+                    Issue frozen = freezeIssue(issue, violation);
+                    ctx.status(409).json(Map.of(
+                        "error", "Issue frozen by circuit breaker",
+                        "issueId", frozen.getId(),
+                        "frozenUntil", frozen.getFrozenUntil(),
+                        "reason", frozen.getFrozenReason(),
+                        "violations", validation.getViolations()
+                    ));
+                    return;
+                }
+            }
+
+            Comment stored = issueService.addComment(issueId, author, body, action, impactLevel, evidence);
             logger.info("Comment added to Issue #" + issueId + " by " + author);
-            awardCommentCredit(comment, issueId);
-            ctx.status(201).json(comment);
+            awardCommentCredit(stored, issueId);
+            ctx.status(201).json(stored);
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
         } catch (IllegalArgumentException e) {
@@ -408,6 +462,147 @@ public class IssueController implements Controller {
     private boolean isModeratorAuthor(Comment comment) {
         String author = comment != null ? comment.getAuthor() : null;
         return author != null && author.trim().equalsIgnoreCase("moderator");
+    }
+
+    private boolean isUserAuthor(Comment comment) {
+        String author = comment != null ? comment.getAuthor() : null;
+        return author != null && author.trim().equalsIgnoreCase("user");
+    }
+
+    private boolean isIssueFrozen(Issue issue) {
+        if (issue == null) {
+            return false;
+        }
+        return "frozen".equalsIgnoreCase(issue.getStatus());
+    }
+
+    private boolean canActOnFrozenIssue(String author, Issue issue) {
+        if (author == null) {
+            return false;
+        }
+        if (!isIssueFrozen(issue)) {
+            return true;
+        }
+        Long until = issue.getFrozenUntil();
+        if (until != null && System.currentTimeMillis() > until) {
+            return true;
+        }
+        String role = author.trim().toLowerCase();
+        return role.equals("user") || role.equals("moderator") || role.equals("team-lead");
+    }
+
+    private Issue freezeIssue(Issue issue, CircuitBreakerValidator.Violation violation) {
+        long now = System.currentTimeMillis();
+        Issue frozen = issue;
+        frozen.setStatus("frozen");
+        frozen.setFrozenAt(now);
+        frozen.setFrozenUntil(now + circuitBreakerConfig.getFrozenIssueCooldownMinutes() * 60_000L);
+        frozen.setFrozenReason(violation != null ? violation.getRule() : "circuit-breaker");
+        Issue updated = issueService.updateIssue(frozen);
+
+        String violationMessage = violation != null ? violation.getMessage() : "Circuit breaker triggered.";
+        String report = formatFreezeReport(updated, violationMessage);
+        issueService.createIssue(
+            "[Circuit Breaker] " + updated.getTitle(),
+            report,
+            "system",
+            "moderator",
+            List.of("#meta", "#circuit-breaker", "#" + updated.getFrozenReason(), "#issue-" + updated.getId()),
+            "high"
+        );
+
+        if (notificationStore != null) {
+            notificationStore.warning(
+                "Issue #" + updated.getId() + " frozen: " + violationMessage,
+                com.miniide.models.Notification.Scope.WORKBENCH
+            );
+        }
+
+        return updated;
+    }
+
+    private String formatFreezeReport(Issue issue, String message) {
+        StringBuilder report = new StringBuilder();
+        report.append("Issue #").append(issue.getId()).append(" was automatically frozen.\n\n");
+        report.append("Reason: ").append(message).append("\n");
+        report.append("Frozen until: ").append(issue.getFrozenUntil()).append("\n\n");
+        report.append("Recent activity:\n");
+        List<Comment> comments = issue.getComments();
+        int start = Math.max(0, comments.size() - 5);
+        for (int i = start; i < comments.size(); i++) {
+            Comment comment = comments.get(i);
+            String snippet = truncate(comment.getBody(), 100);
+            report.append("- ").append(comment.getAuthor()).append(": \"").append(snippet).append("\"\n");
+        }
+        return report.toString().trim();
+    }
+
+    private String truncate(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        if (text.length() <= max) {
+            return text;
+        }
+        return text.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    private Comment.CommentEvidence parseEvidence(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        Comment.CommentEvidence evidence = new Comment.CommentEvidence();
+
+        if (node.has("issues") && node.get("issues").isArray()) {
+            List<Integer> issues = new ArrayList<>();
+            for (JsonNode issueNode : node.get("issues")) {
+                if (issueNode.isInt()) {
+                    issues.add(issueNode.asInt());
+                }
+            }
+            evidence.setIssues(issues);
+        }
+
+        if (node.has("canonRefs") && node.get("canonRefs").isArray()) {
+            List<String> refs = new ArrayList<>();
+            for (JsonNode refNode : node.get("canonRefs")) {
+                if (refNode.isTextual()) {
+                    refs.add(refNode.asText());
+                }
+            }
+            evidence.setCanonRefs(refs);
+        }
+
+        if (node.has("files") && node.get("files").isArray()) {
+            List<Comment.FileReference> files = new ArrayList<>();
+            for (JsonNode fileNode : node.get("files")) {
+                if (!fileNode.isObject()) {
+                    continue;
+                }
+                Comment.FileReference ref = new Comment.FileReference();
+                if (fileNode.has("path")) {
+                    ref.setPath(fileNode.get("path").asText());
+                }
+                if (fileNode.has("quote")) {
+                    ref.setQuote(fileNode.get("quote").asText());
+                }
+                if (fileNode.has("lines") && fileNode.get("lines").isObject()) {
+                    JsonNode lines = fileNode.get("lines");
+                    Comment.LineRange range = new Comment.LineRange();
+                    if (lines.has("start")) {
+                        range.setStart(lines.get("start").asInt());
+                    }
+                    if (lines.has("end")) {
+                        range.setEnd(lines.get("end").asInt());
+                    }
+                    ref.setLines(range);
+                }
+                files.add(ref);
+            }
+            evidence.setFiles(files);
+        }
+
+        return evidence;
     }
 
     private CreditEvent.CreditContext parseCreditContext(String details) {

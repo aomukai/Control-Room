@@ -106,7 +106,7 @@ public class Main {
                 new AgentController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
-                new IssueController(issueService, projectContext, creditStore, objectMapper),
+                new IssueController(issueService, projectContext, creditStore, notificationStore, objectMapper),
                 new CreditController(creditStore, objectMapper),
                 memoryController,
                 new PatchController(projectContext, notificationStore, creditStore, objectMapper),

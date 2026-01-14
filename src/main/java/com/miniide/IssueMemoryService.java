@@ -125,19 +125,25 @@ public class IssueMemoryService {
         existing.setTags(normalizeTags(updated.getTags()));
         existing.setPriority(updated.getPriority());
         existing.setStatus(updated.getStatus());
+        existing.setFrozenAt(updated.getFrozenAt());
+        existing.setFrozenUntil(updated.getFrozenUntil());
+        existing.setFrozenReason(updated.getFrozenReason());
         existing.setUpdatedAt(System.currentTimeMillis());
 
         saveAll();
         return existing;
     }
 
-    public Comment addComment(int issueId, String author, String body, Comment.CommentAction action) {
+    public Comment addComment(int issueId, String author, String body, Comment.CommentAction action,
+                              String impactLevel, Comment.CommentEvidence evidence) {
         Issue issue = issues.get(issueId);
         if (issue == null) {
             throw new IllegalArgumentException("Issue not found: #" + issueId);
         }
 
         Comment comment = new Comment(author, body, System.currentTimeMillis(), action);
+        comment.setImpactLevel(impactLevel);
+        comment.setEvidence(evidence);
         issue.addComment(comment);
         log("Comment added to Issue #" + issueId + " by " + author);
         saveAll();
