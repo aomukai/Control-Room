@@ -91,21 +91,22 @@
             this.manifest = manifest;
             this.container = null;
             this.mounted = false;
+            this.isFocused = false; // Cinema mode flag
         }
-    
+
         async mount(container) {
             this.container = container;
             await this.render();
             this.attachEventListeners();
             this.mounted = true;
         }
-    
+
         async unmount() {
             this.detachEventListeners();
             this.container = null;
             this.mounted = false;
         }
-    
+
         async render() {
             // Default implementation - subclasses override
             if (!this.container) return;
@@ -115,16 +116,38 @@
                 </div>
             `;
         }
-    
+
+        // Render enhanced focused version (cinema mode)
+        // Subclasses can override for custom focused views
+        async renderFocused(container) {
+            // Store original state for restoration
+            this._originalContainer = this.container;
+            this.container = container;
+            this.isFocused = true;
+            await this.render();
+            this.attachEventListeners();
+            // Note: container and isFocused remain set for modal lifetime
+            // Call exitFocusMode() when modal closes
+        }
+
+        // Called when focus modal closes to restore widget state
+        exitFocusMode() {
+            if (this._originalContainer) {
+                this.container = this._originalContainer;
+                this._originalContainer = null;
+            }
+            this.isFocused = false;
+        }
+
         async update(newSettings) {
             this.instance.settings = { ...this.instance.settings, ...newSettings };
             await this.render();
             this.saveToDashboard();
         }
-    
+
         attachEventListeners() {}
         detachEventListeners() {}
-    
+
         saveToDashboard() {
             if (window.dashboardState) {
                 window.dashboardState.saveWidget(this.instance);
@@ -141,11 +164,36 @@
     
         async render() {
             if (!this.container) return;
-    
+
             const content = this.instance.settings.content || '';
             const showPreview = this.instance.settings.showPreview || false;
             const lastModified = this.instance.settings.lastModified;
-    
+
+            // Enhanced focused view: side-by-side editor and preview
+            if (this.isFocused) {
+                this.container.innerHTML = `
+                    <div class="widget-quick-notes widget-quick-notes-focused">
+                        <div class="widget-quick-notes-toolbar">
+                            <span class="widget-quick-notes-meta">
+                                ${content.length} chars
+                                ${lastModified ? '· ' + this.formatTimeAgo(lastModified) : ''}
+                            </span>
+                        </div>
+                        <div class="widget-quick-notes-split">
+                            <div class="widget-quick-notes-split-pane">
+                                <div class="widget-quick-notes-pane-label">Edit</div>
+                                <textarea class="widget-quick-notes-textarea" placeholder="Jot down your thoughts...">${escapeHtml(content)}</textarea>
+                            </div>
+                            <div class="widget-quick-notes-split-pane">
+                                <div class="widget-quick-notes-pane-label">Preview</div>
+                                <div class="widget-quick-notes-preview">${this.renderMarkdown(content)}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
             this.container.innerHTML = `
                 <div class="widget-quick-notes">
                     <div class="widget-quick-notes-toolbar">
@@ -167,7 +215,7 @@
     
         attachEventListeners() {
             if (!this.container) return;
-    
+
             const toggleBtn = this.container.querySelector('.widget-quick-notes-toggle');
             if (toggleBtn) {
                 toggleBtn.addEventListener('click', () => {
@@ -176,11 +224,18 @@
                     this.attachEventListeners();
                 });
             }
-    
+
             const textarea = this.container.querySelector('.widget-quick-notes-textarea');
             if (textarea) {
                 textarea.addEventListener('input', (e) => {
                     this.handleContentChange(e.target.value);
+                    // Live preview update in focused mode
+                    if (this.isFocused) {
+                        const preview = this.container.querySelector('.widget-quick-notes-preview');
+                        if (preview) {
+                            preview.innerHTML = this.renderMarkdown(e.target.value);
+                        }
+                    }
                 });
             }
         }
@@ -1059,9 +1114,40 @@
     
         // Wire resize handle
         initWidgetResize(card, resizeHandle, instance);
-    
+
         // Wire drag-and-drop
         initWidgetDragDrop(card, instance);
+
+        // Wire click-to-focus (cinema mode)
+        // Only trigger on click, not on drag or interactive elements
+        let clickStartTime = 0;
+        let clickStartPos = { x: 0, y: 0 };
+
+        content.addEventListener('mousedown', (e) => {
+            // Skip if clicking on interactive elements
+            if (e.target.closest('button, a, input, textarea, select, [contenteditable]')) {
+                return;
+            }
+            clickStartTime = Date.now();
+            clickStartPos = { x: e.clientX, y: e.clientY };
+        });
+
+        content.addEventListener('click', (e) => {
+            // Skip if clicking on interactive elements
+            if (e.target.closest('button, a, input, textarea, select, [contenteditable]')) {
+                return;
+            }
+            // Only trigger if it was a quick click (not a drag attempt)
+            const clickDuration = Date.now() - clickStartTime;
+            const clickDistance = Math.sqrt(
+                Math.pow(e.clientX - clickStartPos.x, 2) +
+                Math.pow(e.clientY - clickStartPos.y, 2)
+            );
+            // Quick click: less than 300ms and moved less than 5px
+            if (clickDuration < 300 && clickDistance < 5) {
+                showWidgetFocusModal(instance.instanceId);
+            }
+        });
     }
     
     function initWidgetResize(card, handle, instance) {
@@ -1350,7 +1436,91 @@
 
         dragState = null;
     }
-    
+
+    // ============================================
+    // WIDGET FOCUS MODE (CINEMA MODE)
+    // ============================================
+
+    function showWidgetFocusModal(instanceId) {
+        const widget = dashboardState.mountedWidgets.get(instanceId);
+        const instance = dashboardState.widgets.find(w => w.instanceId === instanceId);
+        if (!widget || !instance) return;
+
+        const manifest = widgetRegistry.get(instance.widgetId);
+        if (!manifest) return;
+
+        // Check if widget supports focus mode (default: true)
+        if (manifest.focusable === false) return;
+
+        // Create focus modal overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'widget-focus-overlay';
+
+        const focusModal = document.createElement('div');
+        focusModal.className = 'widget-focus-modal';
+
+        // Focus modal header
+        const header = document.createElement('div');
+        header.className = 'widget-focus-header';
+        header.innerHTML = `
+            <div class="widget-focus-title">
+                <span class="widget-icon">${manifest.icon}</span>
+                <span class="widget-name">${manifest.name}</span>
+            </div>
+            <button class="widget-focus-close-btn" type="button" title="Close (Esc)">×</button>
+        `;
+
+        // Focus modal body
+        const body = document.createElement('div');
+        body.className = 'widget-focus-body';
+
+        focusModal.appendChild(header);
+        focusModal.appendChild(body);
+        overlay.appendChild(focusModal);
+        document.body.appendChild(overlay);
+
+        // Render widget in focused mode
+        widget.renderFocused(body);
+
+        // Animate in
+        requestAnimationFrame(() => {
+            overlay.classList.add('widget-focus-visible');
+        });
+
+        // Close function
+        const closeFocusModal = () => {
+            overlay.classList.remove('widget-focus-visible');
+            overlay.classList.add('widget-focus-closing');
+            // Restore widget state and re-render original widget with updated data
+            widget.exitFocusMode();
+            widget.render();
+            widget.attachEventListeners();
+            setTimeout(() => {
+                overlay.remove();
+            }, 300);
+            document.removeEventListener('keydown', handleEscKey);
+        };
+
+        // ESC key handler
+        const handleEscKey = (e) => {
+            if (e.key === 'Escape') {
+                closeFocusModal();
+            }
+        };
+        document.addEventListener('keydown', handleEscKey);
+
+        // Close button
+        const closeBtn = header.querySelector('.widget-focus-close-btn');
+        closeBtn.addEventListener('click', closeFocusModal);
+
+        // Click outside to close
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeFocusModal();
+            }
+        });
+    }
+
     function removeWidgetCard(instanceId) {
         const card = document.querySelector(`[data-instance-id="${instanceId}"]`);
         if (!card) return;
