@@ -53,6 +53,13 @@ public class MemoryService {
         return items.containsKey(memoryId);
     }
 
+    public MemoryItem getMemoryItem(String memoryId) {
+        if (memoryId == null) {
+            return null;
+        }
+        return items.get(memoryId);
+    }
+
     public MemoryItem createMemoryItem(String agentId, String topicKey, Integer defaultLevel, Integer pinnedMinLevel,
                                        List<String> tags) {
         String id = "mem-" + memoryIdCounter.incrementAndGet();

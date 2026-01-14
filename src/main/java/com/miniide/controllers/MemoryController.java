@@ -139,6 +139,18 @@ public class MemoryController implements Controller {
         if (level == null) {
             level = "auto";
         }
+        boolean includeArchived = parseBoolean(ctx.queryParam("includeArchived"));
+        boolean includeExpired = parseBoolean(ctx.queryParam("includeExpired"));
+
+        MemoryItem item = memoryService.getMemoryItem(memoryId);
+        if (item == null) {
+            ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
+            return;
+        }
+        if (isStateExcluded(item, includeArchived, includeExpired)) {
+            ctx.status(404).json(Map.of("error", "Memory item is " + item.getState()));
+            return;
+        }
 
         MemoryService.MemoryResult result = "more".equalsIgnoreCase(level)
             ? memoryService.getMemoryAtNextLevel(memoryId)
@@ -161,6 +173,7 @@ public class MemoryController implements Controller {
         body.put("activeVersionId", result.getItem().getActiveVersionId());
         body.put("defaultLevel", result.getItem().getDefaultLevel());
         body.put("pinnedMinLevel", result.getItem().getPinnedMinLevel());
+        body.put("state", result.getItem().getState());
         body.put("escalated", result.isEscalated());
 
         ctx.json(body);
@@ -498,5 +511,22 @@ public class MemoryController implements Controller {
             }
         });
         return values;
+    }
+
+    private boolean parseBoolean(String raw) {
+        if (raw == null) return false;
+        return "true".equalsIgnoreCase(raw) || "1".equals(raw) || "yes".equalsIgnoreCase(raw);
+    }
+
+    private boolean isStateExcluded(MemoryItem item, boolean includeArchived, boolean includeExpired) {
+        if (item == null) return true;
+        String state = item.getState();
+        if ("expired".equalsIgnoreCase(state)) {
+            return !includeExpired;
+        }
+        if ("archived".equalsIgnoreCase(state)) {
+            return !includeArchived;
+        }
+        return false;
     }
 }

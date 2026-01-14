@@ -7,6 +7,7 @@ import com.miniide.AgentTurnGate;
 import com.miniide.MemoryService;
 import com.miniide.ProjectContext;
 import com.miniide.models.Agent;
+import com.miniide.models.MemoryItem;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.settings.SettingsService;
 import io.javalin.Javalin;
@@ -52,14 +53,23 @@ public class ChatController implements Controller {
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
             String levelParam = json.has("level") ? json.get("level").asText() : null;
+            boolean includeArchived = json.has("includeArchived") && json.get("includeArchived").asBoolean();
+            boolean includeExpired = json.has("includeExpired") && json.get("includeExpired").asBoolean();
             boolean needMore = message != null && message.toUpperCase().contains("NEED_MORE_CONTEXT");
             boolean requestMore = reroll || needMore || "more".equalsIgnoreCase(levelParam);
 
             MemoryService.MemoryResult memoryResult = null;
+            MemoryItem memoryItem = null;
+            boolean memoryExcluded = false;
             if (memoryId != null && !memoryId.isBlank()) {
-                memoryResult = requestMore
-                    ? memoryService.getMemoryAtNextLevel(memoryId)
-                    : memoryService.getMemoryAtAutoLevel(memoryId);
+                memoryItem = memoryService.getMemoryItem(memoryId);
+                if (memoryItem != null && isStateExcluded(memoryItem, includeArchived, includeExpired)) {
+                    memoryExcluded = true;
+                } else {
+                    memoryResult = requestMore
+                        ? memoryService.getMemoryAtNextLevel(memoryId)
+                        : memoryService.getMemoryAtAutoLevel(memoryId);
+                }
             }
 
             if (agentId != null && !agentId.isBlank()) {
@@ -99,20 +109,21 @@ public class ChatController implements Controller {
                 final var agentEndpoint = endpoint;
                 final String prompt = message;
                 String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, prompt));
-                ctx.json(buildResponse(response, memoryResult, memoryId, requestMore));
+                ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
                 return;
             }
 
             String response = generateStubResponse(message);
 
-            ctx.json(buildResponse(response, memoryResult, memoryId, requestMore));
+            ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }
     }
 
     private Map<String, Object> buildResponse(String content, MemoryService.MemoryResult memoryResult,
-                                              String memoryId, boolean requestMore) {
+                                              String memoryId, boolean requestMore,
+                                              MemoryItem memoryItem, boolean memoryExcluded) {
         Map<String, Object> body = new HashMap<>();
         String enrichedContent = content;
 
@@ -128,6 +139,13 @@ public class ChatController implements Controller {
             body.put("escalated", memoryResult.isEscalated());
         } else if (requestMore) {
             body.put("escalated", true);
+        }
+
+        if (memoryItem != null) {
+            body.put("memoryState", memoryItem.getState());
+        }
+        if (memoryExcluded) {
+            body.put("memoryExcluded", true);
         }
 
         body.put("role", "assistant");
@@ -195,5 +213,17 @@ public class ChatController implements Controller {
         return "That's an interesting thought! As your writing assistant, I'm here to help develop your story. " +
                "I can see you're working on a noir-style narrative set in Neo-Seattle. " +
                "Would you like me to help with character development, plot structure, or scene descriptions?";
+    }
+
+    private boolean isStateExcluded(MemoryItem item, boolean includeArchived, boolean includeExpired) {
+        if (item == null) return true;
+        String state = item.getState();
+        if ("expired".equalsIgnoreCase(state)) {
+            return !includeExpired;
+        }
+        if ("archived".equalsIgnoreCase(state)) {
+            return !includeArchived;
+        }
+        return false;
     }
 }

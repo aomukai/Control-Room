@@ -470,8 +470,12 @@
                 body: JSON.stringify(payload)
             });
         },
-        async get(id, level = 'auto') {
-            return api(`/api/memory/${encodeURIComponent(id)}?level=${encodeURIComponent(level)}`);
+        async get(id, level = 'auto', opts = {}) {
+            const params = new URLSearchParams();
+            params.set('level', level || 'auto');
+            if (opts.includeArchived) params.set('includeArchived', 'true');
+            if (opts.includeExpired) params.set('includeExpired', 'true');
+            return api(`/api/memory/${encodeURIComponent(id)}?${params.toString()}`);
         },
         async getVersions(id) {
             return api(`/api/memory/${encodeURIComponent(id)}/versions`);
