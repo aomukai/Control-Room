@@ -2191,6 +2191,10 @@
                             <span class="nav-icon"><img src="assets/icons/heroicons_outline/key.svg" alt=""></span>
                             Keys & Security
                         </div>
+                        <div class="settings-nav-item" data-section="prompts">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/document-plus.svg" alt=""></span>
+                            Prompt Tools
+                        </div>
                         <div class="settings-nav-item" data-section="backup">
                             <span class="nav-icon"><img src="assets/icons/heroicons_outline/cloud.svg" alt=""></span>
                             Backup
@@ -2476,6 +2480,109 @@
                             </div>
                         </section>
 
+                        <!-- Prompt Tools Section -->
+                        <section class="settings-section" id="settings-prompts">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/document-plus.svg" alt="">
+                                    Prompt Tools
+                                </h3>
+                                <p>Define prompt tools that are injected into every agent call.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Tool Editor</div>
+                                <div class="settings-card">
+                                    <div class="prompt-tools-grid">
+                                        <div class="prompt-tools-field">
+                                            <label for="prompt-tool-select" class="prompt-tools-label" title="Select an existing prompt tool to edit.">
+                                                <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="">
+                                                <span>Tool</span>
+                                            </label>
+                                            <select id="prompt-tool-select" class="settings-control settings-control-wide"></select>
+                                        </div>
+                                        <div class="prompt-tools-field prompt-tools-actions">
+                                            <label class="prompt-tools-label" title="Create or remove a prompt tool.">
+                                                <img src="assets/icons/heroicons_outline/arrow-path.svg" alt="">
+                                                <span>Actions</span>
+                                            </label>
+                                            <div class="settings-actions">
+                                                <button id="prompt-tool-new" type="button">New</button>
+                                                <button id="prompt-tool-delete" type="button">Delete</button>
+                                            </div>
+                                        </div>
+                                        <div class="prompt-tools-field">
+                                            <label for="prompt-tool-name" class="prompt-tools-label" title="Human-friendly name shown in the tool catalog.">
+                                                <img src="assets/icons/heroicons_outline/document-plus.svg" alt="">
+                                                <span>Prompt name</span>
+                                            </label>
+                                            <input id="prompt-tool-name" type="text" class="settings-control settings-control-wide" placeholder="Beat Architect">
+                                        </div>
+                                        <div class="prompt-tools-field">
+                                            <label for="prompt-tool-archetype" class="prompt-tools-label" title="Optional guidance for smaller models. Not a hard restriction.">
+                                                <img src="assets/icons/heroicons_outline/queue-list.svg" alt="">
+                                                <span>Archetype</span>
+                                            </label>
+                                            <select id="prompt-tool-archetype" class="settings-control settings-control-wide">
+                                                <option value="">Any</option>
+                                                <option value="assistant">Assistant</option>
+                                                <option value="planner">Planner</option>
+                                                <option value="writer">Writer</option>
+                                                <option value="editor">Editor</option>
+                                                <option value="critic">Critic</option>
+                                                <option value="continuity">Continuity</option>
+                                            </select>
+                                        </div>
+                                        <div class="prompt-tools-field">
+                                            <label for="prompt-tool-scope" class="prompt-tools-label" title="Suggested scope for using the tool.">
+                                                <img src="assets/icons/heroicons_outline/arrows-right-left.svg" alt="">
+                                                <span>Scope</span>
+                                            </label>
+                                            <select id="prompt-tool-scope" class="settings-control settings-control-wide">
+                                                <option value="">Any</option>
+                                                <option value="selection">Selection</option>
+                                                <option value="file">File</option>
+                                                <option value="project">Project</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="prompt-tools-field">
+                                        <label for="prompt-tool-usage" class="prompt-tools-label" title="When should the model reach for this tool?">
+                                            <img src="assets/icons/heroicons_outline/magnifying-glass.svg" alt="">
+                                            <span>Usage notes</span>
+                                        </label>
+                                        <textarea id="prompt-tool-usage" rows="2" class="settings-control settings-control-wide" placeholder="When should this tool be used?"></textarea>
+                                    </div>
+                                    <div class="prompt-tools-field">
+                                        <label for="prompt-tool-goals" class="prompt-tools-label" title="What is this prompt trying to accomplish?">
+                                            <img src="assets/icons/heroicons_outline/archive-box-arrow-down.svg" alt="">
+                                            <span>Goals & scope</span>
+                                        </label>
+                                        <textarea id="prompt-tool-goals" rows="2" class="settings-control settings-control-wide" placeholder="What is this prompt for?"></textarea>
+                                    </div>
+                                    <div class="prompt-tools-field">
+                                        <label for="prompt-tool-guardrails" class="prompt-tools-label" title="Limits, must-not-do rules, or safety constraints.">
+                                            <img src="assets/icons/heroicons_outline/key.svg" alt="">
+                                            <span>Guardrails</span>
+                                        </label>
+                                        <textarea id="prompt-tool-guardrails" rows="2" class="settings-control settings-control-wide" placeholder="Limitations or must-not-do rules."></textarea>
+                                    </div>
+                                    <div class="prompt-tools-field">
+                                        <label for="prompt-tool-prompt" class="prompt-tools-label" title="Full prompt text injected into the tool catalog.">
+                                            <img src="assets/icons/heroicons_outline/pencil-square.svg" alt="">
+                                            <span>Prompt</span>
+                                        </label>
+                                        <textarea id="prompt-tool-prompt" rows="8" class="settings-control settings-control-wide" placeholder="Full prompt text..."></textarea>
+                                    </div>
+                                    <div class="settings-actions">
+                                        <button id="prompt-tool-save" type="button" class="primary">Save</button>
+                                        <button id="prompt-tool-cancel" type="button">Cancel</button>
+                                    </div>
+                                    <div id="prompt-tool-status" class="settings-feedback" aria-live="polite"></div>
+                                </div>
+                            </div>
+                        </section>
+
                         <!-- Backup Section -->
                         <section class="settings-section" id="settings-backup">
                             <div class="settings-section-header">
@@ -2719,6 +2826,7 @@
         });
 
         initSettingsWiring();
+        initPromptToolsControls();
         initTtsSettingsWiring();
     }
 
@@ -6135,6 +6243,169 @@
         renderAssistedList();
     }
 
+    function initPromptToolsControls() {
+        const select = document.getElementById('prompt-tool-select');
+        if (!select || !window.promptToolsApi) return;
+
+        const fields = {
+            name: document.getElementById('prompt-tool-name'),
+            archetype: document.getElementById('prompt-tool-archetype'),
+            scope: document.getElementById('prompt-tool-scope'),
+            usage: document.getElementById('prompt-tool-usage'),
+            goals: document.getElementById('prompt-tool-goals'),
+            guardrails: document.getElementById('prompt-tool-guardrails'),
+            prompt: document.getElementById('prompt-tool-prompt')
+        };
+        const statusEl = document.getElementById('prompt-tool-status');
+        const newBtn = document.getElementById('prompt-tool-new');
+        const deleteBtn = document.getElementById('prompt-tool-delete');
+        const saveBtn = document.getElementById('prompt-tool-save');
+        const cancelBtn = document.getElementById('prompt-tool-cancel');
+
+        let promptList = [];
+        let currentId = null;
+
+        const setStatus = (text, level = 'info') => {
+            if (!statusEl) return;
+            statusEl.textContent = text || '';
+            statusEl.dataset.level = level;
+        };
+
+        const clearForm = () => {
+            if (fields.name) fields.name.value = '';
+            if (fields.archetype) fields.archetype.value = '';
+            if (fields.scope) fields.scope.value = '';
+            if (fields.usage) fields.usage.value = '';
+            if (fields.goals) fields.goals.value = '';
+            if (fields.guardrails) fields.guardrails.value = '';
+            if (fields.prompt) fields.prompt.value = '';
+        };
+
+        const loadForm = (prompt) => {
+            if (!prompt) {
+                clearForm();
+                return;
+            }
+            if (fields.name) fields.name.value = prompt.name || '';
+            if (fields.archetype) fields.archetype.value = prompt.archetype || '';
+            if (fields.scope) fields.scope.value = prompt.scope || '';
+            if (fields.usage) fields.usage.value = prompt.usageNotes || '';
+            if (fields.goals) fields.goals.value = prompt.goals || '';
+            if (fields.guardrails) fields.guardrails.value = prompt.guardrails || '';
+            if (fields.prompt) fields.prompt.value = prompt.prompt || '';
+        };
+
+        const buildPayload = () => ({
+            id: currentId,
+            name: fields.name ? fields.name.value.trim() : '',
+            archetype: fields.archetype ? fields.archetype.value : '',
+            scope: fields.scope ? fields.scope.value : '',
+            usageNotes: fields.usage ? fields.usage.value.trim() : '',
+            goals: fields.goals ? fields.goals.value.trim() : '',
+            guardrails: fields.guardrails ? fields.guardrails.value.trim() : '',
+            prompt: fields.prompt ? fields.prompt.value.trim() : ''
+        });
+
+        const renderSelect = () => {
+            select.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = promptList.length ? 'Select a prompt' : 'No prompts yet';
+            select.appendChild(placeholder);
+            promptList.forEach(prompt => {
+                const option = document.createElement('option');
+                option.value = prompt.id;
+                option.textContent = prompt.name || prompt.id;
+                select.appendChild(option);
+            });
+        };
+
+        const loadPrompts = async (selectId) => {
+            try {
+                promptList = await promptToolsApi.list();
+            } catch (err) {
+                promptList = [];
+                setStatus(`Failed to load prompts: ${err.message}`, 'error');
+            }
+            renderSelect();
+            if (selectId) {
+                select.value = selectId;
+            }
+            const active = promptList.find(item => item.id === select.value);
+            currentId = active ? active.id : null;
+            loadForm(active);
+        };
+
+        select.addEventListener('change', () => {
+            const selected = promptList.find(item => item.id === select.value);
+            currentId = selected ? selected.id : null;
+            loadForm(selected);
+            setStatus('');
+        });
+
+        if (newBtn) {
+            newBtn.addEventListener('click', () => {
+                currentId = null;
+                select.value = '';
+                clearForm();
+                setStatus('New prompt ready.', 'info');
+            });
+        }
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                const current = promptList.find(item => item.id === currentId);
+                loadForm(current);
+                setStatus('Changes reverted.', 'info');
+            });
+        }
+
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async () => {
+                if (!currentId) {
+                    setStatus('Select a prompt to delete.', 'warning');
+                    return;
+                }
+                if (!confirm('Delete this prompt?')) {
+                    return;
+                }
+                try {
+                    await promptToolsApi.delete(currentId);
+                    setStatus('Prompt deleted.', 'success');
+                    await loadPrompts();
+                } catch (err) {
+                    setStatus(`Delete failed: ${err.message}`, 'error');
+                }
+            });
+        }
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                const payload = buildPayload();
+                if (!payload.name) {
+                    setStatus('Prompt name is required.', 'warning');
+                    return;
+                }
+                if (!payload.prompt) {
+                    setStatus('Prompt text is required.', 'warning');
+                    return;
+                }
+                try {
+                    const saved = currentId
+                        ? await promptToolsApi.update(currentId, payload)
+                        : await promptToolsApi.create(payload);
+                    currentId = saved.id;
+                    setStatus('Prompt saved.', 'success');
+                    await loadPrompts(saved.id);
+                } catch (err) {
+                    setStatus(`Save failed: ${err.message}`, 'error');
+                }
+            });
+        }
+
+        void loadPrompts();
+    }
+
     window.dispatchNotificationAction = dispatchNotificationAction;
     window.isWorkbenchView = isWorkbenchView;
     window.showIssueCreateModal = showIssueCreateModal;
@@ -6148,6 +6419,7 @@
     window.initSidebarButtons = initSidebarButtons;
     window.initEventListeners = initEventListeners;
     window.initMemoryModeratorControls = initMemoryModeratorControls;
+    window.initPromptToolsControls = initPromptToolsControls;
     window.initNotifications = initNotifications;
     window.setViewMode = setViewMode;
     window.addChatMessage = addChatMessage;

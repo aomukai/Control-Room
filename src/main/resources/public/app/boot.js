@@ -20,6 +20,7 @@
         window.initSidebarButtons();
         window.initEventListeners();
         window.initMemoryModeratorControls();
+        window.initPromptToolsControls();
         window.initNotifications();
         window.initWorkbenchNewsfeedSubscription(); // Newsfeed updates
         window.loadFileTree();

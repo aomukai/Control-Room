@@ -448,6 +448,64 @@
                             <div class="settings-feedback" id="decay-status" aria-live="polite"></div>
                             <div class="decay-report" id="decay-report" aria-live="polite"></div>
                         </div>
+                        <div class="settings-section">
+                            <h2>Prompt Tools</h2>
+                            <p class="settings-hint">Define prompt tools that can be injected into every agent call.</p>
+                            <div class="settings-row">
+                                <label for="prompt-tool-select">Tool</label>
+                                <select id="prompt-tool-select" class="modal-select"></select>
+                                <div class="settings-actions">
+                                    <button id="prompt-tool-new" type="button">New</button>
+                                    <button id="prompt-tool-delete" type="button">Delete</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-name">Prompt name</label>
+                                <input id="prompt-tool-name" type="text" placeholder="Beat Architect">
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-archetype">Archetype</label>
+                                <select id="prompt-tool-archetype" class="modal-select">
+                                    <option value="">Any</option>
+                                    <option value="assistant">Assistant</option>
+                                    <option value="planner">Planner</option>
+                                    <option value="writer">Writer</option>
+                                    <option value="editor">Editor</option>
+                                    <option value="critic">Critic</option>
+                                    <option value="continuity">Continuity</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-scope">Scope</label>
+                                <select id="prompt-tool-scope" class="modal-select">
+                                    <option value="">Any</option>
+                                    <option value="selection">Selection</option>
+                                    <option value="file">File</option>
+                                    <option value="project">Project</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-usage">Usage notes</label>
+                                <textarea id="prompt-tool-usage" rows="2" placeholder="When should this tool be used?"></textarea>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-goals">Goals & scope</label>
+                                <textarea id="prompt-tool-goals" rows="2" placeholder="What is this prompt for?"></textarea>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-guardrails">Guardrails</label>
+                                <textarea id="prompt-tool-guardrails" rows="2" placeholder="Limitations or must-not-do rules."></textarea>
+                            </div>
+                            <div class="settings-row">
+                                <label for="prompt-tool-prompt">Prompt</label>
+                                <textarea id="prompt-tool-prompt" rows="8" placeholder="Full prompt text..."></textarea>
+                            </div>
+                            <div class="settings-actions">
+                                <button id="prompt-tool-save" type="button" class="primary">Save</button>
+                                <button id="prompt-tool-cancel" type="button">Cancel</button>
+                            </div>
+                            <div id="prompt-tool-status" class="settings-feedback" aria-live="polite"></div>
+                        </div>
                     </div>
                 </div>
                 <!-- End Settings View -->

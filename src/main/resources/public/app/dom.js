@@ -68,7 +68,20 @@
         workspaceName: document.getElementById('workspace-name'),
         workspaceDesc: document.getElementById('workspace-desc'),
         btnPatchReview: document.getElementById('btn-patch-review'),
-        btnDevTools: document.getElementById('btn-dev-tools')
+        btnDevTools: document.getElementById('btn-dev-tools'),
+        promptToolSelect: document.getElementById('prompt-tool-select'),
+        promptToolNew: document.getElementById('prompt-tool-new'),
+        promptToolDelete: document.getElementById('prompt-tool-delete'),
+        promptToolName: document.getElementById('prompt-tool-name'),
+        promptToolArchetype: document.getElementById('prompt-tool-archetype'),
+        promptToolScope: document.getElementById('prompt-tool-scope'),
+        promptToolUsage: document.getElementById('prompt-tool-usage'),
+        promptToolGoals: document.getElementById('prompt-tool-goals'),
+        promptToolGuardrails: document.getElementById('prompt-tool-guardrails'),
+        promptToolPrompt: document.getElementById('prompt-tool-prompt'),
+        promptToolSave: document.getElementById('prompt-tool-save'),
+        promptToolCancel: document.getElementById('prompt-tool-cancel'),
+        promptToolStatus: document.getElementById('prompt-tool-status')
     };
 
     window.elements = elements;

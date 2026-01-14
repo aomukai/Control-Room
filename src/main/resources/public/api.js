@@ -265,6 +265,33 @@
         }
     };
 
+    // Prompt Tools API
+    const promptToolsApi = {
+        async list() {
+            return api('/api/prompts', { cache: 'no-store' });
+        },
+        async get(id) {
+            return api(`/api/prompts/${encodeURIComponent(id)}`);
+        },
+        async create(payload) {
+            return api('/api/prompts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async update(id, payload) {
+            return api(`/api/prompts/${encodeURIComponent(id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async delete(id) {
+            return api(`/api/prompts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        }
+    };
+
     // Workspace API
     const workspaceApi = {
         async info() {
@@ -567,6 +594,7 @@
     window.settingsApi = settingsApi;
     window.providerApi = providerApi;
     window.roleSettingsApi = roleSettingsApi;
+    window.promptToolsApi = promptToolsApi;
     window.workspaceApi = workspaceApi;
     window.patchApi = patchApi;
     window.fileApi = fileApi;

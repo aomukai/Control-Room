@@ -107,8 +107,15 @@ public class ChatController implements Controller {
                 final String providerName = provider;
                 final String keyRef = apiKey;
                 final var agentEndpoint = endpoint;
-                final String prompt = message;
-                String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, prompt));
+                String prompt = message;
+                String toolCatalog = projectContext.promptTools() != null
+                    ? projectContext.promptTools().buildCatalogPrompt()
+                    : "";
+                if (toolCatalog != null && !toolCatalog.isBlank()) {
+                    prompt = toolCatalog + "\n\n" + (prompt != null ? prompt : "");
+                }
+                final String finalPrompt = prompt;
+                String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
                 ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
                 return;
             }

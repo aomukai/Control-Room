@@ -104,6 +104,7 @@ public class Main {
                 new FileController(projectContext, objectMapper),
                 new WorkspaceController(projectContext, creditStore, objectMapper, config.isDevMode()),
                 new AgentController(projectContext, objectMapper),
+                new PromptController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, projectContext, creditStore, notificationStore, objectMapper),
