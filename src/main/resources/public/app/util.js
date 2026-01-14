@@ -76,7 +76,6 @@
     }
 
     const STOP_HOOK_TYPES = [
-        'question',
         'conflict',
         'uncertainty',
         'scope-exceeded',
@@ -88,9 +87,11 @@
     function buildStopHookPreamble(agent) {
         if (!agent) return '';
         const lines = [
-            'System: Stop hooks are mandatory.',
-            'If you hit a stop condition, respond with "STOP_HOOK: <type>" as the first line, then a short reason.',
-            `Stop hook types: ${STOP_HOOK_TYPES.join(', ')}.`
+            'System: Stop hooks are mandatory ONLY when you cannot proceed.',
+            'If you cannot proceed, respond with "STOP_HOOK: <type>" as the first line, then a short reason.',
+            `Stop hook types: ${STOP_HOOK_TYPES.join(', ')}.`,
+            'If you can answer the user, answer normally and do NOT emit STOP_HOOK.',
+            'Do not mention STOP_HOOKs or internal control flow in normal answers.'
         ];
 
         const canonicalizeRole = window.canonicalizeRole;
