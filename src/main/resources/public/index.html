@@ -318,6 +318,19 @@
                         <span id="chat-memory-badge" class="chat-badge hidden" title="Current memory level">R3</span>
                         <button id="chat-escalate" type="button" class="chat-escalate-btn" title="Fetch more evidence">More evidence</button>
                     </div>
+                    <div class="ai-foundation-bar">
+                        <div class="ai-foundation-title">AI Tools</div>
+                        <div class="ai-foundation-controls">
+                            <select id="ai-foundation-scope" class="ai-foundation-scope" aria-label="AI tool scope">
+                                <option value="auto">Auto scope</option>
+                                <option value="selection">Selection only</option>
+                                <option value="file">Whole file</option>
+                            </select>
+                            <button id="btn-ai-summarize" type="button" class="ai-foundation-btn" title="Summarize selection or file">Summarize</button>
+                            <button id="btn-ai-explain" type="button" class="ai-foundation-btn" title="Explain selection or file">Explain</button>
+                            <button id="btn-ai-suggest" type="button" class="ai-foundation-btn" title="Suggest improvements (read-only)">Suggest</button>
+                        </div>
+                    </div>
                     <div id="chat-history"></div>
                     <div class="chat-input-container">
                         <textarea id="chat-input" placeholder="Ask the AI assistant..."></textarea>

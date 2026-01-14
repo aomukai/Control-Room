@@ -3931,6 +3931,528 @@
         }
     }
 
+    // ============================================
+    // AI FOUNDATION (READ-ONLY)
+    // ============================================
+
+    const AI_FOUNDATION_TOOLS = {
+        summarize: {
+            label: 'Summarize',
+            schema: '{"tool":"summarize","summary":"...","bullets":["..."],"keywords":["..."]}',
+            rules: [
+                'summary: 2-4 sentences, plain text.',
+                'bullets: 3-6 short bullets, no markdown.',
+                'keywords: 4-8 short phrases.',
+                'No external facts; use only the input.'
+            ]
+        },
+        explain: {
+            label: 'Explain',
+            schema: '{"tool":"explain","explanation":"...","key_points":["..."],"style_notes":["..."]}',
+            rules: [
+                'explanation: 2-4 sentences describing what this document is and what it means (not a summary).',
+                'Include the document type if you can infer it (e.g., character profile, scene, outline, notes).',
+                'Mention any explicit labels or roles stated in the text (e.g., "POV character").',
+                'key_points: 3-6 short bullets capturing the document purpose, audience, or intent.',
+                'style_notes: 0-3 short bullets about the text form/structure only (optional).',
+                'No external facts; use only the input.'
+            ]
+        },
+        suggest: {
+            label: 'Suggest',
+            schema: '{"tool":"suggest","suggestions":[{"title":"...","detail":"...","impact":"low|medium|high"}],"notes":"..."}',
+            rules: [
+                'First, infer what kind of text this is, then suggest improvements appropriate to that type.',
+                'suggestions: 3-5 items.',
+                'detail: 1-2 sentences each, plain text. Be specific to the content.',
+                'impact: low | medium | high.',
+                'notes: optional single sentence about overall fit/coverage.'
+            ]
+        }
+    };
+    const AI_FOUNDATION_MAX_CHARS = null;
+
+    function normalizeToolArray(values) {
+        if (!Array.isArray(values)) return [];
+        return values.map(item => String(item || '').trim()).filter(Boolean);
+    }
+
+    function extractJsonObject(text) {
+        if (!text) return null;
+        const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        try {
+            const parsed = JSON.parse(match[0].trim());
+            if (typeof parsed === 'string' && parsed.trim().startsWith('{')) {
+                return JSON.parse(parsed);
+            }
+            return parsed;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function normalizeToolPayload(toolId, payload) {
+        const safe = (payload && typeof payload === 'object') ? payload : {};
+        if (toolId === 'summarize') {
+            return {
+                tool: 'summarize',
+                summary: String(safe.summary || '').trim(),
+                bullets: normalizeToolArray(safe.bullets),
+                keywords: normalizeToolArray(safe.keywords)
+            };
+        }
+        if (toolId === 'explain') {
+            return {
+                tool: 'explain',
+                explanation: String(safe.explanation || '').trim(),
+                key_points: normalizeToolArray(safe.key_points || safe.keyPoints),
+                style_notes: normalizeToolArray(safe.style_notes || safe.styleNotes)
+            };
+        }
+        return {
+            tool: 'suggest',
+            suggestions: Array.isArray(safe.suggestions)
+                ? safe.suggestions
+                    .map(item => ({
+                        title: String(item?.title || '').trim(),
+                        detail: String(item?.detail || '').trim(),
+                        impact: String(item?.impact || '').trim().toLowerCase()
+                    }))
+                    .map(item => ({
+                        ...item,
+                        impact: ['low', 'medium', 'high'].includes(item.impact) ? item.impact : 'medium'
+                    }))
+                    .filter(item => item.title || item.detail)
+                : [],
+            notes: String(safe.notes || '').trim()
+        };
+    }
+
+    function trimToLimit(text, maxChars) {
+        if (!text) return { text: '', truncated: false };
+        if (!maxChars) return { text, truncated: false };
+        if (text.length <= maxChars) return { text, truncated: false };
+        return { text: text.slice(0, maxChars).trimEnd(), truncated: true };
+    }
+
+    function resolveFoundationScope() {
+        if (!elements.aiFoundationScope) return 'auto';
+        const value = elements.aiFoundationScope.value || 'auto';
+        if (value === 'selection' || value === 'file' || value === 'auto') return value;
+        return 'auto';
+    }
+
+    function getEditorInputForScope(scope) {
+        if (!state.editor) {
+            return { error: 'Open a file first to use AI tools.' };
+        }
+        const model = state.editor.getModel();
+        if (!model) {
+            return { error: 'No editor model is available.' };
+        }
+
+        const selection = state.editor.getSelection();
+        const selectionText = selection && !selection.isEmpty()
+            ? model.getValueInRange(selection)
+            : '';
+
+        const useSelection = scope === 'selection' || (scope === 'auto' && selectionText.trim());
+        if (useSelection) {
+            if (!selectionText.trim()) {
+                return { error: 'Select some text first, or switch scope to Whole file.' };
+            }
+            const trimmed = trimToLimit(selectionText.trim(), AI_FOUNDATION_MAX_CHARS);
+            return {
+                text: trimmed.text,
+                truncated: trimmed.truncated,
+                scopeLabel: 'Selection',
+                charCount: trimmed.text.length
+            };
+        }
+
+        const fileText = model.getValue();
+        if (!fileText || !fileText.trim()) {
+            return { error: 'The current file is empty.' };
+        }
+        const trimmed = trimToLimit(fileText.trim(), AI_FOUNDATION_MAX_CHARS);
+        const fileLabel = state.activeFile ? `File: ${state.activeFile}` : 'File';
+        return {
+            text: trimmed.text,
+            truncated: trimmed.truncated,
+            scopeLabel: fileLabel,
+            charCount: trimmed.text.length
+        };
+    }
+
+    function buildFoundationPrompt(toolId, input, attempt) {
+        const tool = AI_FOUNDATION_TOOLS[toolId];
+        const base = [
+            'Return ONLY valid JSON. No markdown, no preface, no code fences.',
+            'Use double quotes for all keys and string values.',
+            'Do not include STOP_HOOK or any extra text.',
+            `Schema: ${tool.schema}`,
+            ...tool.rules
+        ];
+        if (attempt > 1) {
+            base.unshift('Retry: respond with JSON only. If uncertain, return empty strings/arrays but keep schema.');
+        }
+        base.push('', 'Text:', input.text);
+        return base.join('\n');
+    }
+
+    function setFoundationButtonsEnabled(enabled) {
+        if (elements.btnAiSummarize) elements.btnAiSummarize.disabled = !enabled;
+        if (elements.btnAiExplain) elements.btnAiExplain.disabled = !enabled;
+        if (elements.btnAiSuggest) elements.btnAiSuggest.disabled = !enabled;
+        if (elements.aiFoundationScope) elements.aiFoundationScope.disabled = !enabled;
+    }
+
+    async function copyToClipboard(text) {
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+    }
+
+    function renderFoundationOutput(toolId, data) {
+        const output = document.createElement('div');
+        output.className = 'ai-foundation-output';
+
+        if (toolId === 'summarize') {
+            const heading = document.createElement('h3');
+            heading.textContent = 'Summary';
+            output.appendChild(heading);
+
+            const summary = document.createElement('div');
+            summary.textContent = data.summary || 'No summary returned.';
+            output.appendChild(summary);
+
+            if (data.bullets.length) {
+                const bulletsHeading = document.createElement('h3');
+                bulletsHeading.textContent = 'Bullets';
+                output.appendChild(bulletsHeading);
+                const bullets = document.createElement('div');
+                bullets.className = 'ai-foundation-list';
+                data.bullets.forEach(item => {
+                    const row = document.createElement('div');
+                    row.textContent = `- ${item}`;
+                    bullets.appendChild(row);
+                });
+                output.appendChild(bullets);
+            }
+
+            if (data.keywords.length) {
+                const keywordsHeading = document.createElement('h3');
+                keywordsHeading.textContent = 'Keywords';
+                output.appendChild(keywordsHeading);
+                const keywords = document.createElement('div');
+                keywords.textContent = `Keywords: ${data.keywords.join(', ')}`;
+                output.appendChild(keywords);
+            }
+            return output;
+        }
+
+        if (toolId === 'explain') {
+            const heading = document.createElement('h3');
+            heading.textContent = 'Explanation';
+            output.appendChild(heading);
+
+            const explanation = document.createElement('div');
+            explanation.textContent = data.explanation || 'No explanation returned.';
+            output.appendChild(explanation);
+
+            if (data.key_points.length) {
+                const pointsHeading = document.createElement('h3');
+                pointsHeading.textContent = 'Key points';
+                output.appendChild(pointsHeading);
+                const points = document.createElement('div');
+                points.className = 'ai-foundation-list';
+                data.key_points.forEach(item => {
+                    const row = document.createElement('div');
+                    row.textContent = `- ${item}`;
+                    points.appendChild(row);
+                });
+                output.appendChild(points);
+            }
+
+            if (data.style_notes.length) {
+                const notesHeading = document.createElement('h3');
+                notesHeading.textContent = 'Style notes';
+                output.appendChild(notesHeading);
+                const notes = document.createElement('div');
+                notes.className = 'ai-foundation-list';
+                data.style_notes.forEach(item => {
+                    const row = document.createElement('div');
+                    row.textContent = `- ${item}`;
+                    notes.appendChild(row);
+                });
+                output.appendChild(notes);
+            }
+            return output;
+        }
+
+        const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+        if (suggestions.length) {
+            const listHeading = document.createElement('h3');
+            listHeading.textContent = 'Suggestions';
+            output.appendChild(listHeading);
+            const list = document.createElement('div');
+            list.className = 'ai-foundation-list';
+            suggestions.forEach(item => {
+                const row = document.createElement('div');
+                const title = item.title ? `${item.title} (${item.impact || 'medium'})` : `Suggestion (${item.impact || 'medium'})`;
+                row.textContent = `${title}: ${item.detail || ''}`.trim();
+                list.appendChild(row);
+            });
+            output.appendChild(list);
+        } else {
+            const empty = document.createElement('div');
+            empty.textContent = 'No suggestions returned.';
+            output.appendChild(empty);
+        }
+
+        if (data.notes) {
+            const notesHeading = document.createElement('h3');
+            notesHeading.textContent = 'Notes';
+            output.appendChild(notesHeading);
+            const notes = document.createElement('div');
+            notes.textContent = `Notes: ${data.notes}`;
+            output.appendChild(notes);
+        }
+
+        return output;
+    }
+
+    function formatFoundationTextForCopy(toolId, data) {
+        if (!data || typeof data !== 'object') return '';
+        const lines = [];
+        if (toolId === 'summarize') {
+            if (data.summary) {
+                lines.push(data.summary);
+            }
+            if (data.bullets && data.bullets.length) {
+                lines.push('');
+                lines.push('Bullets:');
+                data.bullets.forEach(item => lines.push(`- ${item}`));
+            }
+            if (data.keywords && data.keywords.length) {
+                lines.push('');
+                lines.push(`Keywords: ${data.keywords.join(', ')}`);
+            }
+            return lines.join('\n').trim();
+        }
+
+        if (toolId === 'explain') {
+            if (data.explanation) {
+                lines.push(data.explanation);
+            }
+            if (data.key_points && data.key_points.length) {
+                lines.push('');
+                lines.push('Key points:');
+                data.key_points.forEach(item => lines.push(`- ${item}`));
+            }
+            if (data.style_notes && data.style_notes.length) {
+                lines.push('');
+                lines.push('Style notes:');
+                data.style_notes.forEach(item => lines.push(`- ${item}`));
+            }
+            return lines.join('\n').trim();
+        }
+
+        const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+        if (suggestions.length) {
+            lines.push('Suggestions:');
+            suggestions.forEach(item => {
+                const impact = item.impact ? ` (${item.impact})` : '';
+                const title = item.title ? `${item.title}${impact}` : `Suggestion${impact}`;
+                lines.push(`- ${title}: ${item.detail || ''}`.trim());
+            });
+        }
+        if (data.notes) {
+            lines.push('');
+            lines.push(`Notes: ${data.notes}`);
+        }
+        return lines.join('\n').trim();
+    }
+
+    function showFoundationResultModal(toolId, data, meta) {
+        const tool = AI_FOUNDATION_TOOLS[toolId];
+        const title = tool ? `${tool.label} Result` : 'AI Tool Result';
+        const { modal, body, confirmBtn } = createModalShell(
+            title,
+            'Copy Result',
+            'Close',
+            { closeOnCancel: true, closeOnConfirm: false }
+        );
+
+        modal.classList.add('ai-foundation-modal');
+        confirmBtn.addEventListener('click', async () => {
+            try {
+                await copyToClipboard(formatFoundationTextForCopy(toolId, data));
+                notificationStore.success('Copied result to clipboard.', 'editor');
+            } catch (err) {
+                notificationStore.error(`Copy failed: ${err.message}`, 'editor');
+            }
+        });
+        const container = document.createElement('div');
+        container.className = 'ai-foundation-result';
+
+        const metaLine = document.createElement('div');
+        metaLine.className = 'ai-foundation-meta';
+        metaLine.textContent = `${meta.scopeLabel} - ${meta.charCount} chars`;
+        container.appendChild(metaLine);
+
+        const output = renderFoundationOutput(toolId, data);
+        container.appendChild(output);
+
+        body.appendChild(container);
+    }
+
+    function showFoundationErrorModal(toolId, meta, rawText, errorMessage) {
+        const tool = AI_FOUNDATION_TOOLS[toolId];
+        const title = tool ? `${tool.label} Error` : 'AI Tool Error';
+        const { modal, body, confirmBtn } = createModalShell(
+            title,
+            'Copy Raw',
+            'Close',
+            { closeOnCancel: true, closeOnConfirm: false }
+        );
+        modal.classList.add('ai-foundation-modal');
+
+        confirmBtn.addEventListener('click', async () => {
+            try {
+                await copyToClipboard(rawText || '');
+                notificationStore.success('Copied raw response to clipboard.', 'editor');
+            } catch (err) {
+                notificationStore.error(`Copy failed: ${err.message}`, 'editor');
+            }
+        });
+
+        const container = document.createElement('div');
+        container.className = 'ai-foundation-result';
+
+        const metaLine = document.createElement('div');
+        metaLine.className = 'ai-foundation-meta';
+        metaLine.textContent = `${meta.scopeLabel} - ${meta.charCount} chars`;
+        container.appendChild(metaLine);
+
+        const errorLine = document.createElement('div');
+        errorLine.textContent = errorMessage || 'Model did not return valid JSON.';
+        container.appendChild(errorLine);
+
+        body.appendChild(container);
+    }
+
+    async function runFoundationTool(toolId) {
+        const tool = AI_FOUNDATION_TOOLS[toolId];
+        if (!tool) return;
+
+        const agentId = state.agents.selectedId;
+        if (!agentId) {
+            notificationStore.warning('Select an agent first.', 'editor');
+            return;
+        }
+        const agent = (state.agents.list || []).find(item => item.id === agentId);
+        const status = state.agents.statusById ? state.agents.statusById[agentId] : null;
+        if (status === 'unconfigured' || status === 'incomplete') {
+            notificationStore.warning('Selected agent is not configured.', 'editor');
+            return;
+        }
+        if (status === 'unreachable') {
+            notificationStore.error('Selected agent endpoint is unreachable.', 'editor');
+            return;
+        }
+        if (agent && Array.isArray(agent.tools) && agent.tools.length) {
+            const toolConfig = agent.tools.find(t => t.id === toolId);
+            if (toolConfig && toolConfig.enabled === false) {
+                notificationStore.warning(`${tool.label} is disabled for this agent.`, 'editor');
+                return;
+            }
+        }
+
+        const scope = resolveFoundationScope();
+        const input = getEditorInputForScope(scope);
+        if (input.error) {
+            notificationStore.warning(input.error, 'editor');
+            return;
+        }
+
+        const payloadBase = { agentId, memoryId: undefined };
+        let parsed = null;
+        let lastError = null;
+        let lastResponseText = '';
+
+        setFoundationButtonsEnabled(false);
+        log(`AI Tool: ${tool.label} started`, 'info');
+
+        const execute = async (prompt, label) => {
+            const payload = { ...payloadBase, message: prompt };
+            const runChat = () => api('/api/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (typeof withAgentTurn === 'function') {
+                return withAgentTurn(agentId, 'processing', runChat, label);
+            }
+            return runChat();
+        };
+
+        try {
+            for (let attempt = 1; attempt <= 2; attempt += 1) {
+                const prompt = buildFoundationPrompt(toolId, input, attempt);
+                const response = await execute(prompt, `${tool.label} (attempt ${attempt})`);
+                const responseText = response && response.content ? response.content : '';
+                lastResponseText = responseText;
+                parsed = extractJsonObject(responseText);
+                if (parsed) {
+                    break;
+                }
+            }
+            if (!parsed) {
+                lastError = 'Model did not return valid JSON.';
+                throw new Error(lastError);
+            }
+            const normalized = normalizeToolPayload(toolId, parsed);
+            showFoundationResultModal(toolId, normalized, input);
+            notificationStore.success(`${tool.label} completed.`, 'editor');
+            log(`AI Tool: ${tool.label} completed`, 'success');
+        } catch (err) {
+            const message = err.message || lastError || 'Unknown error';
+            notificationStore.error(`${tool.label} failed: ${message}`, 'editor');
+            log(`AI Tool: ${tool.label} failed (${message})`, 'error');
+            if (lastResponseText) {
+                showFoundationErrorModal(toolId, input, lastResponseText, message);
+            }
+        } finally {
+            setFoundationButtonsEnabled(true);
+        }
+    }
+
+    function initAIFoundation() {
+        if (elements.btnAiSummarize) {
+            elements.btnAiSummarize.addEventListener('click', () => runFoundationTool('summarize'));
+        }
+        if (elements.btnAiExplain) {
+            elements.btnAiExplain.addEventListener('click', () => runFoundationTool('explain'));
+        }
+        if (elements.btnAiSuggest) {
+            elements.btnAiSuggest.addEventListener('click', () => runFoundationTool('suggest'));
+        }
+    }
+
     // Console Tabs
     function initConsoleTabs() {
         document.querySelectorAll('.console-tab').forEach(tab => {
@@ -5622,6 +6144,7 @@
     window.loadWorkspaceInfo = loadWorkspaceInfo;
     window.initConsoleTabs = initConsoleTabs;
     window.initAIActions = initAIActions;
+    window.initAIFoundation = initAIFoundation;
     window.initSidebarButtons = initSidebarButtons;
     window.initEventListeners = initEventListeners;
     window.initMemoryModeratorControls = initMemoryModeratorControls;

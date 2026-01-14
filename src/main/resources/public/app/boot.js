@@ -16,6 +16,7 @@
         window.initMonaco();
         window.initConsoleTabs();
         window.initAIActions();
+        window.initAIFoundation();
         window.initSidebarButtons();
         window.initEventListeners();
         window.initMemoryModeratorControls();

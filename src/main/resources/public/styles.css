@@ -983,6 +983,63 @@ html, body {
     border-bottom: 1px solid var(--border-color);
 }
 
+.ai-foundation-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(180deg, rgba(46, 46, 46, 0.9), rgba(40, 40, 40, 0.9));
+    border-bottom: 1px solid var(--border-color);
+}
+
+.ai-foundation-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+}
+
+.ai-foundation-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.ai-foundation-scope {
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+.ai-foundation-btn {
+    background: var(--bg-light);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ai-foundation-btn:hover {
+    background: var(--accent-color);
+    border-color: var(--accent-hover);
+    color: var(--text-bright);
+}
+
+.ai-foundation-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 #chat-memory-id {
     flex: 1;
     min-width: 0;
@@ -1089,6 +1146,59 @@ html, body {
     font-size: 11px;
     color: var(--text-secondary);
     flex-wrap: wrap;
+}
+
+.ai-foundation-result {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+}
+
+.ai-foundation-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.ai-foundation-output {
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.ai-foundation-output h3 {
+    font-size: 13px;
+    color: var(--text-bright);
+}
+
+.ai-foundation-list {
+    display: grid;
+    gap: 6px;
+}
+
+.ai-foundation-modal {
+    max-height: 88vh;
+    min-height: 360px;
+    resize: both;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal.ai-foundation-modal {
+    width: min(1200px, 94vw);
+    max-width: none;
+    min-width: 520px;
+}
+
+.ai-foundation-modal .modal-body {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
 }
 
 .witness-chip {
