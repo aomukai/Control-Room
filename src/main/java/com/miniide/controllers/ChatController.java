@@ -116,6 +116,7 @@ public class ChatController implements Controller {
                 }
                 final String finalPrompt = prompt;
                 String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
+                response = stripThinkingTags(response);
                 ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
                 return;
             }
@@ -220,6 +221,16 @@ public class ChatController implements Controller {
         return "That's an interesting thought! As your writing assistant, I'm here to help develop your story. " +
                "I can see you're working on a noir-style narrative set in Neo-Seattle. " +
                "Would you like me to help with character development, plot structure, or scene descriptions?";
+    }
+
+    private String stripThinkingTags(String content) {
+        if (content == null || content.isBlank()) {
+            return content;
+        }
+        String cleaned = content;
+        cleaned = cleaned.replaceAll("(?is)<thinking>.*?</thinking>", "").trim();
+        cleaned = cleaned.replaceAll("(?is)<think>.*?</think>", "").trim();
+        return cleaned;
     }
 
     private boolean isStateExcluded(MemoryItem item, boolean includeArchived, boolean includeExpired) {

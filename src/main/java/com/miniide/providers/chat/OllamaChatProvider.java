@@ -33,7 +33,7 @@ public class OllamaChatProvider extends AbstractChatProvider {
         msg.put("role", "user");
         msg.put("content", message);
 
-        JsonNode response = sendJsonPost(url, payload, null, null);
+        JsonNode response = sendJsonPost(url, payload, null, null, endpoint.getTimeoutMs());
 
         JsonNode content = response.path("message").path("content");
         if (!content.isMissingNode()) {

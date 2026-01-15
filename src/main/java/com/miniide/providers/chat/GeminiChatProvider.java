@@ -36,7 +36,7 @@ public class GeminiChatProvider extends AbstractChatProvider {
         ArrayNode parts = content.putArray("parts");
         parts.addObject().put("text", message);
 
-        JsonNode response = sendJsonPost(url, payload, null, null);
+        JsonNode response = sendJsonPost(url, payload, null, null, endpoint.getTimeoutMs());
 
         JsonNode candidates = response.path("candidates");
         if (candidates.isArray() && candidates.size() > 0) {

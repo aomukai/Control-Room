@@ -55,7 +55,7 @@ public class OpenAiCompatibleChatProvider extends AbstractChatProvider {
             payload.put("max_tokens", endpoint.getMaxOutputTokens());
         }
 
-        JsonNode response = sendJsonPost(url, payload, apiKey == null ? null : "Bearer " + apiKey, null);
+        JsonNode response = sendJsonPost(url, payload, apiKey == null ? null : "Bearer " + apiKey, null, endpoint.getTimeoutMs());
 
         JsonNode choices = response.path("choices");
         if (choices.isArray() && choices.size() > 0) {

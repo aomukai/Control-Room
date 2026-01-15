@@ -16,6 +16,7 @@ public abstract class AbstractChatProvider implements ChatProvider {
 
     protected final ObjectMapper mapper;
     protected final HttpClient httpClient;
+    protected static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 120;
 
     protected AbstractChatProvider(ObjectMapper mapper, HttpClient httpClient) {
         this.mapper = mapper;
@@ -27,9 +28,14 @@ public abstract class AbstractChatProvider implements ChatProvider {
      */
     protected JsonNode sendJsonPost(String url, JsonNode payload, String bearerAuth, String anthropicKey)
         throws IOException, InterruptedException {
+        return sendJsonPost(url, payload, bearerAuth, anthropicKey, null);
+    }
+
+    protected JsonNode sendJsonPost(String url, JsonNode payload, String bearerAuth, String anthropicKey, Integer timeoutMs)
+        throws IOException, InterruptedException {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
             .uri(URI.create(url))
-            .timeout(Duration.ofSeconds(30))
+            .timeout(resolveTimeout(timeoutMs))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(payload)));
 
@@ -47,6 +53,13 @@ public abstract class AbstractChatProvider implements ChatProvider {
             throw new IOException("Chat request failed (" + status + "): " + response.body());
         }
         return mapper.readTree(response.body());
+    }
+
+    protected Duration resolveTimeout(Integer timeoutMs) {
+        if (timeoutMs != null && timeoutMs > 0) {
+            return Duration.ofMillis(timeoutMs);
+        }
+        return Duration.ofSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
     }
 
     /**

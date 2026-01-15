@@ -37,7 +37,7 @@ public class AnthropicChatProvider extends AbstractChatProvider {
         msg.put("role", "user");
         msg.put("content", message);
 
-        JsonNode response = sendJsonPost(url, payload, null, apiKey);
+        JsonNode response = sendJsonPost(url, payload, null, apiKey, endpoint.getTimeoutMs());
 
         JsonNode content = response.path("content");
         if (content.isArray() && content.size() > 0) {
