@@ -41,7 +41,7 @@
             issue: null
         },
         viewMode: {
-            current: 'editor' // 'editor' | 'workbench' | 'settings'
+            current: 'workbench' // 'editor' | 'workbench' | 'settings'
         },
         issueBoard: {
             issues: [],

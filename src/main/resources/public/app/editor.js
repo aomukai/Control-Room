@@ -255,6 +255,10 @@
         if (depth === 0) {
             container.innerHTML = '';
         }
+
+        if (shouldHideFromExplorer(node)) {
+            return;
+        }
     
         if (node.type === 'folder' && node.children) {
             if (depth > 0) {
@@ -270,6 +274,14 @@
             const fileItem = createTreeItem(node, depth);
             container.appendChild(fileItem.element);
         }
+    }
+
+    function shouldHideFromExplorer(node) {
+        if (!node || node.type !== 'folder') {
+            return false;
+        }
+        const name = String(node.name || '');
+        return name.startsWith('.') && name !== '.' && name !== '..';
     }
     
     function createTreeItem(node, depth) {

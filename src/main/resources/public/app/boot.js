@@ -30,8 +30,8 @@
         // Initialize widget system
         window.registerBuiltInWidgets();
     
-        // Set initial view mode (starts in Editor mode)
-        window.setViewMode('editor');
+        // Set initial view mode (starts in Workbench mode)
+        window.setViewMode('workbench');
     
         // Welcome message in chat
         window.addChatMessage('assistant', 'Hello! I\'m your AI writing assistant. How can I help you with your creative writing project today?');
