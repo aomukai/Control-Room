@@ -587,7 +587,7 @@
     class TeamActivityWidget extends Widget {
         async render() {
             if (!this.container) return;
-    
+
             this.container.innerHTML = `
                 <div class="widget-team-activity">
                     <div class="workbench-card-subtitle">Last 24 hours.</div>
@@ -597,7 +597,124 @@
             `;
         }
     }
-    
+
+    // Warmth Widget - Color temperature control
+    class WarmthWidget extends Widget {
+        constructor(instance, manifest) {
+            super(instance, manifest);
+            this.PRESETS = {
+                cool: { value: -60, label: 'Cool', icon: '❄️' },
+                neutral: { value: 0, label: 'Neutral', icon: '⚖️' },
+                warm: { value: 40, label: 'Warm', icon: '☀️' },
+                sunset: { value: 70, label: 'Sunset', icon: '🌅' }
+            };
+        }
+
+        getStorageKey() {
+            const workspaceId = window.state?.workspace?.id || 'default';
+            return `warmth-${workspaceId}`;
+        }
+
+        loadValue() {
+            const saved = localStorage.getItem(this.getStorageKey());
+            return saved !== null ? parseInt(saved, 10) : 0;
+        }
+
+        saveValue(value) {
+            localStorage.setItem(this.getStorageKey(), value.toString());
+        }
+
+        getActivePreset(value) {
+            for (const [key, preset] of Object.entries(this.PRESETS)) {
+                if (Math.abs(preset.value - value) <= 5) {
+                    return key;
+                }
+            }
+            return null;
+        }
+
+        async render() {
+            if (!this.container) return;
+
+            const currentValue = this.loadValue();
+
+            this.container.innerHTML = `
+                <div class="widget-warmth">
+                    <div class="widget-warmth-header">
+                        <span class="widget-warmth-icon">🎨</span>
+                        <span class="widget-warmth-title">Color Warmth</span>
+                    </div>
+                    <div class="widget-warmth-slider-row">
+                        <span class="widget-warmth-label-left">❄️</span>
+                        <input type="range"
+                               class="widget-warmth-slider"
+                               min="-100"
+                               max="100"
+                               value="${currentValue}"
+                               aria-label="Color warmth">
+                        <span class="widget-warmth-label-right">🔥</span>
+                    </div>
+                    <div class="widget-warmth-value">${currentValue > 0 ? '+' : ''}${currentValue}</div>
+                    <div class="widget-warmth-presets">
+                        ${Object.entries(this.PRESETS).map(([key, preset]) => `
+                            <button class="widget-warmth-preset ${this.getActivePreset(currentValue) === key ? 'active' : ''}"
+                                    data-preset="${key}"
+                                    title="${preset.label}">
+                                ${preset.icon}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="widget-warmth-hint">Use [ ] keys to adjust</div>
+                </div>
+            `;
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            const slider = this.container.querySelector('.widget-warmth-slider');
+            if (slider) {
+                slider.addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value, 10);
+                    if (window.applyWarmth) window.applyWarmth(value);
+                    this.updateDisplay(value);
+                });
+
+                slider.addEventListener('change', (e) => {
+                    const value = parseInt(e.target.value, 10);
+                    this.saveValue(value);
+                });
+            }
+
+            // Preset buttons
+            this.container.querySelectorAll('.widget-warmth-preset').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const presetKey = btn.dataset.preset;
+                    const preset = this.PRESETS[presetKey];
+                    if (preset && slider) {
+                        slider.value = preset.value;
+                        if (window.applyWarmth) window.applyWarmth(preset.value);
+                        this.updateDisplay(preset.value);
+                        this.saveValue(preset.value);
+                    }
+                });
+            });
+        }
+
+        updateDisplay(value) {
+            const valueEl = this.container.querySelector('.widget-warmth-value');
+            if (valueEl) {
+                valueEl.textContent = `${value > 0 ? '+' : ''}${value}`;
+            }
+
+            // Update preset buttons
+            const activePreset = this.getActivePreset(value);
+            this.container.querySelectorAll('.widget-warmth-preset').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.preset === activePreset);
+            });
+        }
+    }
+
     // Dashboard State Manager
     class DashboardState {
         constructor() {
@@ -962,6 +1079,22 @@
             configurable: false,
             settings: {}
         });
+
+        // Warmth
+        widgetRegistry.register({
+            id: 'widget-warmth',
+            name: 'Warmth',
+            description: 'Adjust color temperature',
+            icon: '🎨',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small']
+            },
+            configurable: false,
+            settings: {}
+        });
     }
     
     // Render widget-based dashboard
@@ -1094,6 +1227,9 @@
                 break;
             case 'widget-team-activity':
                 widget = new TeamActivityWidget(instance, manifest);
+                break;
+            case 'widget-warmth':
+                widget = new WarmthWidget(instance, manifest);
                 break;
             default:
                 widget = new Widget(instance, manifest);
@@ -1632,4 +1768,78 @@
     window.registerBuiltInWidgets = registerBuiltInWidgets;
     window.renderWidgetDashboard = renderWidgetDashboard;
     window.showWidgetPicker = showWidgetPicker;
+
+    // ============================================
+    // WARMTH UTILITIES (used by WarmthWidget)
+    // ============================================
+
+    function hslToHex(h, s, l) {
+        s /= 100;
+        l /= 100;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => {
+            const k = (n + h / 30) % 12;
+            const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+            return Math.round(255 * color).toString(16).padStart(2, '0');
+        };
+        return `#${f(0)}${f(8)}${f(4)}`;
+    }
+
+    function hslToRgb(h, s, l) {
+        s /= 100;
+        l /= 100;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => {
+            const k = (n + h / 30) % 12;
+            return Math.round(255 * (l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1)));
+        };
+        return { r: f(0), g: f(8), b: f(4) };
+    }
+
+    function applyWarmth(value) {
+        const BASE_HUE = 207;
+        const hueShift = value * 0.5;
+        const hue = BASE_HUE + hueShift;
+
+        const accentColor = hslToHex(hue, 82, 33);
+        const accentHover = hslToHex(hue, 82, 40);
+        const accentLight = hslToHex(hue, 82, 50);
+        const accentDark = hslToHex(hue, 82, 26);
+
+        const rgb = hslToRgb(hue, 82, 33);
+        const accentGlow = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
+        const accentGlowStrong = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`;
+        const cardTint = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.04)`;
+        const cardTintHover = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`;
+        const accentGradient = `linear-gradient(135deg, ${accentColor}, ${accentHover})`;
+        const accentGradientHover = `linear-gradient(135deg, ${accentHover}, ${accentLight})`;
+
+        const root = document.documentElement;
+        root.style.setProperty('--accent-color', accentColor);
+        root.style.setProperty('--accent-hover', accentHover);
+        root.style.setProperty('--accent-light', accentLight);
+        root.style.setProperty('--accent-color-dark', accentDark);
+        root.style.setProperty('--accent-glow', accentGlow);
+        root.style.setProperty('--accent-glow-strong', accentGlowStrong);
+        root.style.setProperty('--accent-gradient', accentGradient);
+        root.style.setProperty('--accent-gradient-hover', accentGradientHover);
+        root.style.setProperty('--card-tint', cardTint);
+        root.style.setProperty('--card-tint-hover', cardTintHover);
+    }
+
+    // Apply saved warmth on load
+    function initWarmth() {
+        const workspaceId = window.state?.workspace?.id || 'default';
+        const saved = localStorage.getItem(`warmth-${workspaceId}`);
+        const value = saved !== null ? parseInt(saved, 10) : 0;
+        applyWarmth(value);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWarmth);
+    } else {
+        initWarmth();
+    }
+
+    window.applyWarmth = applyWarmth;
 })();

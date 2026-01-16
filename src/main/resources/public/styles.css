@@ -14,8 +14,12 @@
     --text-secondary: #858585;
     --text-bright: #ffffff;
     --border-color: #454545;
+    /* Accent colors - JS updates these when warmth changes */
     --accent-color: #0e639c;
     --accent-hover: #1177bb;
+    --accent-color-dark: #0a4d7a;
+    --accent-glow: rgba(14, 99, 156, 0.3);
+    --accent-glow-strong: rgba(14, 99, 156, 0.5);
     --success-color: #4ec9b0;
     --warning-color: #dcdcaa;
     --error-color: #f14c4c;
@@ -1506,11 +1510,14 @@ html, body {
     padding: 8px;
     margin-bottom: 8px;
     background: var(--bg-light);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent), transparent);
     cursor: pointer;
+    transition: background-image 0.3s ease, border-color 0.2s ease;
 }
 
 .notification-item.unread {
     border-left: 4px solid var(--accent-color);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent), transparent);
 }
 
 .notification-item.highlight {
@@ -3556,14 +3563,14 @@ html, body {
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #0e639c, #1177bb);
+    background: var(--accent-gradient, linear-gradient(135deg, #0e639c, #1177bb));
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 16px;
     font-weight: 700;
     color: var(--text-bright);
-    box-shadow: 0 2px 8px rgba(14, 99, 156, 0.3);
+    box-shadow: 0 2px 8px var(--accent-glow, rgba(14, 99, 156, 0.3));
     overflow: hidden;
 }
 
@@ -3704,7 +3711,7 @@ html, body {
 .workbench-chat-send {
     height: 44px;
     min-width: 100px;
-    background: linear-gradient(135deg, #0e639c, #1177bb);
+    background: var(--accent-gradient, linear-gradient(135deg, #0e639c, #1177bb));
     border: none;
     color: var(--text-bright);
     padding: 0 20px;
@@ -3713,13 +3720,13 @@ html, body {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s ease;
-    box-shadow: 0 4px 12px rgba(14, 99, 156, 0.3);
+    box-shadow: 0 4px 12px var(--accent-glow, rgba(14, 99, 156, 0.3));
 }
 
 .workbench-chat-send:hover:not(:disabled) {
-    background: linear-gradient(135deg, #1177bb, #1e88cc);
+    background: var(--accent-gradient-hover, linear-gradient(135deg, #1177bb, #1e88cc));
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(14, 99, 156, 0.4);
+    box-shadow: 0 6px 16px var(--accent-glow-strong, rgba(14, 99, 156, 0.4));
 }
 
 .workbench-chat-send:active:not(:disabled) {
@@ -5722,25 +5729,28 @@ textarea.settings-control.settings-control-wide {
 .agent-card {
     display: flex;
     flex-direction: column;
-    background: var(--bg-light);
+    background: linear-gradient(135deg, var(--bg-light) 0%, var(--bg-light) 100%);
+    background-color: var(--card-tint, transparent);
+    background-blend-mode: overlay;
     border: 1px solid var(--border-color);
     border-radius: 10px;
     margin-bottom: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
     overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--card-tint, transparent);
 }
 
 .agent-card:hover {
     border-color: var(--accent-color);
-    background: var(--bg-lighter);
+    background-color: var(--card-tint-hover, var(--bg-lighter));
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px var(--accent-glow, rgba(0, 0, 0, 0.15)), inset 0 0 0 1px var(--card-tint-hover, transparent);
 }
 
 .agent-card.active {
     border-color: var(--accent-color);
-    background: rgba(14, 99, 156, 0.15);
+    background-color: var(--card-tint-hover, rgba(14, 99, 156, 0.15));
 }
 
 .agent-card.chief-of-staff {
@@ -6142,6 +6152,7 @@ textarea.settings-control.settings-control-wide {
 
 .workbench-card {
     background: var(--bg-light);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent), transparent);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 16px;
@@ -6149,6 +6160,7 @@ textarea.settings-control.settings-control-wide {
     flex-direction: column;
     gap: 10px;
     min-height: 0;
+    transition: background-image 0.3s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .workbench-card-hero {
@@ -6376,20 +6388,23 @@ textarea.settings-control.settings-control-wide {
 .newsfeed-item {
     padding: 10px 12px;
     background: var(--bg-light);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent), transparent);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     margin-bottom: 8px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.15s ease, background-image 0.3s ease;
 }
 
 .newsfeed-item:hover {
     border-color: var(--accent-color);
     background: var(--bg-lighter);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent), transparent);
 }
 
 .newsfeed-item.unread {
     border-left: 3px solid var(--accent-color);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent), transparent);
 }
 
 .newsfeed-item-header {
@@ -7601,7 +7616,7 @@ textarea.settings-control.settings-control-wide {
 .widget-card:hover {
     border-color: var(--accent-color);
     transform: translateY(-3px) scale(1);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    box-shadow: 0 12px 28px var(--accent-glow, rgba(0, 0, 0, 0.25)), 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 /* Prevent hover lift during drag/resize */
@@ -8603,5 +8618,166 @@ textarea.settings-control.settings-control-wide {
     .widget-card:hover {
         border-color: var(--accent-color);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+}
+
+/* ===== Warmth Widget ===== */
+.widget-warmth {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px;
+    height: 100%;
+}
+
+.widget-warmth-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.widget-warmth-icon {
+    font-size: 18px;
+}
+
+.widget-warmth-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.widget-warmth-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.widget-warmth-label-left,
+.widget-warmth-label-right {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.widget-warmth-slider {
+    flex: 1;
+    height: 8px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: linear-gradient(90deg,
+        hsl(180, 60%, 50%) 0%,
+        hsl(207, 60%, 50%) 50%,
+        hsl(30, 80%, 55%) 100%
+    );
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+}
+
+.widget-warmth-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--text-bright);
+    border: 2px solid var(--accent-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.15s ease;
+}
+
+.widget-warmth-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+}
+
+.widget-warmth-slider::-webkit-slider-thumb:active {
+    cursor: grabbing;
+}
+
+.widget-warmth-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--text-bright);
+    border: 2px solid var(--accent-color);
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.widget-warmth-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-color);
+    min-width: 50px;
+    text-align: center;
+}
+
+.widget-warmth-presets {
+    display: flex;
+    gap: 8px;
+}
+
+.widget-warmth-preset {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-lighter);
+}
+
+.widget-warmth-preset:hover {
+    transform: scale(1.1);
+    border-color: var(--text-secondary);
+}
+
+.widget-warmth-preset.active {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.widget-warmth-hint {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Smooth color transitions for warmth changes */
+*,
+*::before,
+*::after {
+    transition:
+        border-color 0.3s ease,
+        background-color 0.3s ease,
+        box-shadow 0.3s ease;
+}
+
+/* Exclude animations that shouldn't be affected */
+.widget-warmth-slider,
+.widget-warmth-slider::-webkit-slider-thumb,
+button,
+a,
+input,
+textarea,
+select {
+    transition: all 0.15s ease;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition: none !important;
     }
 }
