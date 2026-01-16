@@ -245,6 +245,9 @@
             const tree = await api('/api/tree');
             state.fileTree = tree;
             renderFileTree(tree);
+            if (window.versioning && window.versioning.applyUnpublishedIndicators) {
+                window.versioning.applyUnpublishedIndicators();
+            }
             log('File tree loaded', 'info');
         } catch (err) {
             log(`Failed to load file tree: ${err.message}`, 'error');
@@ -572,8 +575,11 @@
         tab.appendChild(close);
     
         tab.addEventListener('click', () => setActiveTab(tabId));
-    
+
         elements.tabsContainer.appendChild(tab);
+        if (window.versioning && window.versioning.applyUnpublishedIndicators) {
+            window.versioning.applyUnpublishedIndicators();
+        }
     }
     
     // Update dirty state for ALL tabs showing a given path

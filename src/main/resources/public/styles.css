@@ -284,6 +284,11 @@ html, body {
     white-space: nowrap;
 }
 
+.tree-item.unpublished .tree-name::after {
+    content: ' *';
+    color: var(--warning-color);
+}
+
 .tree-folder > .tree-name {
     font-weight: 500;
 }
@@ -411,6 +416,11 @@ html, body {
     background: var(--tab-active);
     border-bottom: 2px solid var(--tab-active);
     margin-bottom: -2px;
+}
+
+.tab.unpublished:not(.dirty) .tab-name::after {
+    content: ' *';
+    color: var(--warning-color);
 }
 
 .tab.dirty .tab-name::after {

@@ -6,6 +6,7 @@
     const api = window.api;
     const versioningApi = window.versioningApi;
     const showConfigurableModal = window.modals ? window.modals.showConfigurableModal : null;
+    const normalizeWorkspacePath = window.normalizeWorkspacePath;
 
     // DOM elements
     let fileTreeArea = null;
@@ -150,6 +151,7 @@
             changesList.innerHTML = '<div class="no-changes">No changes detected</div>';
             if (changesSummary) changesSummary.textContent = '';
             if (discardAllBtn) discardAllBtn.style.display = 'none';
+            updateUnpublishedIndicators([]);
             return;
         }
 
@@ -228,6 +230,26 @@
         });
 
         if (discardAllBtn) discardAllBtn.style.display = 'block';
+        updateUnpublishedIndicators(changes);
+    }
+
+    function updateUnpublishedIndicators(changes) {
+        const normalize = normalizeWorkspacePath || ((path) => path);
+        const paths = new Set(
+            (changes || [])
+                .map(change => normalize(change.path || ''))
+                .filter(Boolean)
+        );
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            const path = normalize(tab.dataset.path || '');
+            tab.classList.toggle('unpublished', path && paths.has(path));
+        });
+
+        document.querySelectorAll('.tree-item').forEach(item => {
+            const path = normalize(item.dataset.path || '');
+            item.classList.toggle('unpublished', path && paths.has(path));
+        });
     }
 
     function getStatusIcon(status) {
@@ -601,6 +623,7 @@
         loadSnapshots,
         syncWithExplorerState,
         showFileTreePanel,
+        applyUnpublishedIndicators: () => updateUnpublishedIndicators(currentChanges),
         isActive: () => isVersioningPanelActive,
         openVersioningPanel: async (snapshotId) => {
             isVersioningPanelActive = true;
