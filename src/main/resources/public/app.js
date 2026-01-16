@@ -4088,6 +4088,14 @@
     function extractJsonObject(text) {
         if (!text) return null;
         const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const markerMatch = cleaned.match(/BEGIN_JSON\s*([\s\S]*?)\s*END_JSON/i);
+        if (markerMatch && markerMatch[1]) {
+            try {
+                return JSON.parse(markerMatch[1].trim());
+            } catch (_) {
+                // Fall back to loose extraction.
+            }
+        }
         const match = cleaned.match(/\{[\s\S]*\}/);
         if (!match) return null;
         try {
@@ -4197,7 +4205,8 @@
     function buildFoundationPrompt(toolId, input, attempt) {
         const tool = AI_FOUNDATION_TOOLS[toolId];
         const base = [
-            'Return ONLY valid JSON. No markdown, no preface, no code fences.',
+            'Return ONLY valid JSON wrapped between BEGIN_JSON and END_JSON.',
+            'No markdown, no preface, no code fences.',
             'Use double quotes for all keys and string values.',
             'Do not include STOP_HOOK or any extra text.',
             `Schema: ${tool.schema}`,
@@ -4206,7 +4215,7 @@
         if (attempt > 1) {
             base.unshift('Retry: respond with JSON only. If uncertain, return empty strings/arrays but keep schema.');
         }
-        base.push('', 'Text:', input.text);
+        base.push('', 'Text:', input.text, '', 'BEGIN_JSON', 'END_JSON');
         return base.join('\n');
     }
 
@@ -4497,7 +4506,7 @@
             return;
         }
 
-        const payloadBase = { agentId, memoryId: undefined };
+        const payloadBase = { agentId, memoryId: undefined, skipToolCatalog: true };
         let parsed = null;
         let lastError = null;
         let lastResponseText = '';

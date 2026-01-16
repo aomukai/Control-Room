@@ -52,6 +52,7 @@ public class ChatController implements Controller {
             String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
+            boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
             String levelParam = json.has("level") ? json.get("level").asText() : null;
             boolean includeArchived = json.has("includeArchived") && json.get("includeArchived").asBoolean();
             boolean includeExpired = json.has("includeExpired") && json.get("includeExpired").asBoolean();
@@ -108,11 +109,15 @@ public class ChatController implements Controller {
                 final String keyRef = apiKey;
                 final var agentEndpoint = endpoint;
                 String prompt = message;
-                String toolCatalog = projectContext.promptTools() != null
-                    ? projectContext.promptTools().buildCatalogPrompt()
-                    : "";
-                if (toolCatalog != null && !toolCatalog.isBlank()) {
-                    prompt = toolCatalog + "\n\n" + (prompt != null ? prompt : "");
+                if (skipToolCatalog) {
+                    logger.info("Skipping prompt tool catalog (skipToolCatalog=true).");
+                } else {
+                    String toolCatalog = projectContext.promptTools() != null
+                        ? projectContext.promptTools().buildCatalogPrompt()
+                        : "";
+                    if (toolCatalog != null && !toolCatalog.isBlank()) {
+                        prompt = toolCatalog + "\n\n" + (prompt != null ? prompt : "");
+                    }
                 }
                 final String finalPrompt = prompt;
                 String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
