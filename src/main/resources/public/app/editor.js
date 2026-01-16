@@ -732,6 +732,9 @@
             if (store) {
                 store.editorSaveSuccess(state.activeFile);
             }
+            if (window.versioning && window.versioning.refreshChanges) {
+                window.versioning.refreshChanges();
+            }
         } catch (err) {
             log(`Failed to save: ${err.message}`, 'error');
             const store = getNotificationStore();
@@ -779,6 +782,9 @@
             }
         } else {
             log('Save all completed: no changes', 'info');
+        }
+        if (window.versioning && window.versioning.refreshChanges) {
+            window.versioning.refreshChanges();
         }
     }
     

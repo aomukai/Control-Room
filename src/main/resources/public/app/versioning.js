@@ -170,7 +170,7 @@
                 if (summary.removedWords > 0) wordParts.push(`-${summary.removedWords}`);
                 parts.push(wordParts.join('/') + ' words');
             }
-            changesSummary.textContent = parts.join(', ');
+            changesSummary.textContent = `${parts.join(', ')} since last publish`;
         }
 
         // Render changes list
