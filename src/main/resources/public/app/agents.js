@@ -281,7 +281,7 @@
             if (reorderInFlight) {
                 return;
             }
-            const orderedIds = Array.from(container.querySelectorAll('.agent-item'))
+            const orderedIds = Array.from(container.querySelectorAll('.agent-card'))
                 .map(el => el.dataset.agentId)
                 .filter(Boolean);
             if (orderedIds.length === 0) {
@@ -309,12 +309,13 @@
 
         agents.forEach(agent => {
             const item = document.createElement('div');
-            item.className = 'agent-item';
+            item.className = 'agent-card';
             item.dataset.agentId = agent.id || '';
             item.draggable = true;
 
-            if (isAssistantAgent(agent)) {
-                item.classList.add('team-lead');
+            const isChiefOfStaff = isAssistantAgent(agent);
+            if (isChiefOfStaff) {
+                item.classList.add('chief-of-staff');
             }
             if (state.agents.locked) {
                 const assistantCount = countAssistantAgents();
@@ -324,135 +325,141 @@
                     : 'Agents are locked until a Chief of Staff exists.';
             }
 
-            const icon = document.createElement('span');
-            icon.className = 'agent-icon';
+            // === Main content area (avatar + info + status LED) ===
+            const mainContent = document.createElement('div');
+            mainContent.className = 'agent-card-main';
 
+            // Large circular avatar
+            const avatar = document.createElement('div');
+            avatar.className = 'agent-card-avatar';
             const avatarData = agent.avatar && agent.avatar.trim() ? agent.avatar.trim() : '';
 
             if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
-                // Image avatar
                 const img = document.createElement('img');
                 img.src = avatarData;
                 img.alt = agent.name || 'Agent';
-                img.className = 'agent-icon-img';
-                icon.appendChild(img);
-                icon.classList.add('has-image');
+                avatar.appendChild(img);
+                avatar.classList.add('has-image');
             } else if (avatarData) {
-                // Emoji or text avatar
-                icon.textContent = avatarData;
+                avatar.textContent = avatarData;
+                avatar.classList.add('has-emoji');
             } else {
-                // Fallback to first letter
-                icon.textContent = agent.name ? agent.name.charAt(0).toUpperCase() : '?';
+                avatar.textContent = agent.name ? agent.name.charAt(0).toUpperCase() : '?';
+                avatar.classList.add('has-initial');
             }
 
             if (agent.color && !avatarData.startsWith('data:') && !avatarData.startsWith('http')) {
-                icon.style.background = agent.color;
+                avatar.style.background = agent.color;
             }
 
+            // Info section (name + role)
             const info = document.createElement('div');
-            info.className = 'agent-info';
+            info.className = 'agent-card-info';
+
+            const nameRow = document.createElement('div');
+            nameRow.className = 'agent-card-name-row';
 
             const name = document.createElement('div');
-            name.className = 'agent-name';
+            name.className = 'agent-card-name';
             const fullName = agent.name || 'Unnamed Agent';
             name.textContent = fullName;
-            name.title = fullName; // Tooltip for truncated names
+            name.title = fullName;
+            nameRow.appendChild(name);
+
+            // Chief of Staff star badge (inline with name)
+            if (isChiefOfStaff) {
+                const star = document.createElement('span');
+                star.className = 'agent-card-star';
+                star.textContent = '★';
+                star.title = 'Chief of Staff';
+                nameRow.appendChild(star);
+            }
 
             const role = document.createElement('div');
-            role.className = 'agent-role';
+            role.className = 'agent-card-role';
             role.textContent = agent.role || 'role';
 
-            info.appendChild(name);
+            info.appendChild(nameRow);
             info.appendChild(role);
 
-            item.appendChild(icon);
-            item.appendChild(info);
-
-            const statusCluster = document.createElement('div');
-            statusCluster.className = 'agent-status-cluster';
-
-            const status = document.createElement('div');
+            // Status LED (top right)
             const statusInfo = getAgentStatusInfo(agent);
-            status.className = `agent-status ${statusInfo.className}`;
-            status.title = statusInfo.title;
-            statusCluster.appendChild(status);
+            const statusLed = document.createElement('div');
+            statusLed.className = `agent-card-led ${statusInfo.className}`;
+            statusLed.title = statusInfo.title;
 
-            const icons = [];
+            mainContent.appendChild(avatar);
+            mainContent.appendChild(info);
+            mainContent.appendChild(statusLed);
+
+            item.appendChild(mainContent);
+
+            // === Status effects bar (bottom) ===
+            const statusBar = document.createElement('div');
+            statusBar.className = 'agent-card-status-bar';
+
+            const effects = [];
             const activityState = getAgentActivityState(agent);
             const activityMessage = getAgentActivityMessage(agent);
+
+            // Activity states
             if (activityState === 'reading') {
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/reading.svg',
-                    activityMessage || 'Reviewing context and references.'
-                ));
+                effects.push({ label: 'reading', icon: '📖', title: activityMessage || 'Reviewing context and references.' });
             } else if (activityState === 'processing') {
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/processing.svg',
-                    activityMessage || 'Thinking through the best next steps.',
-                    'agent-status-icon-processing'
-                ));
+                effects.push({ label: 'thinking', icon: '💭', title: activityMessage || 'Thinking through the best next steps.', anim: 'pulse' });
             } else if (activityState === 'executing') {
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/executing.svg',
-                    activityMessage || 'Producing output / taking action now.'
-                ));
-            }
-            const queuedCount = getQueuedCount(agent.id);
-            if (queuedCount > 0) {
-                const queuedLabel = queuedCount > 1 ? `${queuedCount} queued turns` : '1 queued turn';
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/heroicons_outline/queue-list.svg',
-                    `Queued for turn (${queuedLabel}).`,
-                    'agent-status-icon-queued'
-                ));
+                effects.push({ label: 'working', icon: '⚡', title: activityMessage || 'Producing output / taking action now.' });
             }
 
+            // Queued turns
+            const queuedCount = getQueuedCount(agent.id);
+            if (queuedCount > 0) {
+                const queuedLabel = queuedCount > 1 ? `${queuedCount} queued` : 'queued';
+                effects.push({ label: queuedLabel, icon: '📋', title: `Queued for turn (${queuedCount} ${queuedCount > 1 ? 'turns' : 'turn'}).` });
+            }
+
+            // Supervision states
             const supervisionState = getAgentSupervisionState(agent);
             if (supervisionState === 'watched') {
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/watched.svg',
-                    'This agent is being monitored due to recent uncertainty.'
-                ));
+                effects.push({ label: 'watched', icon: '👁️', title: 'This agent is being monitored due to recent uncertainty.' });
             } else if (supervisionState === 'assisted') {
                 const note = agent.assistedNotes ? ` ${agent.assistedNotes}` : '';
                 const dosage = agent.assistedTaskDosage ? ` Dosage: ${agent.assistedTaskDosage}.` : '';
                 const queue = agent.assistedQueueSize !== null && agent.assistedQueueSize !== undefined
                     ? ` Queue: ${agent.assistedQueueSize}.`
                     : '';
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/assisted.svg',
-                    `Another agent is quietly assisting to ensure accuracy.${dosage}${queue}${note}`
-                ));
+                effects.push({ label: 'assisted', icon: '🤝', title: `Another agent is quietly assisting to ensure accuracy.${dosage}${queue}${note}` });
             }
 
+            // Primary for role
             if (agent.isPrimaryForRole) {
-                icons.push(createAgentStatusIcon(
-                    'assets/icons/lucide/primary.svg',
-                    'Primary agent for this role.'
-                ));
+                effects.push({ label: 'primary', icon: '🎯', title: 'Primary agent for this role.' });
             }
 
-            if (icons.length > 0) {
-                const iconRow = document.createElement('div');
-                iconRow.className = 'agent-status-icons';
-                icons.slice(0, 3).forEach(icon => iconRow.appendChild(icon));
-                statusCluster.appendChild(iconRow);
+            // Show idle if no active effects
+            if (effects.length === 0) {
+                effects.push({ label: 'idle', icon: '💤', title: 'Available and ready for work.' });
             }
 
-            if (isAssistantAgent(agent)) {
-                const badge = document.createElement('span');
-                badge.className = 'agent-lead-badge';
-                badge.textContent = 'Lead';
-                statusCluster.appendChild(badge);
-            }
+            // Render effect pills (max 3)
+            effects.slice(0, 3).forEach(effect => {
+                const pill = document.createElement('span');
+                pill.className = 'agent-status-pill';
+                if (effect.anim) {
+                    pill.classList.add(`anim-${effect.anim}`);
+                }
+                pill.title = effect.title;
+                pill.innerHTML = `<span class="pill-icon">${effect.icon}</span><span class="pill-label">${effect.label}</span>`;
+                statusBar.appendChild(pill);
+            });
 
-            item.appendChild(statusCluster);
+            item.appendChild(statusBar);
 
             item.addEventListener('click', () => {
                 if (!ensureChiefOfStaff('Agent chat')) {
                     return;
                 }
-                container.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+                container.querySelectorAll('.agent-card').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 log(`Selected agent: ${agent.name}`, 'info');
                 showWorkbenchChatModal(agent);
@@ -489,10 +496,10 @@
             await persistAgentOrder();
         });
 
-        container.querySelectorAll('.agent-item').forEach(item => {
+        container.querySelectorAll('.agent-card').forEach(item => {
             item.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                const dragging = container.querySelector('.agent-item.dragging');
+                const dragging = container.querySelector('.agent-card.dragging');
                 if (!dragging || dragging === item) return;
                 const rect = item.getBoundingClientRect();
                 const shouldInsertAfter = e.clientY > rect.top + rect.height / 2;

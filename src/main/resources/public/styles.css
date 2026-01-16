@@ -5715,6 +5715,256 @@ textarea.settings-control.settings-control-wide {
     opacity: 0.5;
 }
 
+/* =========================================
+   Agent Card (Redesigned)
+   ========================================= */
+
+.agent-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    overflow: hidden;
+}
+
+.agent-card:hover {
+    border-color: var(--accent-color);
+    background: var(--bg-lighter);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.agent-card.active {
+    border-color: var(--accent-color);
+    background: rgba(14, 99, 156, 0.15);
+}
+
+.agent-card.chief-of-staff {
+    border-color: rgba(78, 201, 176, 0.6);
+    box-shadow: 0 0 0 1px rgba(78, 201, 176, 0.15);
+}
+
+.agent-card.chief-of-staff:hover {
+    border-color: rgba(78, 201, 176, 0.9);
+    box-shadow: 0 4px 12px rgba(78, 201, 176, 0.2);
+}
+
+.agent-card.is-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.agent-card.dragging {
+    opacity: 0.5;
+}
+
+/* Main content area */
+.agent-card-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+}
+
+/* Large circular avatar */
+.agent-card-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: var(--bg-medium);
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.agent-card-avatar.has-image {
+    background: transparent;
+}
+
+.agent-card-avatar.has-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.agent-card-avatar.has-emoji {
+    background: var(--bg-lighter);
+}
+
+.agent-card-avatar.has-initial {
+    background: linear-gradient(135deg, var(--accent-color), var(--accent-color-dark, #0a4d7a));
+    color: white;
+    font-weight: 600;
+    font-size: 20px;
+}
+
+/* Info section */
+.agent-card-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.agent-card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.agent-card-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-card-star {
+    color: #ffc107;
+    font-size: 14px;
+    text-shadow: 0 0 6px rgba(255, 193, 7, 0.5);
+    animation: star-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes star-shimmer {
+    0%, 100% { opacity: 0.8; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.1); }
+}
+
+.agent-card-role {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Status LED */
+.agent-card-led {
+    width: 10px;
+    height: 10px;
+    min-width: 10px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    margin-left: auto;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.agent-card-led.ready {
+    background: var(--success-color);
+    box-shadow: 0 0 8px rgba(78, 201, 176, 0.6);
+    animation: led-glow 2s ease-in-out infinite;
+}
+
+@keyframes led-glow {
+    0%, 100% { box-shadow: 0 0 6px rgba(78, 201, 176, 0.5); }
+    50% { box-shadow: 0 0 12px rgba(78, 201, 176, 0.8); }
+}
+
+.agent-card-led.unreachable {
+    background: var(--warning-color);
+    box-shadow: 0 0 8px rgba(234, 158, 0, 0.6);
+}
+
+.agent-card-led.unconfigured {
+    background: var(--error-color);
+    box-shadow: 0 0 8px rgba(255, 85, 85, 0.6);
+}
+
+.agent-card-led.offline {
+    background: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.agent-card-led.checking {
+    background: var(--text-secondary);
+    animation: led-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes led-pulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Status effects bar */
+.agent-card-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    flex-wrap: wrap;
+}
+
+/* Status pills */
+.agent-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.agent-status-pill:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+}
+
+.agent-status-pill .pill-icon {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.agent-status-pill .pill-label {
+    font-weight: 500;
+    text-transform: lowercase;
+}
+
+/* Pulse animation for thinking state */
+.agent-status-pill.anim-pulse {
+    animation: pill-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pill-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; background: rgba(255, 255, 255, 0.15); }
+}
+
+/* Chief of Staff card enhancements */
+.agent-card.chief-of-staff .agent-card-status-bar {
+    background: rgba(78, 201, 176, 0.08);
+    border-top-color: rgba(78, 201, 176, 0.15);
+}
+
+/* Reduced motion support for agent cards */
+@media (prefers-reduced-motion: reduce) {
+    .agent-card-star,
+    .agent-card-led.ready,
+    .agent-card-led.checking,
+    .agent-status-pill.anim-pulse {
+        animation: none;
+    }
+    .agent-card:hover {
+        transform: none;
+    }
+}
+
 .retired-agent-modal {
     min-width: 420px;
     max-width: 520px;
