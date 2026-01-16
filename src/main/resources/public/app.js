@@ -103,6 +103,7 @@
     const performSearch = window.performSearch;
     const getExplorerVisible = window.getExplorerVisible;
     const setExplorerVisible = window.setExplorerVisible;
+    const preparationApi = window.preparationApi;
 
     // API objects are loaded from api.js (window.issueApi, window.agentApi, etc.)
 
@@ -131,7 +132,25 @@
             state.workspace.description = meta.description || '';
             state.workspace.icon = meta.icon || '';
             state.workspace.accentColor = meta.accentColor || '';
+            state.workspace.prepared = Boolean(meta.prepared);
+            state.workspace.preparedMode = meta.preparedMode || '';
+            state.workspace.preparedAt = meta.preparedAt || '';
             updateWorkspaceButton();
+            const pendingPrep = (() => {
+                try {
+                    return JSON.parse(localStorage.getItem('cr-prep-pending') || 'null');
+                } catch (_) {
+                    return null;
+                }
+            })();
+            if (!state.workspace.prepared) {
+                if (pendingPrep && pendingPrep.name === state.workspace.name) {
+                    await showProjectPreparationWizard();
+                    return;
+                }
+            } else if (pendingPrep) {
+                localStorage.removeItem('cr-prep-pending');
+            }
             if (window.restoreEditorState) {
                 await window.restoreEditorState();
             }
@@ -1198,6 +1217,344 @@
         }
     }
 
+    async function showProjectPreparationWizard() {
+        if (!createModalShell || !preparationApi) {
+            log('Preparation wizard unavailable', 'warning');
+            return;
+        }
+
+        const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Project Preparation',
+            'Next',
+            'Cancel',
+            { closeOnCancel: false, closeOnConfirm: false }
+        );
+        modal.classList.add('preparation-modal');
+        if (cancelBtn) {
+            cancelBtn.remove();
+        }
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                event.stopImmediatePropagation();
+            }
+        }, true);
+
+        const escapeGuard = (event) => {
+            if (event.key === 'Escape') {
+                event.stopImmediatePropagation();
+            }
+        };
+        document.addEventListener('keydown', escapeGuard, true);
+
+        const wizardState = {
+            step: 0,
+            mode: null,
+            manuscripts: [],
+            canon: [],
+            premise: '',
+            genre: '',
+            protagonistName: '',
+            protagonistRole: '',
+            themes: ''
+        };
+
+        const setConfirm = (label, handler, disabled = false) => {
+            confirmBtn.textContent = label;
+            confirmBtn.disabled = disabled;
+            confirmBtn.onclick = handler;
+            confirmBtn.style.display = 'inline-flex';
+        };
+
+        const renderStep = () => {
+            body.innerHTML = '';
+
+            if (wizardState.step === 0) {
+                confirmBtn.style.display = 'none';
+                const intro = document.createElement('div');
+                intro.className = 'modal-text';
+                intro.textContent = 'This is a one-way project preparation step. After it runs, Control Room uses canonical Story + Compendium state.';
+                body.appendChild(intro);
+
+                const choices = document.createElement('div');
+                choices.className = 'preparation-choices';
+
+                const importBtn = document.createElement('button');
+                importBtn.type = 'button';
+                importBtn.className = 'preparation-choice';
+                importBtn.textContent = 'I have manuscript/canon files to import';
+                importBtn.addEventListener('click', () => {
+                    wizardState.mode = 'ingest';
+                    wizardState.step = 1;
+                    renderStep();
+                });
+
+                const freshBtn = document.createElement('button');
+                freshBtn.type = 'button';
+                freshBtn.className = 'preparation-choice primary';
+                freshBtn.textContent = 'Start fresh (no files)';
+                freshBtn.addEventListener('click', () => {
+                    wizardState.mode = 'empty';
+                    wizardState.step = 1;
+                    renderStep();
+                });
+
+                choices.appendChild(importBtn);
+                choices.appendChild(freshBtn);
+                body.appendChild(choices);
+
+                const hint = document.createElement('div');
+                hint.className = 'modal-hint';
+                hint.textContent = 'Prepared projects are virtual-only: editor + explorer read from canonical state.';
+                body.appendChild(hint);
+                return;
+            }
+
+            if (wizardState.mode === 'ingest') {
+                const headline = document.createElement('div');
+                headline.className = 'modal-text';
+                headline.textContent = 'Drop manuscript and canon files. Control Room will ingest them once and store evidence receipts.';
+                body.appendChild(headline);
+
+                const addFiles = (target, files) => {
+                    const existing = new Set(target.map(file => `${file.name}-${file.size}-${file.lastModified}`));
+                    files.forEach(file => {
+                        const key = `${file.name}-${file.size}-${file.lastModified}`;
+                        if (!existing.has(key)) {
+                            target.push(file);
+                            existing.add(key);
+                        }
+                    });
+                };
+
+                const filterAccepted = (files) => {
+                    return files.filter(file => /\.(md|txt)$/i.test(file.name || ''));
+                };
+
+                const collectDroppedFiles = async (dataTransfer) => {
+                    const files = [];
+                    const items = Array.from(dataTransfer.items || []);
+                    if (items.length && items[0].webkitGetAsEntry) {
+                        const traverse = async (entry) => {
+                            if (!entry) return;
+                            if (entry.isFile) {
+                                await new Promise(resolve => {
+                                    entry.file(file => {
+                                        files.push(file);
+                                        resolve();
+                                    });
+                                });
+                            } else if (entry.isDirectory) {
+                                const reader = entry.createReader();
+                                const readEntries = () => new Promise(resolve => {
+                                    reader.readEntries(resolve);
+                                });
+                                let batch = await readEntries();
+                                while (batch.length) {
+                                    for (const child of batch) {
+                                        await traverse(child);
+                                    }
+                                    batch = await readEntries();
+                                }
+                            }
+                        };
+                        for (const item of items) {
+                            const entry = item.webkitGetAsEntry();
+                            if (entry) {
+                                await traverse(entry);
+                            }
+                        }
+                        return files;
+                    }
+                    return Array.from(dataTransfer.files || []);
+                };
+
+                const buildDropZone = (labelText, onFiles) => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'preparation-row';
+                    const label = document.createElement('label');
+                    label.className = 'modal-label';
+                    label.textContent = labelText;
+                    wrapper.appendChild(label);
+
+                    const dropZone = document.createElement('button');
+                    dropZone.type = 'button';
+                    dropZone.className = 'prep-dropzone';
+                    dropZone.innerHTML = '<strong>Drop your files/folders here</strong><span>or click to browse</span>';
+
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = '.md,.txt';
+                    input.className = 'prep-dropzone-input';
+                    input.setAttribute('webkitdirectory', '');
+                    input.setAttribute('directory', '');
+                    input.setAttribute('mozdirectory', '');
+                    dropZone.appendChild(input);
+
+                    const handleFiles = (files) => {
+                        const accepted = filterAccepted(files);
+                        if (!accepted.length) {
+                            notificationStore.warning('Only .md and .txt files are supported for ingest.', 'global');
+                            return;
+                        }
+                        onFiles(accepted);
+                        renderStep();
+                    };
+
+                    input.addEventListener('change', () => {
+                        handleFiles(Array.from(input.files || []));
+                        input.value = '';
+                    });
+
+                    dropZone.addEventListener('dragover', (event) => {
+                        event.preventDefault();
+                        dropZone.classList.add('is-dragging');
+                    });
+                    dropZone.addEventListener('dragleave', () => {
+                        dropZone.classList.remove('is-dragging');
+                    });
+                    dropZone.addEventListener('drop', async (event) => {
+                        event.preventDefault();
+                        dropZone.classList.remove('is-dragging');
+                        const files = await collectDroppedFiles(event.dataTransfer);
+                        handleFiles(files);
+                    });
+                    dropZone.addEventListener('click', () => {
+                        input.click();
+                    });
+
+                    wrapper.appendChild(dropZone);
+                    return wrapper;
+                };
+
+                body.appendChild(buildDropZone('Manuscript files (.md/.txt)', (files) => addFiles(wizardState.manuscripts, files)));
+                body.appendChild(buildDropZone('Canon/worldbuilding files (.md/.txt)', (files) => addFiles(wizardState.canon, files)));
+
+                const summary = document.createElement('div');
+                summary.className = 'modal-hint';
+                summary.textContent = `Selected: ${wizardState.manuscripts.length} manuscript, ${wizardState.canon.length} canon files.`;
+                body.appendChild(summary);
+
+                setConfirm('Prepare Project', async () => {
+                    confirmBtn.disabled = true;
+                    try {
+                        const formData = new FormData();
+                        wizardState.manuscripts.forEach(file => formData.append('manuscripts', file));
+                        wizardState.canon.forEach(file => formData.append('canon', file));
+                    const result = await preparationApi.prepareIngest(formData);
+                    notificationStore.success('Project prepared successfully. Reloading...', 'global');
+                    localStorage.removeItem('cr-prep-pending');
+                    close();
+                    document.removeEventListener('keydown', escapeGuard, true);
+                    setTimeout(() => window.location.reload(), 200);
+                    } catch (err) {
+                        confirmBtn.disabled = false;
+                        notificationStore.error(`Preparation failed: ${err.message}`, 'global');
+                    }
+                }, wizardState.manuscripts.length + wizardState.canon.length === 0);
+                return;
+            }
+
+            const headline = document.createElement('div');
+            headline.className = 'modal-text';
+            headline.textContent = 'Give the project a minimal seed. Control Room will scaffold Story + Compendium for you.';
+            body.appendChild(headline);
+
+            const premiseRow = document.createElement('div');
+            premiseRow.className = 'preparation-row';
+            premiseRow.innerHTML = '<label class="modal-label">Premise</label>';
+            const premiseInput = document.createElement('textarea');
+            premiseInput.className = 'modal-textarea';
+            premiseInput.rows = 3;
+            premiseInput.value = wizardState.premise;
+            premiseInput.addEventListener('input', () => {
+                wizardState.premise = premiseInput.value;
+            });
+            premiseRow.appendChild(premiseInput);
+            body.appendChild(premiseRow);
+
+            const genreRow = document.createElement('div');
+            genreRow.className = 'preparation-row';
+            genreRow.innerHTML = '<label class="modal-label">Genre/Tone</label>';
+            const genreInput = document.createElement('input');
+            genreInput.className = 'modal-input';
+            genreInput.type = 'text';
+            genreInput.placeholder = 'e.g., noir mystery, cozy fantasy';
+            genreInput.value = wizardState.genre;
+            genreInput.addEventListener('input', () => {
+                wizardState.genre = genreInput.value;
+            });
+            genreRow.appendChild(genreInput);
+            body.appendChild(genreRow);
+
+            const protagonistRow = document.createElement('div');
+            protagonistRow.className = 'preparation-row';
+            protagonistRow.innerHTML = '<label class="modal-label">Protagonist</label>';
+            const protagonistName = document.createElement('input');
+            protagonistName.className = 'modal-input';
+            protagonistName.type = 'text';
+            protagonistName.placeholder = 'Name';
+            protagonistName.value = wizardState.protagonistName;
+            protagonistName.addEventListener('input', () => {
+                wizardState.protagonistName = protagonistName.value;
+            });
+            const protagonistRole = document.createElement('input');
+            protagonistRole.className = 'modal-input';
+            protagonistRole.type = 'text';
+            protagonistRole.placeholder = 'Role (optional)';
+            protagonistRole.value = wizardState.protagonistRole;
+            protagonistRole.addEventListener('input', () => {
+                wizardState.protagonistRole = protagonistRole.value;
+            });
+            protagonistRow.appendChild(protagonistName);
+            protagonistRow.appendChild(protagonistRole);
+            body.appendChild(protagonistRow);
+
+            const themesRow = document.createElement('div');
+            themesRow.className = 'preparation-row';
+            themesRow.innerHTML = '<label class="modal-label">Themes (optional)</label>';
+            const themesInput = document.createElement('input');
+            themesInput.className = 'modal-input';
+            themesInput.type = 'text';
+            themesInput.placeholder = 'e.g., memory, betrayal, wonder';
+            themesInput.value = wizardState.themes;
+            themesInput.addEventListener('input', () => {
+                wizardState.themes = themesInput.value;
+            });
+            themesRow.appendChild(themesInput);
+            body.appendChild(themesRow);
+
+            setConfirm('Prepare Project', async () => {
+                if (!wizardState.protagonistName.trim()) {
+                    notificationStore.warning('Add at least one protagonist name.', 'global');
+                    return;
+                }
+                confirmBtn.disabled = true;
+                try {
+                    const payload = {
+                        premise: wizardState.premise,
+                        genre: wizardState.genre,
+                        protagonistName: wizardState.protagonistName,
+                        protagonistRole: wizardState.protagonistRole,
+                        themes: wizardState.themes
+                    };
+                    await preparationApi.prepareEmpty(payload);
+                    notificationStore.success('Project prepared successfully. Reloading...', 'global');
+                    localStorage.removeItem('cr-prep-pending');
+                    close();
+                    document.removeEventListener('keydown', escapeGuard, true);
+                    setTimeout(() => window.location.reload(), 200);
+                } catch (err) {
+                    confirmBtn.disabled = false;
+                    notificationStore.error(`Preparation failed: ${err.message}`, 'global');
+                }
+            }, !wizardState.protagonistName.trim());
+        };
+
+        renderStep();
+    }
+
     function showWorkspaceSwitcher() {
         const { overlay, modal, body, confirmBtn, close } = createModalShell(
             'Switch Project',
@@ -1260,7 +1617,12 @@
         rowInput.appendChild(input);
         body.appendChild(rowInput);
 
-        const recents = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(Boolean);
+        const storedRecents = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(Boolean);
+        const availableSet = new Set(available);
+        const recents = storedRecents.filter(name => availableSet.has(name));
+        if (recents.length !== storedRecents.length) {
+            localStorage.setItem('recent-projects', JSON.stringify(recents));
+        }
         if (recents.length) {
             const recentRow = document.createElement('div');
             recentRow.className = 'recent-projects';
@@ -1296,12 +1658,19 @@
             confirmBtn.disabled = true;
             error.textContent = '';
             try {
+                const available = state.workspace.available || [];
+                const isNewProject = !available.includes(name);
+                if (isNewProject) {
+                    localStorage.setItem('cr-prep-pending', JSON.stringify({ name }));
+                } else {
+                    localStorage.removeItem('cr-prep-pending');
+                }
                 const result = await workspaceApi.select(name);
                 const targetPath = result.targetPath || name;
                 const recent = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(Boolean);
                 const updatedRecent = [name, ...recent.filter(n => n !== name)].slice(0, 6);
                 localStorage.setItem('recent-projects', JSON.stringify(updatedRecent));
-                notificationStore.success(`Project switched to ${name}. Reloading…`, 'global');
+                notificationStore.success(`Project switched to ${name}. Reloading...`, 'global');
                 log(`Project selection applied: ${targetPath}`, 'info');
                 setTimeout(() => window.location.reload(), 200);
                 close();

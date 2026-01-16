@@ -5,6 +5,9 @@ public class WorkspaceMetadata {
     private String description;
     private String icon;
     private String accentColor;
+    private boolean prepared;
+    private String preparedMode;
+    private String preparedAt;
 
     public String getDisplayName() {
         return displayName;
@@ -36,5 +39,29 @@ public class WorkspaceMetadata {
 
     public void setAccentColor(String accentColor) {
         this.accentColor = accentColor;
+    }
+
+    public boolean isPrepared() {
+        return prepared;
+    }
+
+    public void setPrepared(boolean prepared) {
+        this.prepared = prepared;
+    }
+
+    public String getPreparedMode() {
+        return preparedMode;
+    }
+
+    public void setPreparedMode(String preparedMode) {
+        this.preparedMode = preparedMode;
+    }
+
+    public String getPreparedAt() {
+        return preparedAt;
+    }
+
+    public void setPreparedAt(String preparedAt) {
+        this.preparedAt = preparedAt;
     }
 }

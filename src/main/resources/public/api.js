@@ -456,6 +456,26 @@
         }
     };
 
+    // Project Preparation API
+    const preparationApi = {
+        async status() {
+            return api('/api/preparation/status');
+        },
+        async prepareEmpty(payload) {
+            return api('/api/preparation/empty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
+        async prepareIngest(formData) {
+            return api('/api/preparation/ingest', {
+                method: 'POST',
+                body: formData
+            });
+        }
+    };
+
     // Segments API
     const segmentsApi = {
         async get(path) {
@@ -598,6 +618,7 @@
     window.workspaceApi = workspaceApi;
     window.patchApi = patchApi;
     window.fileApi = fileApi;
+    window.preparationApi = preparationApi;
     window.segmentsApi = segmentsApi;
     window.chatApi = chatApi;
     window.memoryApi = memoryApi;

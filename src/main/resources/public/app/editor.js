@@ -544,8 +544,9 @@
         });
     
         // Update Reveal File, Open Folder, and Find button states
-        elements.btnRevealFile.disabled = !tabData.path;
-        elements.btnOpenFolder.disabled = !tabData.path;
+        const prepared = state.workspace && state.workspace.prepared;
+        elements.btnRevealFile.disabled = prepared || !tabData.path;
+        elements.btnOpenFolder.disabled = prepared || !tabData.path;
         elements.btnFind.disabled = !tabData.path;
         if (elements.btnViewHistory) {
             elements.btnViewHistory.disabled = !tabData.path;

@@ -164,19 +164,21 @@ public class VersioningController implements Controller {
                 totalRemoved += (int) change.getOrDefault("removedWords", 0);
 
                 // Store file content
-                Path sourcePath = workspaceRoot.resolve(filePath);
                 String contentHash = "";
 
-                if (!status.equals("deleted") && Files.exists(sourcePath)) {
-                    byte[] content = Files.readAllBytes(sourcePath);
-                    contentHash = hashContent(content);
+                if (!status.equals("deleted")) {
+                    String content = loadContentForPath(filePath);
+                    if (content != null) {
+                        byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);
+                        contentHash = hashContent(contentBytes);
 
-                    // Store content by hash to dedupe
-                    Path hashDir = workspaceRoot.resolve(HISTORY_DIR).resolve(CONTENT_DIR).resolve("blobs");
-                    Files.createDirectories(hashDir);
-                    Path blobPath = hashDir.resolve(contentHash);
-                    if (!Files.exists(blobPath)) {
-                        Files.write(blobPath, content);
+                        // Store content by hash to dedupe
+                        Path hashDir = workspaceRoot.resolve(HISTORY_DIR).resolve(CONTENT_DIR).resolve("blobs");
+                        Files.createDirectories(hashDir);
+                        Path blobPath = hashDir.resolve(contentHash);
+                        if (!Files.exists(blobPath)) {
+                            Files.write(blobPath, contentBytes);
+                        }
                     }
                 }
 
@@ -636,6 +638,13 @@ public class VersioningController implements Controller {
     private Map<String, String> getCurrentFileHashes() throws IOException {
         Map<String, String> hashes = new HashMap<>();
 
+        if (isPreparedProject()) {
+            for (var file : projectContext.preparedWorkspace().listVirtualFiles()) {
+                hashes.put(file.getPath(), hashContent(file.getContent().getBytes(StandardCharsets.UTF_8)));
+            }
+            return hashes;
+        }
+
         // Walk workspace, excluding .control-room and common ignore patterns
         try (Stream<Path> walk = Files.walk(workspaceRoot)) {
             walk.filter(Files::isRegularFile)
@@ -681,11 +690,19 @@ public class VersioningController implements Controller {
                     if (file.getPath().equals(filePath) && !file.getStatus().equals("deleted")) {
                         Path blobPath = workspaceRoot.resolve(HISTORY_DIR)
                             .resolve(CONTENT_DIR).resolve("blobs").resolve(file.getContentHash());
-                        Path targetPath = workspaceRoot.resolve(filePath);
-
                         if (Files.exists(blobPath)) {
-                            Files.createDirectories(targetPath.getParent());
-                            Files.copy(blobPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                            String content = Files.readString(blobPath, StandardCharsets.UTF_8);
+                            if (isPreparedProject()) {
+                                try {
+                                    projectContext.preparedWorkspace().writeFile(filePath, content);
+                                } catch (Exception e) {
+                                    projectContext.preparedWorkspace().createFile(filePath, content);
+                                }
+                            } else {
+                                Path targetPath = workspaceRoot.resolve(filePath);
+                                Files.createDirectories(targetPath.getParent());
+                                Files.copy(blobPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
+                            }
                             return true;
                         }
                     }
@@ -700,6 +717,10 @@ public class VersioningController implements Controller {
 
     private boolean deletePathIfExists(String filePath) {
         try {
+            if (isPreparedProject()) {
+                projectContext.preparedWorkspace().deleteEntry(filePath);
+                return true;
+            }
             Path targetPath = workspaceRoot.resolve(filePath);
             if (Files.exists(targetPath)) {
                 Files.delete(targetPath);
@@ -710,6 +731,27 @@ public class VersioningController implements Controller {
             logger.error("Failed to delete path: " + filePath, e);
             return false;
         }
+    }
+
+    private boolean isPreparedProject() {
+        return projectContext != null
+            && projectContext.preparation() != null
+            && projectContext.preparation().isPrepared();
+    }
+
+    private String loadContentForPath(String path) throws IOException {
+        if (isPreparedProject()) {
+            try {
+                return projectContext.preparedWorkspace().readFile(path);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        Path filePath = workspaceRoot.resolve(path);
+        if (Files.exists(filePath)) {
+            return Files.readString(filePath);
+        }
+        return null;
     }
 
     private String generateDefaultName() {
@@ -847,9 +889,8 @@ public class VersioningController implements Controller {
                 continue;
             }
             try {
-                Path filePath = workspaceRoot.resolve(path);
-                if (Files.exists(filePath)) {
-                    String content = Files.readString(filePath);
+                String content = loadContentForPath(path);
+                if (content != null) {
                     wordCounts.put(path, countWords(content));
                 }
             } catch (Exception e) {

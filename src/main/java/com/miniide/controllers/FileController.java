@@ -49,7 +49,11 @@ public class FileController implements Controller {
 
     private void getTree(Context ctx) {
         try {
-            ctx.json(projectContext.workspace().getTree(""));
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                ctx.json(projectContext.preparedWorkspace().getTree());
+            } else {
+                ctx.json(projectContext.workspace().getTree(""));
+            }
         } catch (Exception e) {
             logger.error("Error getting tree: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
@@ -63,7 +67,12 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            String content = projectContext.workspace().readFile(path);
+            String content;
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                content = projectContext.preparedWorkspace().readFile(path);
+            } else {
+                content = projectContext.workspace().readFile(path);
+            }
             ctx.contentType("text/plain; charset=utf-8").result(content);
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Controller.errorBody(e));
@@ -80,7 +89,11 @@ public class FileController implements Controller {
                 return;
             }
             String content = ctx.body();
-            projectContext.workspace().writeFile(path, content);
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                projectContext.preparedWorkspace().writeFile(path, content);
+            } else {
+                projectContext.workspace().writeFile(path, content);
+            }
             logger.info("File saved: " + path);
             ctx.json(Map.of("success", true, "message", "File saved: " + path));
         } catch (Exception e) {
@@ -101,9 +114,17 @@ public class FileController implements Controller {
             }
 
             if ("folder".equals(type)) {
+                if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                    ctx.status(400).json(Map.of("error", "Folders are not created in prepared mode."));
+                    return;
+                }
                 projectContext.workspace().createFolder(path);
             } else {
-                projectContext.workspace().createFile(path, initialContent);
+                if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                    projectContext.preparedWorkspace().createFile(path, initialContent);
+                } else {
+                    projectContext.workspace().createFile(path, initialContent);
+                }
             }
             logger.info("Created " + type + ": " + path);
             ctx.json(Map.of("success", true, "message", "Created: " + path));
@@ -119,7 +140,11 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            projectContext.workspace().deleteEntry(path);
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                projectContext.preparedWorkspace().deleteEntry(path);
+            } else {
+                projectContext.workspace().deleteEntry(path);
+            }
             logger.info("Deleted: " + path);
             ctx.json(Map.of("success", true, "message", "Deleted: " + path));
         } catch (FileNotFoundException e) {
@@ -139,8 +164,11 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Both 'from' and 'to' paths required"));
                 return;
             }
-
-            projectContext.workspace().renameEntry(from, to);
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                projectContext.preparedWorkspace().renameEntry(from, to);
+            } else {
+                projectContext.workspace().renameEntry(from, to);
+            }
             logger.info("Renamed: " + from + " -> " + to);
             ctx.json(Map.of("success", true, "message", "Renamed: " + from + " -> " + to));
         } catch (FileNotFoundException e) {
@@ -159,8 +187,12 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path is required"));
                 return;
             }
-
-            String newPath = projectContext.workspace().duplicateEntry(path);
+            String newPath;
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                newPath = projectContext.preparedWorkspace().duplicateEntry(path);
+            } else {
+                newPath = projectContext.workspace().duplicateEntry(path);
+            }
             logger.info("Duplicated: " + path + " -> " + newPath);
             ctx.json(Map.of("success", true, "message", "Duplicated: " + path, "newPath", newPath));
         } catch (FileNotFoundException e) {
@@ -174,7 +206,12 @@ public class FileController implements Controller {
         try {
             String query = ctx.queryParam("q");
             String pattern = ctx.queryParam("pattern");
-            List<SearchResult> results = projectContext.workspace().search(query, pattern);
+            List<SearchResult> results;
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                results = projectContext.preparedWorkspace().search(query);
+            } else {
+                results = projectContext.workspace().search(query, pattern);
+            }
             ctx.json(results);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
@@ -188,7 +225,12 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            List<SceneSegment> segments = projectContext.workspace().getSceneSegments(path);
+            List<SceneSegment> segments;
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                segments = projectContext.preparedWorkspace().getSceneSegments(path);
+            } else {
+                segments = projectContext.workspace().getSceneSegments(path);
+            }
             ctx.json(segments);
         } catch (FileNotFoundException e) {
             ctx.status(404).json(Controller.errorBody(e));
@@ -204,6 +246,10 @@ public class FileController implements Controller {
 
             if (path == null || path.isEmpty()) {
                 ctx.json(Map.of("ok", false, "error", "Path is required"));
+                return;
+            }
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                ctx.json(Map.of("ok", false, "error", "Prepared projects are virtual-only."));
                 return;
             }
 
@@ -270,6 +316,10 @@ public class FileController implements Controller {
 
             if (path == null || path.isEmpty()) {
                 ctx.json(Map.of("ok", false, "error", "Path is required"));
+                return;
+            }
+            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                ctx.json(Map.of("ok", false, "error", "Prepared projects are virtual-only."));
                 return;
             }
 

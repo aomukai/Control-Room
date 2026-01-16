@@ -103,6 +103,7 @@ public class Main {
             List<Controller> controllers = List.of(
                 new FileController(projectContext, objectMapper),
                 new WorkspaceController(projectContext, creditStore, objectMapper, config.isDevMode()),
+                new PreparationController(projectContext, objectMapper),
                 new AgentController(projectContext, objectMapper),
                 new PromptController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),

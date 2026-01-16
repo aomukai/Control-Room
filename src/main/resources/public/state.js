@@ -74,7 +74,10 @@
             description: '',
             icon: '',
             accentColor: '',
-            devMode: false
+            devMode: false,
+            prepared: false,
+            preparedMode: '',
+            preparedAt: ''
         }
     };
 

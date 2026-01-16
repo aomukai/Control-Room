@@ -17,6 +17,8 @@ public class ProjectContext {
     private AgentEndpointRegistry agentEndpointRegistry;
     private PatchService patchService;
     private PromptRegistry promptRegistry;
+    private ProjectPreparationService preparationService;
+    private PreparedWorkspaceService preparedWorkspaceService;
     private final AppLogger logger = AppLogger.get();
 
     public ProjectContext(Path workspaceRoot, ObjectMapper objectMapper) throws IOException {
@@ -31,6 +33,8 @@ public class ProjectContext {
         this.agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.patchService = new PatchService(workspaceService);
         this.promptRegistry = new PromptRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
+        this.preparationService = new ProjectPreparationService(workspaceService.getWorkspaceRoot(), workspaceService, objectMapper);
+        this.preparedWorkspaceService = new PreparedWorkspaceService(workspaceService.getWorkspaceRoot(), objectMapper);
         logger.info("Project context loaded for " + workspaceRoot);
     }
 
@@ -40,6 +44,14 @@ public class ProjectContext {
 
     public WorkspaceService workspace() {
         return workspaceService;
+    }
+
+    public PreparedWorkspaceService preparedWorkspace() {
+        return preparedWorkspaceService;
+    }
+
+    public ProjectPreparationService preparation() {
+        return preparationService;
     }
 
     public AgentRegistry agents() {

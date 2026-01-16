@@ -1,0 +1,610 @@
+package com.miniide;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.miniide.models.CanonCard;
+import com.miniide.models.FileNode;
+import com.miniide.models.SceneSegment;
+import com.miniide.models.SearchResult;
+import com.miniide.models.StoryRegistry;
+import com.miniide.models.StoryScene;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
+public class PreparedWorkspaceService {
+    private final Path workspaceRoot;
+    private final ObjectMapper mapper;
+    private final AppLogger logger;
+
+    public PreparedWorkspaceService(Path workspaceRoot, ObjectMapper mapper) {
+        this.workspaceRoot = workspaceRoot;
+        this.mapper = mapper;
+        this.logger = AppLogger.get();
+    }
+
+    public FileNode getTree() throws IOException {
+        FileNode root = new FileNode("workspace", "", "folder");
+        FileNode story = new FileNode("Story", "Story", "folder");
+        FileNode compendium = new FileNode("Compendium", "Compendium", "folder");
+
+        story.addChild(buildScenesFolder());
+        compendium.addChild(buildCompendiumFolder("Characters"));
+        compendium.addChild(buildCompendiumFolder("Locations"));
+        compendium.addChild(buildCompendiumFolder("Lore"));
+        compendium.addChild(buildCompendiumFolder("Factions"));
+        compendium.addChild(buildCompendiumFolder("Technology"));
+        compendium.addChild(buildCompendiumFolder("Culture"));
+        compendium.addChild(buildCompendiumFolder("Events"));
+        compendium.addChild(buildCompendiumFolder("Themes"));
+        compendium.addChild(buildCompendiumFolder("Glossary"));
+        compendium.addChild(buildCompendiumFolder("Misc"));
+
+        root.addChild(story);
+        root.addChild(compendium);
+        return root;
+    }
+
+    public String readFile(String relativePath) throws IOException {
+        CanonPath path = CanonPath.parse(relativePath);
+        if (path == null) {
+            throw new FileNotFoundException("File not found: " + relativePath);
+        }
+        if (path.kind == CanonPath.Kind.SCENE) {
+            StoryScene scene = findSceneByDisplayId(path.displayId);
+            if (scene == null) {
+                throw new FileNotFoundException("Scene not found: " + relativePath);
+            }
+            return scene.getContent() != null ? scene.getContent() : "";
+        }
+        CanonCard card = findCardByDisplayId(path.displayId);
+        if (card == null) {
+            throw new FileNotFoundException("Card not found: " + relativePath);
+        }
+        return card.getContent() != null ? card.getContent() : "";
+    }
+
+    public void writeFile(String relativePath, String content) throws IOException {
+        CanonPath path = CanonPath.parse(relativePath);
+        if (path == null) {
+            throw new IOException("Invalid path: " + relativePath);
+        }
+        String now = nowIso();
+        if (path.kind == CanonPath.Kind.SCENE) {
+            StoryRegistry registry = loadStoryRegistry();
+            StoryScene scene = findSceneByDisplayId(registry, path.displayId);
+            if (scene == null) {
+                throw new FileNotFoundException("Scene not found: " + relativePath);
+            }
+            scene.setContent(content);
+            scene.setUpdatedAt(now);
+            saveStoryRegistry(registry);
+            return;
+        }
+        CanonCard card = findCardByDisplayId(path.displayId);
+        if (card == null) {
+            throw new FileNotFoundException("Card not found: " + relativePath);
+        }
+        card.setContent(content);
+        card.setUpdatedAt(now);
+        saveCard(card);
+    }
+
+    public void createFile(String relativePath, String content) throws IOException {
+        CanonPath path = CanonPath.parse(relativePath);
+        if (path == null) {
+            throw new IOException("Invalid path: " + relativePath);
+        }
+        String now = nowIso();
+        if (path.kind == CanonPath.Kind.SCENE) {
+            StoryRegistry registry = loadStoryRegistry();
+            if (findSceneByDisplayId(registry, path.displayId) != null) {
+                throw new IOException("Scene already exists: " + relativePath);
+            }
+            StoryScene scene = new StoryScene();
+            scene.setOrigin("native");
+            scene.setStableId(generateStableId());
+            scene.setDisplayId(path.displayId);
+            scene.setTitle(path.titleFallback);
+            scene.setOrder(registry.getScenes().size() + 1);
+            scene.setContent(content != null ? content : "");
+            scene.setCreatedAt(now);
+            scene.setUpdatedAt(now);
+            scene.setStatus("active");
+            registry.getScenes().add(scene);
+            saveStoryRegistry(registry);
+            return;
+        }
+
+        CanonCard card = new CanonCard();
+        card.setOrigin("native");
+        card.setStableId(generateStableId());
+        card.setDisplayId(path.displayId);
+        card.setType(path.cardType);
+        card.setTitle(path.titleFallback);
+        card.setContent(content != null ? content : "");
+        card.setCreatedAt(now);
+        card.setUpdatedAt(now);
+        card.setAnnotationStatus("complete");
+        card.setStatus("active");
+        saveCard(card);
+    }
+
+    public void deleteEntry(String relativePath) throws IOException {
+        CanonPath path = CanonPath.parse(relativePath);
+        if (path == null) {
+            throw new IOException("Invalid path: " + relativePath);
+        }
+        if (path.kind == CanonPath.Kind.SCENE) {
+            StoryRegistry registry = loadStoryRegistry();
+            boolean removed = registry.getScenes().removeIf(scene -> path.displayId.equalsIgnoreCase(scene.getDisplayId()));
+            if (!removed) {
+                throw new FileNotFoundException("Scene not found: " + relativePath);
+            }
+            saveStoryRegistry(registry);
+            return;
+        }
+        CanonCard card = findCardByDisplayId(path.displayId);
+        if (card == null) {
+            throw new FileNotFoundException("Card not found: " + relativePath);
+        }
+        Path cardPath = resolveCardPath(card);
+        Files.deleteIfExists(cardPath);
+    }
+
+    public void renameEntry(String from, String to) throws IOException {
+        CanonPath source = CanonPath.parse(from);
+        CanonPath target = CanonPath.parse(to);
+        if (source == null || target == null || source.kind != target.kind) {
+            throw new IOException("Invalid rename target");
+        }
+        String now = nowIso();
+        if (source.kind == CanonPath.Kind.SCENE) {
+            StoryRegistry registry = loadStoryRegistry();
+            StoryScene scene = findSceneByDisplayId(registry, source.displayId);
+            if (scene == null) {
+                throw new FileNotFoundException("Scene not found: " + from);
+            }
+            scene.setDisplayId(target.displayId);
+            scene.setTitle(target.titleFallback);
+            scene.setUpdatedAt(now);
+            saveStoryRegistry(registry);
+            return;
+        }
+
+        CanonCard card = findCardByDisplayId(source.displayId);
+        if (card == null) {
+            throw new FileNotFoundException("Card not found: " + from);
+        }
+        Path oldPath = resolveCardPath(card);
+        card.setDisplayId(target.displayId);
+        card.setTitle(target.titleFallback);
+        card.setType(target.cardType);
+        card.setUpdatedAt(now);
+        Path newPath = resolveCardPath(card);
+        if (!Files.exists(oldPath)) {
+            saveCard(card);
+            return;
+        }
+        Files.deleteIfExists(oldPath);
+        saveCard(card);
+        if (!oldPath.equals(newPath)) {
+            logger.info("Renamed card: " + oldPath + " -> " + newPath);
+        }
+    }
+
+    public String duplicateEntry(String relativePath) throws IOException {
+        CanonPath path = CanonPath.parse(relativePath);
+        if (path == null) {
+            throw new IOException("Invalid path: " + relativePath);
+        }
+        String now = nowIso();
+        if (path.kind == CanonPath.Kind.SCENE) {
+            StoryRegistry registry = loadStoryRegistry();
+            StoryScene source = findSceneByDisplayId(registry, path.displayId);
+            if (source == null) {
+                throw new FileNotFoundException("Scene not found: " + relativePath);
+            }
+            StoryScene copy = new StoryScene();
+            copy.setOrigin("native");
+            copy.setStableId(generateStableId());
+            copy.setDisplayId(nextCopyDisplayId(path.displayId, registry.getScenes()));
+            copy.setTitle(source.getTitle() + " (copy)");
+            copy.setOrder(registry.getScenes().size() + 1);
+            copy.setContent(source.getContent());
+            copy.setCreatedAt(now);
+            copy.setUpdatedAt(now);
+            copy.setStatus("active");
+            registry.getScenes().add(copy);
+            saveStoryRegistry(registry);
+            return CanonPath.scenePath(copy.getDisplayId());
+        }
+
+        CanonCard card = findCardByDisplayId(path.displayId);
+        if (card == null) {
+            throw new FileNotFoundException("Card not found: " + relativePath);
+        }
+        CanonCard copy = new CanonCard();
+        copy.setOrigin("native");
+        copy.setStableId(generateStableId());
+        copy.setDisplayId(nextCopyCardDisplayId(card));
+        copy.setType(card.getType());
+        copy.setTitle(card.getTitle() + " (copy)");
+        copy.setContent(card.getContent());
+        copy.setCreatedAt(now);
+        copy.setUpdatedAt(now);
+        copy.setAnnotationStatus(card.getAnnotationStatus());
+        copy.setStatus(card.getStatus());
+        saveCard(copy);
+        return CanonPath.cardPath(copy.getType(), copy.getDisplayId());
+    }
+
+    public List<SearchResult> search(String query) throws IOException {
+        List<SearchResult> results = new ArrayList<>();
+        if (query == null || query.isBlank()) {
+            return results;
+        }
+        String lower = query.toLowerCase(Locale.ROOT);
+        for (StoryScene scene : loadStoryRegistry().getScenes()) {
+            String content = scene.getContent();
+            if (content != null && content.toLowerCase(Locale.ROOT).contains(lower)) {
+                results.add(new SearchResult(CanonPath.scenePath(scene.getDisplayId()), 1, preview(content)));
+            }
+        }
+        for (CanonCard card : loadAllCards()) {
+            String content = card.getContent();
+            if (content != null && content.toLowerCase(Locale.ROOT).contains(lower)) {
+                results.add(new SearchResult(CanonPath.cardPath(card.getType(), card.getDisplayId()), 1, preview(content)));
+            }
+        }
+        return results;
+    }
+
+    public List<VirtualFile> listVirtualFiles() throws IOException {
+        List<VirtualFile> files = new ArrayList<>();
+        for (StoryScene scene : loadStoryRegistry().getScenes()) {
+            String path = CanonPath.scenePath(scene.getDisplayId());
+            files.add(new VirtualFile(path, scene.getContent() != null ? scene.getContent() : ""));
+        }
+        for (CanonCard card : loadAllCards()) {
+            String path = CanonPath.cardPath(card.getType(), card.getDisplayId());
+            files.add(new VirtualFile(path, card.getContent() != null ? card.getContent() : ""));
+        }
+        return files;
+    }
+
+    public List<SceneSegment> getSceneSegments(String relativePath) throws IOException {
+        String content = readFile(relativePath);
+        List<SceneSegment> segments = new ArrayList<>();
+        segments.add(new SceneSegment("seg-1", 0, content.length(), content));
+        return segments;
+    }
+
+    private FileNode buildScenesFolder() throws IOException {
+        FileNode scenesFolder = new FileNode("Scenes", "Story/Scenes", "folder");
+        StoryRegistry registry = loadStoryRegistry();
+        List<StoryScene> scenes = registry.getScenes() != null ? new ArrayList<>(registry.getScenes()) : new ArrayList<>();
+        scenes.sort(Comparator.comparingInt(StoryScene::getOrder));
+        for (StoryScene scene : scenes) {
+            if (scene.getDisplayId() == null || scene.getDisplayId().isBlank()) {
+                continue;
+            }
+            String filename = CanonPath.sceneFileName(scene.getDisplayId());
+            scenesFolder.addChild(new FileNode(filename, "Story/Scenes/" + filename, "file"));
+        }
+        return scenesFolder;
+    }
+
+    private FileNode buildCompendiumFolder(String bucket) throws IOException {
+        String path = "Compendium/" + bucket;
+        FileNode folder = new FileNode(bucket, path, "folder");
+        String type = bucketToType(bucket);
+        List<CanonCard> cards = loadAllCards();
+        cards.stream()
+            .filter(card -> type.equalsIgnoreCase(card.getType()))
+            .sorted(Comparator.comparing(CanonCard::getTitle, String.CASE_INSENSITIVE_ORDER))
+            .forEach(card -> {
+                String filename = CanonPath.cardFileName(card.getDisplayId());
+                folder.addChild(new FileNode(filename, path + "/" + filename, "file"));
+            });
+        return folder;
+    }
+
+    private StoryRegistry loadStoryRegistry() throws IOException {
+        Path scenesPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("scenes.json");
+        if (!Files.exists(scenesPath)) {
+            StoryRegistry registry = new StoryRegistry();
+            registry.setSchemaVersion(1);
+            registry.setScenes(new ArrayList<>());
+            return registry;
+        }
+        try {
+            StoryRegistry registry = mapper.readValue(scenesPath.toFile(), StoryRegistry.class);
+            if (registry.getScenes() == null) {
+                registry.setScenes(new ArrayList<>());
+            }
+            return registry;
+        } catch (Exception e) {
+            logger.error("Failed to load story registry, falling back to empty: " + e.getMessage());
+            StoryRegistry registry = new StoryRegistry();
+            registry.setSchemaVersion(1);
+            registry.setScenes(new ArrayList<>());
+            return registry;
+        }
+    }
+
+    private void saveStoryRegistry(StoryRegistry registry) throws IOException {
+        Path scenesPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("scenes.json");
+        Files.createDirectories(scenesPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(scenesPath.toFile(), registry);
+    }
+
+    private List<CanonCard> loadAllCards() throws IOException {
+        List<CanonCard> cards = new ArrayList<>();
+        Path cardsDir = workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards");
+        if (!Files.exists(cardsDir)) {
+            return cards;
+        }
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(cardsDir, "*.json")) {
+            for (Path entry : stream) {
+                try {
+                    cards.add(mapper.readValue(entry.toFile(), CanonCard.class));
+                } catch (Exception e) {
+                    logger.error("Failed to load canon card " + entry.getFileName() + ": " + e.getMessage());
+                }
+            }
+        }
+        return cards;
+    }
+
+    private CanonCard findCardByDisplayId(String displayId) throws IOException {
+        for (CanonCard card : loadAllCards()) {
+            if (displayId.equalsIgnoreCase(card.getDisplayId())) {
+                return card;
+            }
+        }
+        return null;
+    }
+
+    private StoryScene findSceneByDisplayId(String displayId) throws IOException {
+        return findSceneByDisplayId(loadStoryRegistry(), displayId);
+    }
+
+    private StoryScene findSceneByDisplayId(StoryRegistry registry, String displayId) {
+        for (StoryScene scene : registry.getScenes()) {
+            if (displayId.equalsIgnoreCase(scene.getDisplayId())) {
+                return scene;
+            }
+        }
+        return null;
+    }
+
+    private void saveCard(CanonCard card) throws IOException {
+        Path cardPath = resolveCardPath(card);
+        Files.createDirectories(cardPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(cardPath.toFile(), card);
+    }
+
+    private Path resolveCardPath(CanonCard card) {
+        String typePrefix = CanonPath.cardPrefix(card.getType());
+        String slug = CanonPath.cardSlug(card.getDisplayId(), card.getTitle());
+        String filename = typePrefix + "-" + slug + ".json";
+        return workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards").resolve(filename);
+    }
+
+    private String nextCopyDisplayId(String baseDisplayId, List<StoryScene> scenes) {
+        String base = baseDisplayId;
+        String candidate = base + "-copy";
+        int counter = 2;
+        while (displayIdExists(candidate, scenes)) {
+            candidate = base + "-copy-" + counter++;
+        }
+        return candidate;
+    }
+
+    private boolean displayIdExists(String displayId, List<StoryScene> scenes) {
+        for (StoryScene scene : scenes) {
+            if (displayId.equalsIgnoreCase(scene.getDisplayId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String nextCopyCardDisplayId(CanonCard card) throws IOException {
+        String base = card.getDisplayId();
+        String candidate = base + "-copy";
+        int counter = 2;
+        while (findCardByDisplayId(candidate) != null) {
+            candidate = base + "-copy-" + counter++;
+        }
+        return candidate;
+    }
+
+    private String bucketToType(String bucket) {
+        switch (bucket.toLowerCase(Locale.ROOT)) {
+            case "characters": return "character";
+            case "locations": return "location";
+            case "lore": return "concept";
+            case "factions": return "faction";
+            case "technology": return "technology";
+            case "culture": return "culture";
+            case "events": return "event";
+            case "themes": return "theme";
+            case "glossary": return "glossary";
+            default: return "misc";
+        }
+    }
+
+    private String preview(String content) {
+        String trimmed = content.trim();
+        if (trimmed.length() > 100) {
+            return trimmed.substring(0, 100) + "...";
+        }
+        return trimmed;
+    }
+
+    private String nowIso() {
+        return DateTimeFormatter.ISO_INSTANT.withZone(ZoneOffset.UTC).format(Instant.now());
+    }
+
+    private String generateStableId() {
+        return "ID-" + java.util.UUID.randomUUID().toString();
+    }
+
+    private static class CanonPath {
+        enum Kind { SCENE, CARD }
+        final Kind kind;
+        final String displayId;
+        final String titleFallback;
+        final String cardType;
+
+        private CanonPath(Kind kind, String displayId, String titleFallback, String cardType) {
+            this.kind = kind;
+            this.displayId = displayId;
+            this.titleFallback = titleFallback;
+            this.cardType = cardType;
+        }
+
+        static CanonPath parse(String path) {
+            if (path == null) return null;
+            String normalized = path.replace('\\', '/');
+            if (normalized.startsWith("Story/Scenes/")) {
+                String filename = normalized.substring("Story/Scenes/".length());
+                if (!filename.endsWith(".md")) return null;
+                String base = filename.substring(0, filename.length() - 3);
+                String slug = base.startsWith("SCN-") ? base.substring(4) : base;
+                String displayId = "SCN:" + slug;
+                return new CanonPath(Kind.SCENE, displayId, titleFromBase(base), null);
+            }
+            if (normalized.startsWith("Compendium/")) {
+                String[] parts = normalized.split("/");
+                if (parts.length < 3) return null;
+                String bucket = parts[1];
+                String filename = parts[2];
+                if (!filename.endsWith(".md")) return null;
+                String base = filename.substring(0, filename.length() - 3);
+                String type = bucketToTypeStatic(bucket);
+                String prefix = cardPrefix(type);
+                String slug = base;
+                if (base.toUpperCase(Locale.ROOT).startsWith(prefix + "-")) {
+                    slug = base.substring(prefix.length() + 1);
+                }
+                String displayId = prefix + ":" + slug;
+                return new CanonPath(Kind.CARD, displayId, titleFromBase(base), type);
+            }
+            return null;
+        }
+
+        static String sceneFileName(String displayId) {
+            return displayId.replace(':', '-') + ".md";
+        }
+
+        static String cardFileName(String displayId) {
+            return displayId.replace(':', '-') + ".md";
+        }
+
+        static String scenePath(String displayId) {
+            return "Story/Scenes/" + sceneFileName(displayId);
+        }
+
+        static String cardPath(String type, String displayId) {
+            String bucket = bucketFromType(type);
+            return "Compendium/" + bucket + "/" + cardFileName(displayId);
+        }
+
+        static String cardPrefix(String type) {
+            switch (type.toLowerCase(Locale.ROOT)) {
+                case "character": return "CHAR";
+                case "location": return "LOC";
+                case "concept": return "CONCEPT";
+                case "faction": return "FACTION";
+                case "technology": return "TECH";
+                case "culture": return "CULTURE";
+                case "event": return "EVENT";
+                case "theme": return "THEME";
+                case "glossary": return "GLOSSARY";
+                default: return "MISC";
+            }
+        }
+
+        static String cardSlug(String displayId, String title) {
+            if (displayId != null && displayId.contains(":")) {
+                return displayId.substring(displayId.indexOf(':') + 1).toLowerCase(Locale.ROOT);
+            }
+            return slugify(title);
+        }
+
+        private static String bucketFromType(String type) {
+            switch (type.toLowerCase(Locale.ROOT)) {
+                case "character": return "Characters";
+                case "location": return "Locations";
+                case "concept": return "Lore";
+                case "faction": return "Factions";
+                case "technology": return "Technology";
+                case "culture": return "Culture";
+                case "event": return "Events";
+                case "theme": return "Themes";
+                case "glossary": return "Glossary";
+                default: return "Misc";
+            }
+        }
+
+        private static String bucketToTypeStatic(String bucket) {
+            switch (bucket.toLowerCase(Locale.ROOT)) {
+                case "characters": return "character";
+                case "locations": return "location";
+                case "lore": return "concept";
+                case "factions": return "faction";
+                case "technology": return "technology";
+                case "culture": return "culture";
+                case "events": return "event";
+                case "themes": return "theme";
+                case "glossary": return "glossary";
+                default: return "misc";
+            }
+        }
+
+        private static String titleFromBase(String base) {
+            String cleaned = base.replace('_', ' ').replace('-', ' ').replace(':', ' ').trim();
+            return cleaned.isEmpty() ? "Untitled" : cleaned;
+        }
+
+        private static String slugify(String value) {
+            if (value == null || value.isBlank()) {
+                return "item";
+            }
+            String slug = value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-");
+            slug = slug.replaceAll("(^-|-$)", "");
+            return slug.isEmpty() ? "item" : slug;
+        }
+    }
+
+    public static class VirtualFile {
+        private final String path;
+        private final String content;
+
+        public VirtualFile(String path, String content) {
+            this.path = path;
+            this.content = content;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public String getContent() {
+            return content;
+        }
+    }
+}
