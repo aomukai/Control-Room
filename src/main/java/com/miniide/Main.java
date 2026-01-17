@@ -55,7 +55,7 @@ public class Main {
             // Set current project ID for scoped notifications
             String projectName = projectContext.workspace().getWorkspaceRoot().getFileName().toString();
             notificationStore.setCurrentProjectId(projectName);
-            IssueMemoryService issueService = new IssueMemoryService();
+            IssueMemoryService issueService = new IssueMemoryService(config.getWorkspacePath());
             CreditStore creditStore = new CreditStore(config.getWorkspacePath());
             MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");
@@ -105,7 +105,7 @@ public class Main {
             MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(projectContext, objectMapper),
-                new WorkspaceController(projectContext, creditStore, notificationStore, objectMapper, config.isDevMode()),
+                new WorkspaceController(projectContext, creditStore, issueService, notificationStore, objectMapper, config.isDevMode()),
                 new PreparationController(projectContext, objectMapper),
                 new AgentController(projectContext, objectMapper),
                 new PromptController(projectContext, objectMapper),

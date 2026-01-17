@@ -17,7 +17,6 @@ import java.nio.file.Paths;
 
 public class IssueMemoryService {
 
-    private static final String STORAGE_PATH = "data/issues.json";
     private static final Map<String, String> ROADMAP_STATUS_TAGS = Map.of(
         "idea", "Idea",
         "plan", "Plan",
@@ -26,8 +25,16 @@ public class IssueMemoryService {
     );
     private final Map<Integer, Issue> issues = new ConcurrentHashMap<>();
     private final AtomicInteger idCounter = new AtomicInteger(0);
+    private Path storagePath;
 
-    public IssueMemoryService() {
+    public IssueMemoryService(Path workspacePath) {
+        switchWorkspace(workspacePath);
+    }
+
+    public synchronized void switchWorkspace(Path workspacePath) {
+        this.storagePath = workspacePath.resolve(".controlroom").resolve("state").resolve("issues.json");
+        issues.clear();
+        idCounter.set(0);
         loadFromDisk();
     }
 
@@ -160,14 +167,13 @@ public class IssueMemoryService {
     }
 
     private void loadFromDisk() {
-        Path path = Paths.get(STORAGE_PATH);
-        if (!Files.exists(path)) {
-            logWarning("No issue storage found at " + STORAGE_PATH + "; starting empty.");
+        if (!Files.exists(storagePath)) {
+            log("No issue storage found at " + storagePath + "; starting empty.");
             return;
         }
 
         try {
-            List<Issue> stored = JsonStorage.readJsonList(STORAGE_PATH, Issue[].class);
+            List<Issue> stored = JsonStorage.readJsonList(storagePath.toString(), Issue[].class);
             int maxId = 0;
             for (Issue issue : stored) {
                 if (issue.getId() > 0) {
@@ -180,16 +186,21 @@ public class IssueMemoryService {
             idCounter.set(maxId);
             log("Loaded " + stored.size() + " issue(s) from disk. Next ID: " + (maxId + 1));
         } catch (Exception e) {
-            logWarning("Failed to load issues from " + STORAGE_PATH + ": " + e.getMessage());
+            logWarning("Failed to load issues from " + storagePath + ": " + e.getMessage());
         }
     }
 
     private void saveAll() {
         try {
+            // Ensure parent directories exist
+            Path parent = storagePath.getParent();
+            if (parent != null && !Files.exists(parent)) {
+                Files.createDirectories(parent);
+            }
             List<Issue> data = new ArrayList<>(issues.values());
-            JsonStorage.writeJsonList(STORAGE_PATH, data);
+            JsonStorage.writeJsonList(storagePath.toString(), data);
         } catch (Exception e) {
-            logWarning("Failed to save issues to " + STORAGE_PATH + ": " + e.getMessage());
+            logWarning("Failed to save issues to " + storagePath + ": " + e.getMessage());
         }
     }
 

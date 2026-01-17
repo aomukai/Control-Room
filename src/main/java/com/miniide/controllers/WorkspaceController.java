@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppConfig;
 import com.miniide.AppLogger;
 import com.miniide.CreditStore;
+import com.miniide.IssueMemoryService;
 import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
 import io.javalin.Javalin;
@@ -23,14 +24,16 @@ public class WorkspaceController implements Controller {
 
     private final ProjectContext projectContext;
     private final CreditStore creditStore;
+    private final IssueMemoryService issueService;
     private final NotificationStore notificationStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
     private final boolean devMode;
 
-    public WorkspaceController(ProjectContext projectContext, CreditStore creditStore, NotificationStore notificationStore, ObjectMapper objectMapper, boolean devMode) {
+    public WorkspaceController(ProjectContext projectContext, CreditStore creditStore, IssueMemoryService issueService, NotificationStore notificationStore, ObjectMapper objectMapper, boolean devMode) {
         this.projectContext = projectContext;
         this.creditStore = creditStore;
+        this.issueService = issueService;
         this.notificationStore = notificationStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
@@ -199,6 +202,9 @@ public class WorkspaceController implements Controller {
             projectContext.switchWorkspace(target);
             if (creditStore != null) {
                 creditStore.switchWorkspace(target);
+            }
+            if (issueService != null) {
+                issueService.switchWorkspace(target);
             }
             if (notificationStore != null) {
                 notificationStore.setCurrentProjectId(trimmed);
