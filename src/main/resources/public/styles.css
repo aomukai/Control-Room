@@ -14,12 +14,20 @@
     --text-secondary: #858585;
     --text-bright: #ffffff;
     --border-color: #454545;
-    /* Accent colors - JS updates these when warmth changes */
+    /* Accent colors - static for buttons and UI elements */
     --accent-color: #0e639c;
     --accent-hover: #1177bb;
     --accent-color-dark: #0a4d7a;
     --accent-glow: rgba(14, 99, 156, 0.3);
     --accent-glow-strong: rgba(14, 99, 156, 0.5);
+    /* Warmth colors - JS updates these for card tinting (defaults to accent) */
+    --warmth-border: #0e639c;
+    --warmth-border-dark: #0a4d7a;
+    --warmth-glow: rgba(14, 99, 156, 0.25);
+    --warmth-glow-strong: rgba(14, 99, 156, 0.4);
+    --card-tint: rgba(14, 99, 156, 0.08);
+    --card-tint-hover: rgba(14, 99, 156, 0.14);
+    --card-tint-strong: rgba(14, 99, 156, 0.18);
     --success-color: #4ec9b0;
     --warning-color: #dcdcaa;
     --error-color: #f14c4c;
@@ -5739,28 +5747,28 @@ textarea.settings-control.settings-control-wide {
 .agent-card {
     display: flex;
     flex-direction: column;
-    background: linear-gradient(135deg, var(--bg-light) 0%, var(--bg-light) 100%);
-    background-color: var(--card-tint, transparent);
-    background-blend-mode: overlay;
+    background: var(--bg-light);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent) 0%, transparent 100%);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     margin-bottom: 10px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.2s ease, background-image 0.4s ease;
     overflow: hidden;
-    box-shadow: inset 0 0 0 1px var(--card-tint, transparent);
 }
 
 .agent-card:hover {
-    border-color: var(--accent-color);
-    background-color: var(--card-tint-hover, var(--bg-lighter));
+    border-color: var(--warmth-border, var(--accent-color));
+    background: var(--bg-lighter);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent) 0%, transparent 100%);
     transform: translateY(-1px);
-    box-shadow: 0 4px 16px var(--accent-glow, rgba(0, 0, 0, 0.15)), inset 0 0 0 1px var(--card-tint-hover, transparent);
+    box-shadow: 0 4px 16px var(--warmth-glow, rgba(0, 0, 0, 0.15));
 }
 
 .agent-card.active {
-    border-color: var(--accent-color);
-    background-color: var(--card-tint-hover, rgba(14, 99, 156, 0.15));
+    border-color: var(--warmth-border, var(--accent-color));
+    background: var(--bg-lighter);
+    background-image: linear-gradient(135deg, var(--card-tint-strong, transparent) 0%, transparent 100%);
 }
 
 .agent-card.chief-of-staff {
@@ -6162,7 +6170,7 @@ textarea.settings-control.settings-control-wide {
 
 .workbench-card {
     background: var(--bg-light);
-    background-image: linear-gradient(135deg, var(--card-tint, transparent), transparent);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent) 0%, transparent 100%);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 16px;
@@ -6170,7 +6178,7 @@ textarea.settings-control.settings-control-wide {
     flex-direction: column;
     gap: 10px;
     min-height: 0;
-    transition: background-image 0.3s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: background-image 0.4s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .workbench-card-hero {
@@ -6195,8 +6203,9 @@ textarea.settings-control.settings-control-wide {
 }
 
 .workbench-card-expandable:hover {
-    border-color: var(--accent-color);
+    border-color: var(--warmth-border, var(--accent-color));
     background: var(--bg-lighter);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent) 0%, transparent 100%);
 }
 
 .workbench-card-detail {
@@ -6398,23 +6407,23 @@ textarea.settings-control.settings-control-wide {
 .newsfeed-item {
     padding: 10px 12px;
     background: var(--bg-light);
-    background-image: linear-gradient(135deg, var(--card-tint, transparent), transparent);
+    background-image: linear-gradient(135deg, var(--card-tint, transparent) 0%, transparent 100%);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     margin-bottom: 8px;
     cursor: pointer;
-    transition: all 0.15s ease, background-image 0.3s ease;
+    transition: all 0.15s ease, background-image 0.4s ease;
 }
 
 .newsfeed-item:hover {
-    border-color: var(--accent-color);
+    border-color: var(--warmth-border, var(--accent-color));
     background: var(--bg-lighter);
-    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent), transparent);
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent) 0%, transparent 100%);
 }
 
 .newsfeed-item.unread {
-    border-left: 3px solid var(--accent-color);
-    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent), transparent);
+    border-left: 3px solid var(--warmth-border, var(--accent-color));
+    background-image: linear-gradient(135deg, var(--card-tint-hover, transparent) 0%, transparent 100%);
 }
 
 .newsfeed-item-header {
@@ -8784,7 +8793,7 @@ textarea.settings-control.settings-control-wide {
     width: 18px;
     height: 18px;
     background: var(--text-bright);
-    border: 2px solid var(--accent-color);
+    border: 2px solid var(--warmth-border, var(--accent-color));
     border-radius: 50%;
     cursor: grab;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
@@ -8804,7 +8813,7 @@ textarea.settings-control.settings-control-wide {
     width: 18px;
     height: 18px;
     background: var(--text-bright);
-    border: 2px solid var(--accent-color);
+    border: 2px solid var(--warmth-border, var(--accent-color));
     border-radius: 50%;
     cursor: grab;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
@@ -8813,7 +8822,7 @@ textarea.settings-control.settings-control-wide {
 .widget-warmth-value {
     font-size: 20px;
     font-weight: 700;
-    color: var(--accent-color);
+    color: var(--warmth-border, var(--accent-color));
     min-width: 50px;
     text-align: center;
 }
@@ -8844,8 +8853,8 @@ textarea.settings-control.settings-control-wide {
 }
 
 .widget-warmth-preset.active {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 10px var(--accent-glow);
+    border-color: var(--warmth-border, var(--accent-color));
+    box-shadow: 0 0 10px var(--warmth-glow, rgba(14, 99, 156, 0.3));
 }
 
 .widget-warmth-hint {
@@ -8854,25 +8863,16 @@ textarea.settings-control.settings-control-wide {
     margin-top: 4px;
 }
 
-/* Smooth color transitions for warmth changes */
-*,
-*::before,
-*::after {
-    transition:
-        border-color 0.3s ease,
-        background-color 0.3s ease,
-        box-shadow 0.3s ease;
-}
-
-/* Exclude animations that shouldn't be affected */
-.widget-warmth-slider,
-.widget-warmth-slider::-webkit-slider-thumb,
-button,
-a,
-input,
-textarea,
-select {
-    transition: all 0.15s ease;
+/* Smooth color transitions for warmth changes on cards */
+.agent-card,
+.workbench-card,
+.newsfeed-item,
+.widget-card,
+.widget-warmth-value,
+.widget-warmth-preset {
+    transition-property: background-image, border-color, box-shadow, color;
+    transition-duration: 0.4s;
+    transition-timing-function: ease;
 }
 
 /* Reduced motion support */

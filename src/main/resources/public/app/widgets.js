@@ -1801,30 +1801,31 @@
         const hueShift = value * 0.5;
         const hue = BASE_HUE + hueShift;
 
-        const accentColor = hslToHex(hue, 82, 33);
-        const accentHover = hslToHex(hue, 82, 40);
-        const accentLight = hslToHex(hue, 82, 50);
-        const accentDark = hslToHex(hue, 82, 26);
+        // Calculate warmth color for card backgrounds and border accents
+        const warmthColor = hslToHex(hue, 70, 45);
+        const warmthColorDark = hslToHex(hue, 70, 35);
 
-        const rgb = hslToRgb(hue, 82, 33);
-        const accentGlow = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
-        const accentGlowStrong = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`;
-        const cardTint = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.04)`;
-        const cardTintHover = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`;
-        const accentGradient = `linear-gradient(135deg, ${accentColor}, ${accentHover})`;
-        const accentGradientHover = `linear-gradient(135deg, ${accentHover}, ${accentLight})`;
+        const rgb = hslToRgb(hue, 70, 45);
+
+        // Card background tints - more visible opacity for actual background tinting
+        const cardTint = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`;
+        const cardTintHover = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.14)`;
+        const cardTintStrong = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.18)`;
+
+        // Border/edge accent colors - for card borders on hover/active states
+        const warmthGlow = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.25)`;
+        const warmthGlowStrong = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.4)`;
 
         const root = document.documentElement;
-        root.style.setProperty('--accent-color', accentColor);
-        root.style.setProperty('--accent-hover', accentHover);
-        root.style.setProperty('--accent-light', accentLight);
-        root.style.setProperty('--accent-color-dark', accentDark);
-        root.style.setProperty('--accent-glow', accentGlow);
-        root.style.setProperty('--accent-glow-strong', accentGlowStrong);
-        root.style.setProperty('--accent-gradient', accentGradient);
-        root.style.setProperty('--accent-gradient-hover', accentGradientHover);
+        // Card tinting
         root.style.setProperty('--card-tint', cardTint);
         root.style.setProperty('--card-tint-hover', cardTintHover);
+        root.style.setProperty('--card-tint-strong', cardTintStrong);
+        // Border/edge accents for warmth-responsive elements
+        root.style.setProperty('--warmth-border', warmthColor);
+        root.style.setProperty('--warmth-border-dark', warmthColorDark);
+        root.style.setProperty('--warmth-glow', warmthGlow);
+        root.style.setProperty('--warmth-glow-strong', warmthGlowStrong);
     }
 
     // Apply saved warmth on load
