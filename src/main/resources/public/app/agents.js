@@ -3956,15 +3956,38 @@
                 const retired = (agents || []).filter(agent => agent.enabled === false);
                 if (retired.length === 0) {
                     const empty = document.createElement('div');
-                    empty.className = 'agent-empty';
-                    empty.textContent = 'No retired agents.';
+                    empty.className = 'retired-agent-empty';
+                    empty.innerHTML = '<div class="retired-agent-empty-icon">☀️</div><div class="retired-agent-empty-text">No retired agents</div><div class="retired-agent-empty-hint">Everyone\'s hard at work!</div>';
                     list.appendChild(empty);
                     return;
                 }
 
                 retired.forEach(agent => {
-                    const row = document.createElement('div');
-                    row.className = 'retired-agent-row';
+                    const card = document.createElement('div');
+                    card.className = 'retired-agent-card';
+
+                    // Avatar (reuse same logic as agent cards)
+                    const avatar = document.createElement('div');
+                    avatar.className = 'retired-agent-avatar';
+                    const avatarData = agent.avatar && agent.avatar.trim() ? agent.avatar.trim() : '';
+
+                    if (avatarData.startsWith('data:') || avatarData.startsWith('http')) {
+                        const img = document.createElement('img');
+                        img.src = avatarData;
+                        img.alt = agent.name || 'Agent';
+                        avatar.appendChild(img);
+                        avatar.classList.add('has-image');
+                    } else if (avatarData) {
+                        avatar.textContent = avatarData;
+                        avatar.classList.add('has-emoji');
+                    } else {
+                        avatar.textContent = agent.name ? agent.name.charAt(0).toUpperCase() : '?';
+                        avatar.classList.add('has-initial');
+                    }
+
+                    // Info section
+                    const info = document.createElement('div');
+                    info.className = 'retired-agent-info';
 
                     const name = document.createElement('div');
                     name.className = 'retired-agent-name';
@@ -3974,34 +3997,38 @@
                     role.className = 'retired-agent-role';
                     role.textContent = agent.role || 'role';
 
+                    info.appendChild(name);
+                    info.appendChild(role);
+
+                    // Reactivate button
                     const reactivate = document.createElement('button');
                     reactivate.type = 'button';
-                    reactivate.className = 'modal-btn modal-btn-secondary';
+                    reactivate.className = 'retired-agent-btn';
                     reactivate.textContent = 'Reactivate';
                     reactivate.addEventListener('click', async () => {
                         reactivate.disabled = true;
-                        row.remove();
-                        if (!list.querySelector('.retired-agent-row')) {
-                            const empty = document.createElement('div');
-                            empty.className = 'agent-empty';
-                            empty.textContent = 'No retired agents.';
-                            list.appendChild(empty);
-                        }
+                        card.classList.add('reactivating');
                         try {
                             await agentApi.setStatus(agent.id, true);
                             await window.loadAgents();
-                            await renderRetiredList();
+                            card.remove();
+                            if (!list.querySelector('.retired-agent-card')) {
+                                const empty = document.createElement('div');
+                                empty.className = 'retired-agent-empty';
+                                empty.innerHTML = '<div class="retired-agent-empty-icon">☀️</div><div class="retired-agent-empty-text">No retired agents</div><div class="retired-agent-empty-hint">Everyone\'s hard at work!</div>';
+                                list.appendChild(empty);
+                            }
                         } catch (err) {
                             log(`Failed to reactivate ${agent.name}: ${err.message}`, 'error');
-                            await renderRetiredList();
+                            card.classList.remove('reactivating');
                             reactivate.disabled = false;
                         }
                     });
 
-                    row.appendChild(name);
-                    row.appendChild(role);
-                    row.appendChild(reactivate);
-                    list.appendChild(row);
+                    card.appendChild(avatar);
+                    card.appendChild(info);
+                    card.appendChild(reactivate);
+                    list.appendChild(card);
                 });
             } catch (err) {
                 const error = document.createElement('div');
