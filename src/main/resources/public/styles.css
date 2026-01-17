@@ -8925,7 +8925,196 @@ textarea.settings-control.settings-control-wide {
     transition-timing-function: ease;
 }
 
+/* ============================================
+   AMBIENT SOUND WIDGET
+   ============================================ */
+
+.widget-ambient-sound {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 8px;
+    gap: 12px;
+}
+
+.widget-ambient-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.widget-ambient-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 8px;
+    text-align: center;
+}
+
+.widget-ambient-empty-icon {
+    font-size: 32px;
+    opacity: 0.6;
+}
+
+.widget-ambient-empty-text {
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.widget-ambient-empty-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+.widget-ambient-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 8px;
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.widget-ambient-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 10px 6px;
+    background: var(--card-tint, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 60px;
+}
+
+.widget-ambient-btn:hover {
+    background: var(--card-tint-hover, rgba(255, 255, 255, 0.06));
+    border-color: var(--warmth-border, var(--border-color));
+    transform: translateY(-1px);
+}
+
+.widget-ambient-btn.active {
+    background: linear-gradient(135deg,
+        rgba(34, 197, 94, 0.15) 0%,
+        rgba(34, 197, 94, 0.08) 100%);
+    border-color: rgba(34, 197, 94, 0.5);
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
+}
+
+.widget-ambient-btn.active .widget-ambient-btn-icon {
+    animation: ambient-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ambient-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+.widget-ambient-btn-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.widget-ambient-btn-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.widget-ambient-btn.active .widget-ambient-btn-label {
+    color: rgba(34, 197, 94, 0.9);
+}
+
+.widget-ambient-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.widget-ambient-volume-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.widget-ambient-volume-icon {
+    font-size: 14px;
+    opacity: 0.6;
+}
+
+.widget-ambient-volume {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border-color);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.widget-ambient-volume::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--warmth-border, var(--primary-color));
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.widget-ambient-volume::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.widget-ambient-volume::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--warmth-border, var(--primary-color));
+    border: none;
+    cursor: pointer;
+}
+
+.widget-ambient-status {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Medium size widget - more columns */
+.widget-card[style*="width: 380px"] .widget-ambient-grid,
+.widget-card[style*="width: 400px"] .widget-ambient-grid,
+.widget-card[style*="width: 420px"] .widget-ambient-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+}
+
 /* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .widget-ambient-btn.active .widget-ambient-btn-icon {
+        animation: none;
+    }
+}
+
+/* ============================================
+   REDUCED MOTION SUPPORT (GLOBAL)
+   ============================================ */
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

@@ -118,7 +118,8 @@ public class Main {
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),
                 new TtsController(objectMapper),
-                new VersioningController(objectMapper, config.getWorkspacePath(), issueService, projectContext)
+                new VersioningController(objectMapper, config.getWorkspacePath(), issueService, projectContext),
+                new AudioController()
             );
 
             controllers.forEach(c -> c.registerRoutes(app));

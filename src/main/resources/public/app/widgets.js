@@ -715,6 +715,230 @@
         }
     }
 
+    // Ambient Sound Widget - Background soundscapes
+    class AmbientSoundWidget extends Widget {
+        constructor(instance, manifest) {
+            super(instance, manifest);
+            this.audioElements = new Map(); // filename -> Audio element
+            this.activeSounds = new Set();  // Currently playing sounds
+            this.volume = instance.settings.volume ?? 0.5;
+            // Default icons for common sound types
+            this.SOUND_ICONS = {
+                'rain': '🌧️',
+                'thunder': '⛈️',
+                'storm': '⛈️',
+                'typhoon': '🌀',
+                'fire': '🔥',
+                'fireplace': '🔥',
+                'forest': '🌲',
+                'garden': '🌿',
+                'ocean': '🌊',
+                'waves': '🌊',
+                'cafe': '☕',
+                'coffee': '☕',
+                'wind': '💨',
+                'chime': '🎐',
+                'birds': '🐦',
+                'summer': '☀️',
+                'night': '🌙',
+                'crickets': '🦗',
+                'river': '🏞️',
+                'stream': '🏞️',
+                'default': '🎵'
+            };
+        }
+
+        getIconForSound(displayName) {
+            const nameLower = displayName.toLowerCase();
+            for (const [key, icon] of Object.entries(this.SOUND_ICONS)) {
+                if (nameLower.includes(key)) {
+                    return icon;
+                }
+            }
+            return this.SOUND_ICONS.default;
+        }
+
+        async render() {
+            if (!this.container) return;
+
+            // Show loading state
+            this.container.innerHTML = `
+                <div class="widget-ambient-sound">
+                    <div class="widget-ambient-loading">Loading sounds...</div>
+                </div>
+            `;
+
+            // Fetch available sounds from API
+            try {
+                const response = await fetch('/api/audio');
+                const data = await response.json();
+                const files = data.files || [];
+
+                if (files.length === 0) {
+                    this.container.innerHTML = `
+                        <div class="widget-ambient-sound">
+                            <div class="widget-ambient-empty">
+                                <div class="widget-ambient-empty-icon">🎵</div>
+                                <div class="widget-ambient-empty-text">No sounds found</div>
+                                <div class="widget-ambient-empty-hint">Add .mp3 files to public/audio/</div>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Restore active sounds from settings
+                const savedActive = this.instance.settings.activeSounds || [];
+                this.activeSounds = new Set(savedActive);
+
+                this.container.innerHTML = `
+                    <div class="widget-ambient-sound">
+                        <div class="widget-ambient-grid">
+                            ${files.map(file => `
+                                <button class="widget-ambient-btn ${this.activeSounds.has(file.filename) ? 'active' : ''}"
+                                        data-filename="${escapeHtml(file.filename)}"
+                                        data-path="${escapeHtml(file.path)}"
+                                        title="${escapeHtml(file.displayName)}">
+                                    <span class="widget-ambient-btn-icon">${this.getIconForSound(file.displayName)}</span>
+                                    <span class="widget-ambient-btn-label">${escapeHtml(file.displayName)}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                        <div class="widget-ambient-controls">
+                            <div class="widget-ambient-volume-row">
+                                <span class="widget-ambient-volume-icon">🔈</span>
+                                <input type="range"
+                                       class="widget-ambient-volume"
+                                       min="0"
+                                       max="100"
+                                       value="${Math.round(this.volume * 100)}"
+                                       aria-label="Volume">
+                                <span class="widget-ambient-volume-icon">🔊</span>
+                            </div>
+                            <div class="widget-ambient-status">
+                                ${this.activeSounds.size > 0
+                                    ? `Playing ${this.activeSounds.size} sound${this.activeSounds.size > 1 ? 's' : ''}`
+                                    : 'Click a sound to play'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Start playing any previously active sounds
+                for (const filename of this.activeSounds) {
+                    const btn = this.container.querySelector(`[data-filename="${filename}"]`);
+                    if (btn) {
+                        this.playSound(filename, btn.dataset.path);
+                    }
+                }
+            } catch (err) {
+                console.error('[AmbientSound] Failed to load sounds:', err);
+                this.container.innerHTML = `
+                    <div class="widget-ambient-sound">
+                        <div class="widget-ambient-empty">
+                            <div class="widget-ambient-empty-icon">⚠️</div>
+                            <div class="widget-ambient-empty-text">Failed to load sounds</div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            // Sound buttons
+            this.container.querySelectorAll('.widget-ambient-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const filename = btn.dataset.filename;
+                    const path = btn.dataset.path;
+
+                    if (this.activeSounds.has(filename)) {
+                        this.stopSound(filename);
+                        btn.classList.remove('active');
+                    } else {
+                        this.playSound(filename, path);
+                        btn.classList.add('active');
+                    }
+
+                    this.updateStatus();
+                    this.saveState();
+                });
+            });
+
+            // Volume slider
+            const volumeSlider = this.container.querySelector('.widget-ambient-volume');
+            if (volumeSlider) {
+                volumeSlider.addEventListener('input', (e) => {
+                    this.volume = parseInt(e.target.value, 10) / 100;
+                    this.updateAllVolumes();
+                });
+
+                volumeSlider.addEventListener('change', () => {
+                    this.saveState();
+                });
+            }
+        }
+
+        playSound(filename, path) {
+            // Create audio element if it doesn't exist
+            if (!this.audioElements.has(filename)) {
+                const audio = new Audio(path);
+                audio.loop = true;
+                audio.volume = this.volume;
+                this.audioElements.set(filename, audio);
+            }
+
+            const audio = this.audioElements.get(filename);
+            audio.volume = this.volume;
+            audio.play().catch(err => {
+                console.error('[AmbientSound] Failed to play:', filename, err);
+            });
+            this.activeSounds.add(filename);
+        }
+
+        stopSound(filename) {
+            const audio = this.audioElements.get(filename);
+            if (audio) {
+                audio.pause();
+                audio.currentTime = 0;
+            }
+            this.activeSounds.delete(filename);
+        }
+
+        updateAllVolumes() {
+            for (const audio of this.audioElements.values()) {
+                audio.volume = this.volume;
+            }
+        }
+
+        updateStatus() {
+            const statusEl = this.container.querySelector('.widget-ambient-status');
+            if (statusEl) {
+                statusEl.textContent = this.activeSounds.size > 0
+                    ? `Playing ${this.activeSounds.size} sound${this.activeSounds.size > 1 ? 's' : ''}`
+                    : 'Click a sound to play';
+            }
+        }
+
+        saveState() {
+            this.instance.settings.activeSounds = Array.from(this.activeSounds);
+            this.instance.settings.volume = this.volume;
+            this.saveToDashboard();
+        }
+
+        async unmount() {
+            // Stop all sounds when widget is removed
+            for (const audio of this.audioElements.values()) {
+                audio.pause();
+                audio.currentTime = 0;
+            }
+            this.audioElements.clear();
+            this.activeSounds.clear();
+            await super.unmount();
+        }
+    }
+
     // Dashboard State Manager
     class DashboardState {
         constructor() {
@@ -1095,6 +1319,33 @@
             configurable: false,
             settings: {}
         });
+
+        // Ambient Sound
+        widgetRegistry.register({
+            id: 'widget-ambient-sound',
+            name: 'Ambient Sound',
+            description: 'Background soundscapes for focus',
+            icon: '🎵',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small', 'medium']
+            },
+            configurable: false,
+            settings: {
+                volume: {
+                    type: 'number',
+                    label: 'Volume',
+                    default: 0.5
+                },
+                activeSounds: {
+                    type: 'array',
+                    label: 'Active Sounds',
+                    default: []
+                }
+            }
+        });
     }
     
     // Render widget-based dashboard
@@ -1230,6 +1481,9 @@
                 break;
             case 'widget-warmth':
                 widget = new WarmthWidget(instance, manifest);
+                break;
+            case 'widget-ambient-sound':
+                widget = new AmbientSoundWidget(instance, manifest);
                 break;
             default:
                 widget = new Widget(instance, manifest);
