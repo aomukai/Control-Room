@@ -939,6 +939,200 @@
         }
     }
 
+    // Pomodoro Timer Widget - Focus timer with work/break cycles
+    class PomodoroWidget extends Widget {
+        constructor(instance, manifest) {
+            super(instance, manifest);
+            this.workMinutes = instance.settings.workMinutes ?? 25;
+            this.breakMinutes = instance.settings.breakMinutes ?? 5;
+            this.longBreakMinutes = instance.settings.longBreakMinutes ?? 15;
+            this.sessionsUntilLongBreak = instance.settings.sessionsUntilLongBreak ?? 4;
+
+            this.timeRemaining = this.workMinutes * 60; // seconds
+            this.isRunning = false;
+            this.isBreak = false;
+            this.completedSessions = instance.settings.completedSessions ?? 0;
+            this.intervalId = null;
+        }
+
+        async render() {
+            if (!this.container) return;
+
+            const minutes = Math.floor(this.timeRemaining / 60);
+            const seconds = this.timeRemaining % 60;
+            const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            const modeLabel = this.isBreak ? 'Break' : 'Focus';
+            const modeClass = this.isBreak ? 'break' : 'focus';
+
+            this.container.innerHTML = `
+                <div class="widget-pomodoro ${modeClass}">
+                    <div class="widget-pomodoro-display">
+                        <div class="widget-pomodoro-mode">${modeLabel}</div>
+                        <div class="widget-pomodoro-time">${timeStr}</div>
+                        <div class="widget-pomodoro-sessions">
+                            ${this.renderSessionDots()}
+                        </div>
+                    </div>
+                    <div class="widget-pomodoro-controls">
+                        <button class="widget-pomodoro-btn widget-pomodoro-start" title="${this.isRunning ? 'Pause' : 'Start'}">
+                            ${this.isRunning ? '⏸' : '▶'}
+                        </button>
+                        <button class="widget-pomodoro-btn widget-pomodoro-reset" title="Reset">
+                            ↺
+                        </button>
+                        <button class="widget-pomodoro-btn widget-pomodoro-skip" title="Skip to ${this.isBreak ? 'Focus' : 'Break'}">
+                            ⏭
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        renderSessionDots() {
+            const dots = [];
+            for (let i = 0; i < this.sessionsUntilLongBreak; i++) {
+                const filled = i < (this.completedSessions % this.sessionsUntilLongBreak);
+                dots.push(`<span class="widget-pomodoro-dot ${filled ? 'filled' : ''}"></span>`);
+            }
+            return dots.join('');
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            const startBtn = this.container.querySelector('.widget-pomodoro-start');
+            const resetBtn = this.container.querySelector('.widget-pomodoro-reset');
+            const skipBtn = this.container.querySelector('.widget-pomodoro-skip');
+
+            if (startBtn) {
+                startBtn.addEventListener('click', () => this.toggleTimer());
+            }
+            if (resetBtn) {
+                resetBtn.addEventListener('click', () => this.resetTimer());
+            }
+            if (skipBtn) {
+                skipBtn.addEventListener('click', () => this.skipPhase());
+            }
+        }
+
+        toggleTimer() {
+            if (this.isRunning) {
+                this.pauseTimer();
+            } else {
+                this.startTimer();
+            }
+        }
+
+        startTimer() {
+            if (this.isRunning) return;
+            this.isRunning = true;
+            this.intervalId = setInterval(() => this.tick(), 1000);
+            this.render();
+            this.attachEventListeners();
+        }
+
+        pauseTimer() {
+            this.isRunning = false;
+            if (this.intervalId) {
+                clearInterval(this.intervalId);
+                this.intervalId = null;
+            }
+            this.render();
+            this.attachEventListeners();
+        }
+
+        resetTimer() {
+            this.pauseTimer();
+            this.timeRemaining = (this.isBreak ? this.getBreakDuration() : this.workMinutes) * 60;
+            this.render();
+            this.attachEventListeners();
+        }
+
+        skipPhase() {
+            this.pauseTimer();
+            if (!this.isBreak) {
+                // Skipping focus -> go to break (counts as completed session)
+                this.completedSessions++;
+                this.saveState();
+            }
+            this.switchPhase();
+        }
+
+        tick() {
+            this.timeRemaining--;
+
+            if (this.timeRemaining <= 0) {
+                this.completePhase();
+            } else {
+                // Update display without full re-render for performance
+                const timeEl = this.container.querySelector('.widget-pomodoro-time');
+                if (timeEl) {
+                    const minutes = Math.floor(this.timeRemaining / 60);
+                    const seconds = this.timeRemaining % 60;
+                    timeEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }
+        }
+
+        completePhase() {
+            this.pauseTimer();
+
+            if (!this.isBreak) {
+                // Completed a focus session
+                this.completedSessions++;
+                this.saveState();
+                this.notifyUser('Focus session complete! Time for a break.');
+            } else {
+                this.notifyUser('Break over! Ready to focus?');
+            }
+
+            this.switchPhase();
+        }
+
+        switchPhase() {
+            this.isBreak = !this.isBreak;
+            this.timeRemaining = (this.isBreak ? this.getBreakDuration() : this.workMinutes) * 60;
+            this.render();
+            this.attachEventListeners();
+        }
+
+        getBreakDuration() {
+            // Long break every N sessions
+            if (this.completedSessions > 0 && this.completedSessions % this.sessionsUntilLongBreak === 0) {
+                return this.longBreakMinutes;
+            }
+            return this.breakMinutes;
+        }
+
+        notifyUser(message) {
+            // Try browser notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Pomodoro Timer', { body: message, icon: '🍅' });
+            } else if ('Notification' in window && Notification.permission !== 'denied') {
+                Notification.requestPermission();
+            }
+            // Also play a subtle sound if available
+            try {
+                const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1pbJB3aWVseHB3cX6EeW55eHRygId/enZ7f3x+hYF7dnZ6eH2HhHx2dHZ3fYmFfHZ2d3d7hoJ6dHV5e3+HhHx2dnl7gIeDfHZ2eXt/h4N7dXZ5e3+Hg3t1dnl7f4eDe3V2eXt/h4N7dXZ5e3+Hg3t1dnl7f4eDe3V2eXt/h4N7dXZ5e3+Hg3t1dnl7');
+                audio.volume = 0.3;
+                audio.play().catch(() => {});
+            } catch (e) {}
+        }
+
+        saveState() {
+            this.instance.settings.completedSessions = this.completedSessions;
+            this.saveToDashboard();
+        }
+
+        async unmount() {
+            if (this.intervalId) {
+                clearInterval(this.intervalId);
+                this.intervalId = null;
+            }
+            await super.unmount();
+        }
+    }
+
     // Dashboard State Manager
     class DashboardState {
         constructor() {
@@ -1346,8 +1540,50 @@
                 }
             }
         });
+
+        // Pomodoro Timer
+        widgetRegistry.register({
+            id: 'widget-pomodoro',
+            name: 'Pomodoro Timer',
+            description: 'Focus timer with work/break cycles',
+            icon: '🍅',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small']
+            },
+            configurable: false,
+            settings: {
+                workMinutes: {
+                    type: 'number',
+                    label: 'Work Duration (min)',
+                    default: 25
+                },
+                breakMinutes: {
+                    type: 'number',
+                    label: 'Break Duration (min)',
+                    default: 5
+                },
+                longBreakMinutes: {
+                    type: 'number',
+                    label: 'Long Break (min)',
+                    default: 15
+                },
+                sessionsUntilLongBreak: {
+                    type: 'number',
+                    label: 'Sessions Until Long Break',
+                    default: 4
+                },
+                completedSessions: {
+                    type: 'number',
+                    label: 'Completed Sessions',
+                    default: 0
+                }
+            }
+        });
     }
-    
+
     // Render widget-based dashboard
     async function renderWidgetDashboard() {
         const container = document.getElementById('workbench-chat-content');
@@ -1484,6 +1720,9 @@
                 break;
             case 'widget-ambient-sound':
                 widget = new AmbientSoundWidget(instance, manifest);
+                break;
+            case 'widget-pomodoro':
+                widget = new PomodoroWidget(instance, manifest);
                 break;
             default:
                 widget = new Widget(instance, manifest);
