@@ -75,8 +75,24 @@
     // Modal helpers
     const showModal = window.modals.showModal;
     const createModalShell = window.modals.createModalShell;
+    const showConfigurableModal = window.modals.showConfigurableModal;
     // escapeHtml is now in modals.js (window.modals.escapeHtml)
     const escapeHtml = window.modals.escapeHtml;
+
+    // Confirmation dialog helper - returns a Promise<boolean>
+    function showConfirmDialog(title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel') {
+        return new Promise((resolve) => {
+            showConfigurableModal({
+                title,
+                body: `<p class="modal-text">${escapeHtml(message)}</p>`,
+                buttons: [
+                    { label: cancelLabel, value: false, className: 'modal-btn modal-btn-secondary' },
+                    { label: confirmLabel, value: true, className: 'modal-btn modal-btn-danger' }
+                ],
+                onResult: (value) => resolve(value)
+            });
+        });
+    }
     const buildChatPrompt = window.buildChatPrompt;
     const extractStopHook = window.extractStopHook;
     const canonicalizeRole = window.canonicalizeRole;
@@ -1555,7 +1571,15 @@
         renderStep();
     }
 
-    function showWorkspaceSwitcher() {
+    async function showWorkspaceSwitcher() {
+        // Refresh workspace info to ensure we have current project list
+        // (handles externally deleted projects)
+        try {
+            await loadWorkspaceInfo();
+        } catch (err) {
+            log(`Failed to refresh workspace info: ${err.message}`, 'warn');
+        }
+
         const { overlay, modal, body, confirmBtn, close } = createModalShell(
             'Switch Project',
             'Switch Now',
@@ -1600,8 +1624,73 @@
                 select.value = state.workspace.name;
             }
         }
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'modal-btn modal-btn-danger modal-btn-small';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.title = 'Delete selected project';
+        deleteBtn.disabled = available.length === 0;
+
+        const updateDeleteBtn = () => {
+            const selectedName = select.value;
+            const isCurrent = selectedName === state.workspace.name;
+            deleteBtn.disabled = !selectedName || isCurrent;
+            deleteBtn.title = isCurrent ? 'Cannot delete the currently active project' : 'Delete selected project';
+        };
+        select.addEventListener('change', updateDeleteBtn);
+        updateDeleteBtn();
+
+        deleteBtn.addEventListener('click', async () => {
+            const nameToDelete = select.value;
+            if (!nameToDelete) return;
+
+            if (nameToDelete === state.workspace.name) {
+                error.textContent = 'Cannot delete the currently active project.';
+                return;
+            }
+
+            const confirmed = await showConfirmDialog(
+                'Delete Project',
+                `Are you sure you want to permanently delete "${nameToDelete}"? This will remove all files and data in this project folder. This action cannot be undone.`,
+                'Delete',
+                'Cancel'
+            );
+
+            if (!confirmed) return;
+
+            deleteBtn.disabled = true;
+            error.textContent = '';
+            try {
+                await workspaceApi.deleteProject(nameToDelete);
+                // Remove from dropdown
+                const optionToRemove = select.querySelector(`option[value="${CSS.escape(nameToDelete)}"]`);
+                if (optionToRemove) optionToRemove.remove();
+                // Update state
+                state.workspace.available = state.workspace.available.filter(n => n !== nameToDelete);
+                // Update recents in localStorage
+                const recents = JSON.parse(localStorage.getItem('recent-projects') || '[]').filter(n => n !== nameToDelete);
+                localStorage.setItem('recent-projects', JSON.stringify(recents));
+                // Update UI
+                if (select.options.length === 0) {
+                    const emptyOpt = document.createElement('option');
+                    emptyOpt.value = '';
+                    emptyOpt.textContent = 'No Projects found';
+                    select.appendChild(emptyOpt);
+                    select.disabled = true;
+                }
+                notificationStore.success(`Project "${nameToDelete}" deleted.`, 'global');
+                updateDeleteBtn();
+            } catch (err) {
+                error.textContent = err.message || 'Failed to delete project.';
+            } finally {
+                deleteBtn.disabled = false;
+                updateDeleteBtn();
+            }
+        });
+
         rowSelect.appendChild(selectLabel);
         rowSelect.appendChild(select);
+        rowSelect.appendChild(deleteBtn);
         body.appendChild(rowSelect);
 
         const rowInput = document.createElement('div');

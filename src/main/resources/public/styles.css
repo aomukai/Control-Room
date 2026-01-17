@@ -1873,6 +1873,28 @@ html, body {
     background: var(--bg-lighter);
 }
 
+.modal-btn-danger {
+    background: #c0392b;
+    border: none;
+    color: #fff;
+}
+
+.modal-btn-danger:hover {
+    background: #a93226;
+}
+
+.modal-btn-danger:disabled {
+    background: #555;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.modal-btn-small {
+    padding: 4px 10px;
+    font-size: 11px;
+    min-width: auto;
+}
+
 .patch-review-modal {
     min-width: 85vw;
     max-width: 90vw;

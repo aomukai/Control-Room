@@ -48,6 +48,7 @@ public class WorkspaceController implements Controller {
         app.post("/api/workspace/select", this::selectWorkspace);
         app.get("/api/workspace/metadata", this::getMetadata);
         app.put("/api/workspace/metadata", this::updateMetadata);
+        app.delete("/api/workspace/project/{name}", this::deleteProject);
     }
 
     private void openWorkspace(Context ctx) {
@@ -220,6 +221,61 @@ public class WorkspaceController implements Controller {
             logger.error("Failed to select workspace: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private void deleteProject(Context ctx) {
+        try {
+            String name = ctx.pathParam("name");
+
+            if (name == null || name.isBlank()) {
+                ctx.status(400).json(Map.of("error", "Project name is required"));
+                return;
+            }
+            String trimmed = name.trim();
+            if (".".equals(trimmed) || "..".equals(trimmed) || trimmed.contains("/") || trimmed.contains("\\")) {
+                ctx.status(400).json(Map.of("error", "Invalid project name"));
+                return;
+            }
+
+            Path current = projectContext.workspace().getWorkspaceRoot();
+            Path root = current.getParent() != null ? current.getParent() : current;
+            Path target = root.resolve(trimmed).normalize();
+
+            if (!target.startsWith(root)) {
+                ctx.status(400).json(Map.of("error", "Invalid project path"));
+                return;
+            }
+
+            String currentName = current.getFileName() != null ? current.getFileName().toString() : current.toString();
+            if (trimmed.equals(currentName)) {
+                ctx.status(400).json(Map.of("error", "Cannot delete the currently active project"));
+                return;
+            }
+
+            if (!Files.exists(target)) {
+                ctx.status(404).json(Map.of("error", "Project does not exist"));
+                return;
+            }
+
+            deleteDirectoryRecursively(target);
+
+            logger.info("Project deleted: " + target);
+            ctx.json(Map.of("ok", true, "deleted", trimmed));
+        } catch (Exception e) {
+            logger.error("Failed to delete project: " + e.getMessage(), e);
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void deleteDirectoryRecursively(Path path) throws Exception {
+        if (Files.isDirectory(path)) {
+            try (var entries = Files.list(path)) {
+                for (Path entry : entries.toList()) {
+                    deleteDirectoryRecursively(entry);
+                }
+            }
+        }
+        Files.delete(path);
     }
 
     private void getMetadata(Context ctx) {

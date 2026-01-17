@@ -313,6 +313,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(metadata || {})
             });
+        },
+        async deleteProject(name) {
+            return api(`/api/workspace/project/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            });
         }
     };
 
