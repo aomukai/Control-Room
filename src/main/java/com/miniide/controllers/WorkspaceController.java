@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppConfig;
 import com.miniide.AppLogger;
 import com.miniide.CreditStore;
+import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -22,13 +23,15 @@ public class WorkspaceController implements Controller {
 
     private final ProjectContext projectContext;
     private final CreditStore creditStore;
+    private final NotificationStore notificationStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
     private final boolean devMode;
 
-    public WorkspaceController(ProjectContext projectContext, CreditStore creditStore, ObjectMapper objectMapper, boolean devMode) {
+    public WorkspaceController(ProjectContext projectContext, CreditStore creditStore, NotificationStore notificationStore, ObjectMapper objectMapper, boolean devMode) {
         this.projectContext = projectContext;
         this.creditStore = creditStore;
+        this.notificationStore = notificationStore;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
         this.devMode = devMode;
@@ -196,6 +199,9 @@ public class WorkspaceController implements Controller {
             projectContext.switchWorkspace(target);
             if (creditStore != null) {
                 creditStore.switchWorkspace(target);
+            }
+            if (notificationStore != null) {
+                notificationStore.setCurrentProjectId(trimmed);
             }
 
             logger.info("Workspace selection updated to " + target + " (live switch applied)");

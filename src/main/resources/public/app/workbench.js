@@ -133,11 +133,18 @@
         const container = document.getElementById('newsfeed-list');
         if (!container) return;
 
+        // Get current project name for filtering
+        const currentProject = window.state?.workspace?.name || '';
+
         // Get all notifications
         const allNotifications = notificationStore.getAll();
 
-        // Filter to workbench-related and issue-related notifications
+        // Filter to workbench-related and issue-related notifications, scoped to current project
         const filtered = allNotifications.filter(notification => {
+            // Filter by project if notification has a projectId
+            if (notification.projectId && currentProject && notification.projectId !== currentProject) {
+                return false;
+            }
             // Include workbench scope
             if (notification.scope === 'workbench') return true;
             // Include issue-related (by source)
@@ -163,6 +170,7 @@
         limited.forEach(notification => {
             const item = document.createElement('div');
             item.className = 'newsfeed-item';
+            item.dataset.notificationId = notification.id;
             if (!notification.read) {
                 item.classList.add('unread');
             }
@@ -177,17 +185,45 @@
                 <div class="newsfeed-item-header">
                     <span class="newsfeed-level-badge ${notification.level}">${notification.level.toUpperCase()}</span>
                     <span class="newsfeed-timestamp">${formatRelativeTime(notification.timestamp)}</span>
+                    <button type="button" class="newsfeed-dismiss" title="Dismiss notification">&times;</button>
                 </div>
                 <div class="newsfeed-message">${escapeHtml(notification.message)}</div>
                 ${actionHtml}
             `;
 
+            // Dismiss button handler
+            const dismissBtn = item.querySelector('.newsfeed-dismiss');
+            if (dismissBtn) {
+                dismissBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dismissNewsfeedNotification(notification.id);
+                });
+            }
+
+            // Click anywhere on item to open related issue or handle action
             item.addEventListener('click', () => {
                 handleNewsfeedItemClick(notification);
             });
 
             container.appendChild(item);
         });
+    }
+
+    async function dismissNewsfeedNotification(notificationId) {
+        if (!notificationId) return;
+        try {
+            // Delete from server
+            await fetch(`/api/notifications/${notificationId}`, { method: 'DELETE' });
+            // Remove from client-side store (it will trigger a re-render via subscription)
+            if (notificationStore.delete) {
+                notificationStore.delete(notificationId);
+            } else {
+                // Fallback: just re-render
+                renderWorkbenchNewsfeed();
+            }
+        } catch (err) {
+            console.warn('[Newsfeed] Failed to dismiss notification:', err.message);
+        }
     }
 
     function handleNewsfeedItemClick(notification) {
@@ -799,6 +835,7 @@
     window.openIssueBoardPanel = openIssueBoardPanel;
     window.renderWorkbenchNewsfeed = renderWorkbenchNewsfeed;
     window.handleNewsfeedItemClick = handleNewsfeedItemClick;
+    window.dismissNewsfeedNotification = dismissNewsfeedNotification;
     window.initWorkbenchNewsfeedSubscription = initWorkbenchNewsfeedSubscription;
     window.renderIssueBoard = renderIssueBoard;
     window.initIssueBoardListeners = initIssueBoardListeners;

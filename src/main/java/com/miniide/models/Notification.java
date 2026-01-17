@@ -119,6 +119,7 @@ public class Notification {
     private Object actionPayload;
     private boolean persistent;
     private boolean read;
+    private String projectId;
 
     public Notification() {
     }
@@ -126,6 +127,12 @@ public class Notification {
     public Notification(String id, Level level, Scope scope, Category category, String message, String details,
                         String source, long timestamp, String actionLabel, Object actionPayload,
                         boolean persistent, boolean read) {
+        this(id, level, scope, category, message, details, source, timestamp, actionLabel, actionPayload, persistent, read, null);
+    }
+
+    public Notification(String id, Level level, Scope scope, Category category, String message, String details,
+                        String source, long timestamp, String actionLabel, Object actionPayload,
+                        boolean persistent, boolean read, String projectId) {
         this.id = id;
         this.level = level;
         this.scope = scope;
@@ -138,6 +145,7 @@ public class Notification {
         this.actionPayload = actionPayload;
         this.persistent = persistent;
         this.read = read;
+        this.projectId = projectId;
     }
 
     public String getId() {
@@ -236,6 +244,14 @@ public class Notification {
         this.read = read;
     }
 
+    public String getProjectId() {
+        return projectId;
+    }
+
+    public void setProjectId(String projectId) {
+        this.projectId = projectId;
+    }
+
     @Override
     public String toString() {
         return "Notification{" +
@@ -247,6 +263,7 @@ public class Notification {
             ", timestamp=" + timestamp +
             ", persistent=" + persistent +
             ", read=" + read +
+            ", projectId='" + projectId + '\'' +
             '}';
     }
 }

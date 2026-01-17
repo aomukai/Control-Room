@@ -21,9 +21,18 @@ public class NotificationStore {
 
     private static final String STORAGE_PATH = "data/notifications.json";
     private final Map<String, Notification> notifications = new ConcurrentHashMap<>();
+    private volatile String currentProjectId;
 
     public NotificationStore() {
         loadFromDisk();
+    }
+
+    public void setCurrentProjectId(String projectId) {
+        this.currentProjectId = projectId;
+    }
+
+    public String getCurrentProjectId() {
+        return currentProjectId;
     }
 
     public Notification push(Level level, Scope scope, String message) {
@@ -247,7 +256,8 @@ public class NotificationStore {
             actionLabel,
             actionPayload,
             persistent,
-            false
+            false,
+            currentProjectId  // Include current project ID
         );
 
         applyDefaults(notification);

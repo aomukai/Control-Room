@@ -66,7 +66,8 @@
                 actionLabel: actionLabel || '',
                 actionPayload: actionPayload || null,
                 persistent: Boolean(persistent),
-                read: false
+                read: false,
+                projectId: window.state?.workspace?.name || null
             };
             applyDefaults(notification);
             notifications.set(notification.id, notification);
@@ -201,6 +202,16 @@
             emit();
         }
 
+        function deleteNotification(id) {
+            if (!id) return false;
+            const existed = notifications.has(id);
+            if (existed) {
+                notifications.delete(id);
+                emit();
+            }
+            return existed;
+        }
+
         function subscribe(listener) {
             listeners.add(listener);
             return () => listeners.delete(listener);
@@ -245,6 +256,7 @@
             markAllRead,
             clearNonErrors,
             clearAll,
+            delete: deleteNotification,
             subscribe
         };
     }

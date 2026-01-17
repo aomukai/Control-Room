@@ -6467,6 +6467,34 @@ textarea.settings-control.settings-control-wide {
     margin-left: auto;
 }
 
+.newsfeed-dismiss {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 6px;
+    margin-left: 8px;
+    cursor: pointer;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.newsfeed-item:hover .newsfeed-dismiss {
+    opacity: 1;
+}
+
+.newsfeed-dismiss:hover {
+    background: var(--bg-lighter);
+    color: var(--text-primary);
+}
+
+.newsfeed-dismiss:active {
+    background: var(--error-color);
+    color: white;
+}
+
 .newsfeed-message {
     font-size: 12px;
     color: var(--text-primary);
