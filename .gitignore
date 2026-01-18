@@ -1,7 +1,3 @@
-# === PRIVATE DEV PHASE (INTENTIONAL) ===
-# docs/ is *not* documentation right now. It contains private, operational project infrastructure.
-# Nothing in docs/ may be pushed to GitHub.
-
 # Gradle
 .gradle/
 **/.gradle/
@@ -25,8 +21,7 @@ Thumbs.db
 nul
 
 # Design Documents
-# Everything in docs/ is private and must not be uploaded to GitHub. It's critical infrastructure; keep local.
-docs/
+# docs/ is now tracked and safe to publish.
 
 # Local agent registry data
 workspace/**/.control-room/agents/*.json
