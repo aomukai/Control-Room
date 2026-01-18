@@ -46,7 +46,25 @@ public class ProjectPreparationService {
 
     public boolean isPrepared() {
         WorkspaceMetadata meta = workspaceService.loadMetadata();
-        return meta != null && meta.isPrepared();
+        if (meta == null) {
+            return false;
+        }
+        String stage = meta.getPrepStage();
+        return stage != null && !stage.isBlank() && !"none".equalsIgnoreCase(stage);
+    }
+
+    public boolean isVirtualReady() {
+        WorkspaceMetadata meta = workspaceService.loadMetadata();
+        if (meta == null) {
+            return false;
+        }
+        String stage = meta.getPrepStage();
+        return stage != null && !stage.isBlank() && !"none".equalsIgnoreCase(stage);
+    }
+
+    public boolean areAgentsUnlocked() {
+        WorkspaceMetadata meta = workspaceService.loadMetadata();
+        return meta != null && meta.isAgentsUnlocked();
     }
 
     public WorkspaceMetadata getMetadata() {
@@ -57,9 +75,15 @@ public class ProjectPreparationService {
         if (isPrepared()) {
             return PreparationResult.alreadyPrepared();
         }
-        if (payload == null || payload.protagonistName == null || payload.protagonistName.isBlank()) {
-            throw new IllegalArgumentException("Protagonist name is required.");
+        if (payload == null) {
+            payload = new PrepareEmptyPayload();
         }
+        String premise = payload.premise != null ? payload.premise.trim() : "";
+        String storyIdea = payload.storyIdea != null ? payload.storyIdea.trim() : "";
+        if (premise.isBlank() && storyIdea.isBlank()) {
+            throw new IllegalArgumentException("Premise or story idea is required.");
+        }
+        logger.info("Preparing empty project scaffold in " + workspaceRoot);
         String now = nowIso();
         String ingestId = generateIngestId();
         String projectSalt = generateSalt();
@@ -84,6 +108,7 @@ public class ProjectPreparationService {
         canonManifest.setSchemaVersion(SCHEMA_VERSION);
         canonManifest.setPreparedAt(now);
         canonManifest.setStatus("prepared");
+        canonManifest.setReviewedAt(now);
 
         StoryManifest storyManifest = new StoryManifest();
         storyManifest.setSchemaVersion(SCHEMA_VERSION);
@@ -93,24 +118,27 @@ public class ProjectPreparationService {
         List<CanonCard> cards = new ArrayList<>();
         List<StoryScene> scenes = new ArrayList<>();
 
-        CanonCard card = new CanonCard();
-        card.setOrigin("native");
-        card.setType("character");
-        card.setTitle(payload.protagonistName.trim());
-        card.setStableId(generateStableId());
-        card.setDisplayId("CHAR:" + slugify(card.getTitle()));
-        card.setContent(buildProtagonistContent(payload));
-        card.setCreatedAt(now);
-        card.setUpdatedAt(now);
-        card.setAnnotationStatus("complete");
-        card.setStatus("active");
-        cards.add(card);
+        if (payload.protagonistName != null && !payload.protagonistName.isBlank()) {
+            CanonCard card = new CanonCard();
+            card.setOrigin("native");
+            card.setType("character");
+            card.setTitle(payload.protagonistName.trim());
+            card.setStableId(generateStableId());
+            card.setDisplayId("CHAR:" + slugify(card.getTitle()));
+            card.setContent(buildProtagonistContent(payload));
+            card.setCreatedAt(now);
+            card.setUpdatedAt(now);
+            applyAnnotationDefaults(card, card.getContent());
+            card.setAnnotationStatus("complete");
+            card.setStatus("active");
+            cards.add(card);
+        }
 
         StoryScene scene = new StoryScene();
         scene.setOrigin("native");
         scene.setStableId(generateStableId());
         scene.setDisplayId("SCN:opening");
-        scene.setTitle("Opening Scene");
+        scene.setTitle("Story Idea");
         scene.setOrder(1);
         scene.setContent(buildSceneSeed(payload));
         scene.setCreatedAt(now);
@@ -124,7 +152,8 @@ public class ProjectPreparationService {
         ingestManifest.getStats().setScenesCreated(scenes.size());
         ingestManifest.getStats().setCardsCreated(cards.size());
 
-        saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards);
+        saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards,
+            buildEntitiesIndex(cards), buildHooksIndex(cards));
         writeEmptyIndices();
         markPrepared("empty", now);
 
@@ -139,6 +168,7 @@ public class ProjectPreparationService {
             throw new IllegalArgumentException("No files provided for ingest.");
         }
 
+        logger.info("Preparing ingest in " + workspaceRoot + " (files=" + payload.totalFiles() + ")");
         String now = nowIso();
         String ingestId = generateIngestId();
         String projectSalt = generateSalt();
@@ -156,8 +186,9 @@ public class ProjectPreparationService {
                     excerptsStored += 1;
                     StoryScene scene = new StoryScene();
                     scene.setOrigin("ingest");
-                    scene.setStableId(generateStableId());
-                    scene.setDisplayId("SCN:" + slugify(stripExtension(file.filename())));
+                    String displayId = "SCN:" + slugify(stripExtension(file.filename()));
+                    scene.setStableId(generateIngestStableId(projectSalt, ingestId, evidence.getExcerptHash(), displayId, "SCN"));
+                    scene.setDisplayId(displayId);
                     scene.setTitle(prettifyName(file.filename()));
                     scene.setOrder(scenes.size() + 1);
                     scene.setContent(evidence.getContent());
@@ -175,14 +206,16 @@ public class ProjectPreparationService {
                     excerptsStored += 1;
                     CanonCard card = new CanonCard();
                     card.setOrigin("ingest");
-                    card.setStableId(generateStableId());
                     card.setType(inferCardType(file.filename(), evidence.getContent()));
                     card.setTitle(prettifyName(file.filename()));
-                    card.setDisplayId(typePrefix(card.getType()) + ":" + slugify(card.getTitle()));
+                    String cardDisplayId = typePrefix(card.getType()) + ":" + slugify(card.getTitle());
+                    card.setDisplayId(cardDisplayId);
+                    card.setStableId(generateIngestStableId(projectSalt, ingestId, evidence.getExcerptHash(), cardDisplayId, "CAN"));
                     card.setContent(evidence.getContent());
                     card.setCreatedAt(now);
                     card.setUpdatedAt(now);
-                    card.setAnnotationStatus("draft");
+                    applyAnnotationDefaults(card, evidence.getContent());
+                    card.setAnnotationStatus("complete");
                     card.setStatus("active");
                     card.setIngestPointers(List.of(pointerForEvidence(evidence)));
                     cards.add(card);
@@ -198,7 +231,7 @@ public class ProjectPreparationService {
         canonManifest.setSchemaVersion(SCHEMA_VERSION);
         canonManifest.setPreparedAt(now);
         canonManifest.setCardCount(cards.size());
-        canonManifest.setStatus("prepared");
+        canonManifest.setStatus("draft");
 
         StoryManifest storyManifest = new StoryManifest();
         storyManifest.setSchemaVersion(SCHEMA_VERSION);
@@ -221,7 +254,8 @@ public class ProjectPreparationService {
         ingestManifest.setStats(stats);
         ingestManifest.setIgnoredInputs(payload != null ? payload.ignoredInputs : new ArrayList<>());
 
-        saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards);
+        saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards,
+            buildEntitiesIndex(cards), buildHooksIndex(cards));
         writeEmptyIndices();
         markPrepared("ingest", now);
 
@@ -235,7 +269,9 @@ public class ProjectPreparationService {
     }
 
     private void saveManifests(IngestManifest ingest, CanonManifest canon, StoryManifest story,
-                               StoryRegistry registry, List<CanonCard> cards) throws IOException {
+                               StoryRegistry registry, List<CanonCard> cards,
+                               java.util.Map<String, java.util.List<String>> entitiesIndex,
+                               java.util.Map<String, java.util.List<String>> hooksIndex) throws IOException {
         Path ingestPath = workspaceRoot.resolve(".control-room").resolve("ingest").resolve("manifest.json");
         Path canonManifestPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("manifest.json");
         Path entitiesPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("entities.json");
@@ -249,8 +285,8 @@ public class ProjectPreparationService {
         mapper.writerWithDefaultPrettyPrinter().writeValue(storyManifestPath.toFile(), story);
         mapper.writerWithDefaultPrettyPrinter().writeValue(scenesPath.toFile(), registry);
         mapper.writerWithDefaultPrettyPrinter().writeValue(chaptersPath.toFile(), new ArrayList<>());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(entitiesPath.toFile(), new java.util.HashMap<>());
-        mapper.writerWithDefaultPrettyPrinter().writeValue(hooksPath.toFile(), new java.util.HashMap<>());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(entitiesPath.toFile(), entitiesIndex);
+        mapper.writerWithDefaultPrettyPrinter().writeValue(hooksPath.toFile(), hooksIndex);
 
         for (CanonCard card : cards) {
             Path cardPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards")
@@ -272,9 +308,21 @@ public class ProjectPreparationService {
 
     private void markPrepared(String mode, String now) throws IOException {
         WorkspaceMetadata meta = workspaceService.loadMetadata();
-        meta.setPrepared(true);
+        meta.setPrepared(false);
         meta.setPreparedMode(mode);
         meta.setPreparedAt(now);
+        meta.setPrepStage("draft");
+        meta.setAgentsUnlocked(false);
+        workspaceService.saveMetadata(meta);
+    }
+
+    public void finalizePreparation() throws IOException {
+        WorkspaceMetadata meta = workspaceService.loadMetadata();
+        String now = nowIso();
+        meta.setPrepared(true);
+        meta.setPreparedAt(now);
+        meta.setPrepStage("prepared");
+        meta.setAgentsUnlocked(true);
         workspaceService.saveMetadata(meta);
     }
 
@@ -293,6 +341,10 @@ public class ProjectPreparationService {
     private String buildSceneSeed(PrepareEmptyPayload payload) {
         StringBuilder builder = new StringBuilder();
         builder.append("# Opening Scene\n\n");
+        if (payload.storyIdea != null && !payload.storyIdea.isBlank()) {
+            builder.append("## Story Idea\n\n");
+            builder.append(payload.storyIdea.trim()).append("\n\n");
+        }
         if (payload.premise != null && !payload.premise.isBlank()) {
             builder.append(payload.premise.trim()).append("\n\n");
         }
@@ -399,6 +451,14 @@ public class ProjectPreparationService {
     private String cardFileName(CanonCard card) {
         String prefix = typePrefix(card.getType());
         String slug = slugify(card.getTitle());
+        if (card.getDisplayId() != null && card.getDisplayId().contains(":")) {
+            int colonIndex = card.getDisplayId().indexOf(':');
+            prefix = card.getDisplayId().substring(0, colonIndex).toUpperCase(Locale.ROOT);
+            String displaySlug = card.getDisplayId().substring(colonIndex + 1);
+            if (!displaySlug.isBlank()) {
+                slug = displaySlug.toLowerCase(Locale.ROOT);
+            }
+        }
         return prefix + "-" + slug + ".json";
     }
 
@@ -431,6 +491,13 @@ public class ProjectPreparationService {
 
     private String generateStableId() {
         return UUID.randomUUID().toString();
+    }
+
+    private String generateIngestStableId(String projectSalt, String ingestId, String excerptHash, String anchorKey, String prefix) {
+        String seed = String.join(":", projectSalt, ingestId, excerptHash, anchorKey);
+        String hash = sha256Hex(seed.getBytes(StandardCharsets.UTF_8));
+        String trimmed = hash.length() > 24 ? hash.substring(0, 24) : hash;
+        return prefix + "-" + trimmed;
     }
 
     private String generateIngestId() {
@@ -468,9 +535,311 @@ public class ProjectPreparationService {
         return slug.isEmpty() ? "item" : slug;
     }
 
+    public CanonReviewSummary getCanonReviewSummary() throws IOException {
+        CanonManifest manifest = loadCanonManifest();
+        CanonReviewSummary summary = new CanonReviewSummary();
+        summary.status = manifest != null ? manifest.getStatus() : null;
+        summary.preparedAt = manifest != null ? manifest.getPreparedAt() : null;
+        summary.reviewedAt = manifest != null ? manifest.getReviewedAt() : null;
+        List<CanonCard> cards = loadCanonCards();
+        summary.cardCount = cards.size();
+        summary.cards = new ArrayList<>();
+        for (CanonCard card : cards) {
+            CanonCardSummary cardSummary = new CanonCardSummary();
+            cardSummary.displayId = card.getDisplayId();
+            cardSummary.title = card.getTitle();
+            cardSummary.type = card.getType();
+            cardSummary.status = card.getStatus();
+            cardSummary.annotationStatus = card.getAnnotationStatus();
+            cardSummary.path = canonCardPath(card);
+            summary.cards.add(cardSummary);
+        }
+        summary.cards.sort((a, b) -> String.valueOf(a.title).compareToIgnoreCase(String.valueOf(b.title)));
+        return summary;
+    }
+
+    public PreparationDebugSnapshot getDebugSnapshot() throws IOException {
+        PreparationDebugSnapshot snapshot = new PreparationDebugSnapshot();
+        snapshot.workspaceRoot = workspaceRoot.toString();
+        snapshot.workspaceName = workspaceRoot.getFileName() != null ? workspaceRoot.getFileName().toString() : "";
+        WorkspaceMetadata meta = workspaceService.loadMetadata();
+        snapshot.prepared = meta != null && meta.isPrepared();
+        snapshot.prepStage = meta != null ? meta.getPrepStage() : null;
+        snapshot.agentsUnlocked = meta != null && meta.isAgentsUnlocked();
+        snapshot.preparedMode = meta != null ? meta.getPreparedMode() : null;
+        snapshot.preparedAt = meta != null ? meta.getPreparedAt() : null;
+
+        CanonManifest canonManifest = loadCanonManifest();
+        snapshot.canonStatus = canonManifest != null ? canonManifest.getStatus() : null;
+        snapshot.canonReviewedAt = canonManifest != null ? canonManifest.getReviewedAt() : null;
+        snapshot.canonCardsPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards").toString();
+        snapshot.canonCardCount = loadCanonCards().size();
+
+        StoryRegistry storyRegistry = loadStoryRegistry();
+        snapshot.sceneCount = storyRegistry.getScenes() != null ? storyRegistry.getScenes().size() : 0;
+        snapshot.storyPath = workspaceRoot.resolve(".control-room").resolve("story").toString();
+        snapshot.ingestPath = workspaceRoot.resolve(".control-room").resolve("ingest").toString();
+        return snapshot;
+    }
+
+    public void confirmCanonReview() throws IOException {
+        CanonManifest manifest = loadCanonManifest();
+        if (manifest == null) {
+            throw new IllegalStateException("Canon manifest not found.");
+        }
+        String now = nowIso();
+        manifest.setStatus("prepared");
+        manifest.setReviewedAt(now);
+        saveCanonManifest(manifest);
+    }
+
+    public CanonManifest loadCanonManifest() throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("manifest.json");
+        if (!Files.exists(manifestPath)) {
+            return null;
+        }
+        return mapper.readValue(manifestPath.toFile(), CanonManifest.class);
+    }
+
+    private void saveCanonManifest(CanonManifest manifest) throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("manifest.json");
+        Files.createDirectories(manifestPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), manifest);
+    }
+
+    private List<CanonCard> loadCanonCards() throws IOException {
+        List<CanonCard> cards = new ArrayList<>();
+        Path cardsDir = workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards");
+        if (!Files.exists(cardsDir)) {
+            return cards;
+        }
+        try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(cardsDir, "*.json")) {
+            for (Path entry : stream) {
+                try {
+                    cards.add(mapper.readValue(entry.toFile(), CanonCard.class));
+                } catch (Exception e) {
+                    logger.error("Failed to load canon card " + entry.getFileName() + ": " + e.getMessage());
+                }
+            }
+        }
+        return cards;
+    }
+
+    private String canonCardPath(CanonCard card) {
+        String bucket = bucketFromDisplayId(card.getDisplayId());
+        if (bucket == null) {
+            bucket = bucketFromType(card.getType());
+        }
+        String filename = (card.getDisplayId() != null ? card.getDisplayId() : "MISC:item").replace(':', '-') + ".md";
+        return "Compendium/" + bucket + "/" + filename;
+    }
+
+    private StoryRegistry loadStoryRegistry() throws IOException {
+        Path scenesPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("scenes.json");
+        if (!Files.exists(scenesPath)) {
+            StoryRegistry registry = new StoryRegistry();
+            registry.setSchemaVersion(SCHEMA_VERSION);
+            registry.setScenes(new ArrayList<>());
+            return registry;
+        }
+        try {
+            StoryRegistry registry = mapper.readValue(scenesPath.toFile(), StoryRegistry.class);
+            if (registry.getScenes() == null) {
+                registry.setScenes(new ArrayList<>());
+            }
+            return registry;
+        } catch (Exception e) {
+            logger.error("Failed to load story registry, falling back to empty: " + e.getMessage());
+            StoryRegistry registry = new StoryRegistry();
+            registry.setSchemaVersion(SCHEMA_VERSION);
+            registry.setScenes(new ArrayList<>());
+            return registry;
+        }
+    }
+
+    private String bucketFromType(String type) {
+        if (type == null) {
+            return "Misc";
+        }
+        switch (type.toLowerCase(Locale.ROOT)) {
+            case "character": return "Characters";
+            case "location": return "Locations";
+            case "concept": return "Lore";
+            case "faction": return "Factions";
+            case "technology": return "Technology";
+            case "culture": return "Culture";
+            case "event": return "Events";
+            case "theme": return "Themes";
+            case "glossary": return "Glossary";
+            default: return "Misc";
+        }
+    }
+
+    private String bucketFromDisplayId(String displayId) {
+        if (displayId == null || displayId.isBlank()) {
+            return null;
+        }
+        String prefix = displayId;
+        int colonIndex = displayId.indexOf(':');
+        if (colonIndex > 0) {
+            prefix = displayId.substring(0, colonIndex);
+        } else if (displayId.contains("-")) {
+            prefix = displayId.substring(0, displayId.indexOf('-'));
+        }
+        switch (prefix.toUpperCase(Locale.ROOT)) {
+            case "CHAR": return "Characters";
+            case "LOC": return "Locations";
+            case "CONCEPT": return "Lore";
+            case "FACTION": return "Factions";
+            case "TECH": return "Technology";
+            case "CULTURE": return "Culture";
+            case "EVENT": return "Events";
+            case "THEME": return "Themes";
+            case "GLOSSARY": return "Glossary";
+            case "MISC": return "Misc";
+            default: return null;
+        }
+    }
+
+    private void applyAnnotationDefaults(CanonCard card, String content) {
+        if (card == null) {
+            return;
+        }
+        List<String> aliases = new ArrayList<>(card.getAliases());
+        aliases.addAll(extractAliases(content));
+        card.setAliases(uniqueTrimmed(aliases));
+
+        List<String> hooks = new ArrayList<>();
+        addHook(hooks, card.getTitle());
+        card.getAliases().forEach(alias -> addHook(hooks, alias));
+        extractHeadings(content, 12).forEach(heading -> addHook(hooks, heading));
+        if (hooks.size() < 3) {
+            addHook(hooks, card.getDisplayId());
+        }
+        card.setCanonHooks(limitList(uniqueTrimmed(hooks), 12));
+
+        List<String> entities = new ArrayList<>();
+        addHook(entities, card.getTitle());
+        card.getAliases().forEach(alias -> addHook(entities, alias));
+        card.setEntities(uniqueTrimmed(entities));
+
+        String lower = content != null ? content.toLowerCase(Locale.ROOT) : "";
+        card.setContinuityCritical(lower.contains("continuity") || lower.contains("critical canon"));
+    }
+
+    private List<String> extractAliases(String content) {
+        List<String> aliases = new ArrayList<>();
+        if (content == null || content.isBlank()) {
+            return aliases;
+        }
+        String[] lines = content.split("\\R");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.toLowerCase(Locale.ROOT).startsWith("aliases:")) {
+                String raw = trimmed.substring("aliases:".length()).trim();
+                for (String part : raw.split(",")) {
+                    String alias = part.trim();
+                    if (!alias.isBlank()) {
+                        aliases.add(alias);
+                    }
+                }
+                break;
+            }
+        }
+        return aliases;
+    }
+
+    private List<String> extractHeadings(String content, int limit) {
+        List<String> headings = new ArrayList<>();
+        if (content == null || content.isBlank()) {
+            return headings;
+        }
+        for (String line : content.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#")) {
+                String heading = trimmed.replaceFirst("^#+", "").trim();
+                if (!heading.isBlank()) {
+                    headings.add(heading);
+                    if (headings.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+        }
+        return headings;
+    }
+
+    private void addHook(List<String> hooks, String value) {
+        if (value == null) {
+            return;
+        }
+        String trimmed = value.trim();
+        if (!trimmed.isEmpty()) {
+            hooks.add(trimmed);
+        }
+    }
+
+    private List<String> uniqueTrimmed(List<String> values) {
+        List<String> result = new ArrayList<>();
+        if (values == null) {
+            return result;
+        }
+        for (String value : values) {
+            if (value == null) continue;
+            String trimmed = value.trim();
+            if (trimmed.isEmpty()) continue;
+            boolean exists = result.stream().anyMatch(existing -> existing.equalsIgnoreCase(trimmed));
+            if (!exists) {
+                result.add(trimmed);
+            }
+        }
+        return result;
+    }
+
+    private List<String> limitList(List<String> values, int limit) {
+        if (values.size() <= limit) {
+            return values;
+        }
+        return new ArrayList<>(values.subList(0, limit));
+    }
+
+    private java.util.Map<String, java.util.List<String>> buildEntitiesIndex(List<CanonCard> cards) {
+        java.util.Map<String, java.util.List<String>> index = new java.util.LinkedHashMap<>();
+        for (CanonCard card : cards) {
+            addIndexEntry(index, card.getTitle(), card.getStableId());
+            for (String alias : card.getAliases()) {
+                addIndexEntry(index, alias, card.getStableId());
+            }
+        }
+        return index;
+    }
+
+    private java.util.Map<String, java.util.List<String>> buildHooksIndex(List<CanonCard> cards) {
+        java.util.Map<String, java.util.List<String>> index = new java.util.LinkedHashMap<>();
+        for (CanonCard card : cards) {
+            for (String hook : card.getCanonHooks()) {
+                addIndexEntry(index, hook, card.getStableId());
+            }
+        }
+        return index;
+    }
+
+    private void addIndexEntry(java.util.Map<String, java.util.List<String>> index, String key, String stableId) {
+        if (key == null || key.isBlank() || stableId == null || stableId.isBlank()) {
+            return;
+        }
+        String normalized = key.trim().toLowerCase(Locale.ROOT);
+        java.util.List<String> entries = index.computeIfAbsent(normalized, k -> new ArrayList<>());
+        boolean exists = entries.stream().anyMatch(existing -> existing.equalsIgnoreCase(stableId));
+        if (!exists) {
+            entries.add(stableId);
+        }
+    }
+
     public static class PrepareEmptyPayload {
         public String premise;
         public String genre;
+        public String storyIdea;
         public String protagonistName;
         public String protagonistRole;
         public String themes;
@@ -508,5 +877,39 @@ public class ProjectPreparationService {
             result.scenesCreated = scenesCreated;
             return result;
         }
+    }
+
+    public static class CanonCardSummary {
+        public String displayId;
+        public String title;
+        public String type;
+        public String status;
+        public String annotationStatus;
+        public String path;
+    }
+
+    public static class CanonReviewSummary {
+        public String status;
+        public String preparedAt;
+        public String reviewedAt;
+        public int cardCount;
+        public List<CanonCardSummary> cards = new ArrayList<>();
+    }
+
+    public static class PreparationDebugSnapshot {
+        public String workspaceRoot;
+        public String workspaceName;
+        public boolean prepared;
+        public String prepStage;
+        public boolean agentsUnlocked;
+        public String preparedMode;
+        public String preparedAt;
+        public String canonStatus;
+        public String canonReviewedAt;
+        public String canonCardsPath;
+        public int canonCardCount;
+        public int sceneCount;
+        public String storyPath;
+        public String ingestPath;
     }
 }

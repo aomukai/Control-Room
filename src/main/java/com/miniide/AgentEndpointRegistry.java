@@ -20,8 +20,12 @@ public class AgentEndpointRegistry {
         this.registryPath = workspaceRoot.resolve(".control-room").resolve("agents").resolve("agent-endpoints.json");
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
-        ensureRegistryExists();
-        loadFromDisk();
+        if (hasWorkspaceMarker()) {
+            ensureRegistryExists();
+            loadFromDisk();
+        } else {
+            initializeEmptyRegistry();
+        }
     }
 
     public Map<String, AgentEndpointConfig> listEndpoints() {
@@ -51,18 +55,28 @@ public class AgentEndpointRegistry {
     }
 
     private void ensureRegistryExists() {
+        if (!hasWorkspaceMarker()) {
+            logger.info("Skipping agent endpoints registry creation - no .control-room marker (NO_PROJECT state)");
+            return;
+        }
+        if (Files.exists(registryPath)) {
+            return;
+        }
+
         try {
-            if (!Files.exists(registryPath)) {
-                Files.createDirectories(registryPath.getParent());
-                AgentEndpointsFile seed = new AgentEndpointsFile();
-                objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), seed);
-            }
+            Files.createDirectories(registryPath.getParent());
+            AgentEndpointsFile seed = new AgentEndpointsFile();
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(registryPath.toFile(), seed);
         } catch (IOException e) {
             logger.warn("Failed to create agent endpoints registry: " + e.getMessage());
         }
     }
 
     private void loadFromDisk() {
+        if (!hasWorkspaceMarker()) {
+            initializeEmptyRegistry();
+            return;
+        }
         try {
             endpointsFile = objectMapper.readValue(registryPath.toFile(), AgentEndpointsFile.class);
             if (endpointsFile.getAgents() == null) {
@@ -70,8 +84,18 @@ public class AgentEndpointRegistry {
             }
         } catch (IOException e) {
             logger.warn("Failed to load agent endpoints registry: " + e.getMessage());
-            endpointsFile = new AgentEndpointsFile();
+            initializeEmptyRegistry();
         }
+    }
+
+    private boolean hasWorkspaceMarker() {
+        Path controlRoomDir = registryPath.getParent().getParent();
+        return Files.exists(controlRoomDir.resolve("workspace.json"));
+    }
+
+    private void initializeEmptyRegistry() {
+        endpointsFile = new AgentEndpointsFile();
+        endpointsFile.setAgents(new java.util.HashMap<>());
     }
 
     private void saveToDisk() {

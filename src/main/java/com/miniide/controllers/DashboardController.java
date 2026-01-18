@@ -34,11 +34,9 @@ public class DashboardController implements Controller {
     private void getLayout(Context ctx) {
         try {
             DashboardLayout layout = store.load();
-            if (layout == null) {
-                ctx.json(Map.of("layout", (Object) null));
-            } else {
-                ctx.json(Map.of("layout", layout));
-            }
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("layout", layout);
+            ctx.json(response);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }

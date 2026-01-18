@@ -74,6 +74,10 @@ public class AgentController implements Controller {
     }
 
     private void createAgent(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
             Agent created = projectContext.agents().createAgent(agent);
@@ -162,6 +166,10 @@ public class AgentController implements Controller {
     }
 
     private void importAgent(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         try {
             Agent agent = ctx.bodyAsClass(Agent.class);
             Agent imported = projectContext.agents().importAgent(agent);
@@ -267,5 +275,11 @@ public class AgentController implements Controller {
             logger.error("Failed to save role settings: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private boolean agentsUnlocked() {
+        return projectContext != null
+            && projectContext.preparation() != null
+            && projectContext.preparation().areAgentsUnlocked();
     }
 }

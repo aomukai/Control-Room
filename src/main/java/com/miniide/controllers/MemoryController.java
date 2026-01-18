@@ -7,6 +7,7 @@ import com.miniide.AppLogger;
 import com.miniide.DecayConfigStore;
 import com.miniide.MemoryDecayScheduler;
 import com.miniide.MemoryService;
+import com.miniide.ProjectContext;
 import com.miniide.models.MemoryItem;
 import com.miniide.models.MemoryVersion;
 import com.miniide.models.R5Event;
@@ -24,13 +25,16 @@ import java.util.Map;
 public class MemoryController implements Controller {
 
     private final MemoryService memoryService;
+    private final ProjectContext projectContext;
     private final MemoryDecayScheduler decayScheduler;
     private final DecayConfigStore decayConfigStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public MemoryController(MemoryService memoryService, MemoryDecayScheduler decayScheduler, DecayConfigStore decayConfigStore, ObjectMapper objectMapper) {
+    public MemoryController(MemoryService memoryService, ProjectContext projectContext, MemoryDecayScheduler decayScheduler,
+                            DecayConfigStore decayConfigStore, ObjectMapper objectMapper) {
         this.memoryService = memoryService;
+        this.projectContext = projectContext;
         this.decayScheduler = decayScheduler;
         this.decayConfigStore = decayConfigStore;
         this.objectMapper = objectMapper;
@@ -54,6 +58,10 @@ public class MemoryController implements Controller {
     }
 
     private void createMemoryItem(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             String agentId = json.has("agentId") ? json.get("agentId").asText(null) : null;
@@ -72,6 +80,10 @@ public class MemoryController implements Controller {
     }
 
     private void createVersion(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         String memoryId = ctx.pathParam("id");
         if (!memoryService.memoryExists(memoryId)) {
             ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
@@ -101,6 +113,10 @@ public class MemoryController implements Controller {
     }
 
     private void createEvent(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         String memoryId = ctx.pathParam("id");
         if (!memoryService.memoryExists(memoryId)) {
             ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
@@ -207,6 +223,10 @@ public class MemoryController implements Controller {
     }
 
     private void setActiveVersion(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         String memoryId = ctx.pathParam("id");
         String versionId = ctx.pathParam("versionId");
         if (!memoryService.memoryExists(memoryId)) {
@@ -243,6 +263,10 @@ public class MemoryController implements Controller {
     }
 
     private void pinMemory(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         String memoryId = ctx.pathParam("id");
         if (!memoryService.memoryExists(memoryId)) {
             ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
@@ -264,6 +288,10 @@ public class MemoryController implements Controller {
     }
 
     private void setState(Context ctx) {
+        if (!agentsUnlocked()) {
+            ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+            return;
+        }
         String memoryId = ctx.pathParam("id");
         if (!memoryService.memoryExists(memoryId)) {
             ctx.status(404).json(Map.of("error", "Memory item not found: " + memoryId));
@@ -528,5 +556,11 @@ public class MemoryController implements Controller {
             return !includeArchived;
         }
         return false;
+    }
+
+    private boolean agentsUnlocked() {
+        return projectContext != null
+            && projectContext.preparation() != null
+            && projectContext.preparation().areAgentsUnlocked();
     }
 }

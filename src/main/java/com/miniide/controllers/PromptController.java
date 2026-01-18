@@ -12,12 +12,19 @@ import java.util.List;
 import java.util.Map;
 
 public class PromptController implements Controller {
-    private final PromptRegistry promptRegistry;
+    private final ProjectContext projectContext;
     private final ObjectMapper objectMapper;
 
     public PromptController(ProjectContext projectContext, ObjectMapper objectMapper) {
-        this.promptRegistry = projectContext.promptTools();
+        this.projectContext = projectContext;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Get the prompt registry dynamically to support workspace switching.
+     */
+    private PromptRegistry promptRegistry() {
+        return projectContext.promptTools();
     }
 
     @Override
@@ -30,13 +37,13 @@ public class PromptController implements Controller {
     }
 
     private void listPrompts(Context ctx) {
-        List<PromptTool> prompts = promptRegistry.listPrompts();
+        List<PromptTool> prompts = promptRegistry().listPrompts();
         ctx.json(prompts);
     }
 
     private void getPrompt(Context ctx) {
         String id = ctx.pathParam("id");
-        PromptTool prompt = promptRegistry.getPrompt(id);
+        PromptTool prompt = promptRegistry().getPrompt(id);
         if (prompt == null) {
             ctx.status(404).json(Map.of("error", "Prompt not found: " + id));
             return;
@@ -48,11 +55,11 @@ public class PromptController implements Controller {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             PromptTool prompt = objectMapper.treeToValue(json, PromptTool.class);
-            if (prompt.getId() != null && promptRegistry.getPrompt(prompt.getId()) != null) {
+            if (prompt.getId() != null && promptRegistry().getPrompt(prompt.getId()) != null) {
                 ctx.status(409).json(Map.of("error", "Prompt already exists: " + prompt.getId()));
                 return;
             }
-            PromptTool saved = promptRegistry.savePrompt(prompt);
+            PromptTool saved = promptRegistry().savePrompt(prompt);
             ctx.status(201).json(saved);
         } catch (Exception e) {
             ctx.status(400).json(Controller.errorBody(e));
@@ -71,7 +78,7 @@ public class PromptController implements Controller {
                 ctx.status(400).json(Map.of("error", "Prompt ID mismatch"));
                 return;
             }
-            PromptTool saved = promptRegistry.savePrompt(prompt);
+            PromptTool saved = promptRegistry().savePrompt(prompt);
             ctx.json(saved);
         } catch (Exception e) {
             ctx.status(400).json(Controller.errorBody(e));
@@ -80,7 +87,7 @@ public class PromptController implements Controller {
 
     private void deletePrompt(Context ctx) {
         String id = ctx.pathParam("id");
-        boolean deleted = promptRegistry.deletePrompt(id);
+        boolean deleted = promptRegistry().deletePrompt(id);
         if (!deleted) {
             ctx.status(404).json(Map.of("error", "Prompt not found: " + id));
             return;

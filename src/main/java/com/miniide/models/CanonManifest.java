@@ -5,6 +5,7 @@ public class CanonManifest {
     private String preparedAt;
     private int cardCount;
     private String status;
+    private String reviewedAt;
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -36,5 +37,13 @@ public class CanonManifest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public void setReviewedAt(String reviewedAt) {
+        this.reviewedAt = reviewedAt;
     }
 }

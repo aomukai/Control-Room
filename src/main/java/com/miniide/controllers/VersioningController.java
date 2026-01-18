@@ -736,7 +736,7 @@ public class VersioningController implements Controller {
     private boolean isPreparedProject() {
         return projectContext != null
             && projectContext.preparation() != null
-            && projectContext.preparation().isPrepared();
+            && projectContext.preparation().isVirtualReady();
     }
 
     private String loadContentForPath(String path) throws IOException {

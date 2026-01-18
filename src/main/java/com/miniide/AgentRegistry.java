@@ -31,8 +31,12 @@ public class AgentRegistry {
         this.registryPath = workspaceRoot.resolve(".control-room").resolve("agents").resolve("agents.json");
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
-        ensureRegistryExists();
-        loadFromDisk();
+        if (hasWorkspaceMarker()) {
+            ensureRegistryExists();
+            loadFromDisk();
+        } else {
+            initializeEmptyRegistry();
+        }
     }
 
     public List<Agent> listEnabledAgents() {
@@ -443,6 +447,10 @@ public class AgentRegistry {
     }
 
     private void ensureRegistryExists() {
+        if (!hasWorkspaceMarker()) {
+            logger.info("Skipping agent registry creation - no .control-room marker (NO_PROJECT state)");
+            return;
+        }
         if (Files.exists(registryPath)) {
             return;
         }
@@ -458,6 +466,10 @@ public class AgentRegistry {
     }
 
     private void loadFromDisk() {
+        if (!hasWorkspaceMarker()) {
+            initializeEmptyRegistry();
+            return;
+        }
         try {
             agentsFile = objectMapper.readValue(registryPath.toFile(), AgentsFile.class);
             logger.info("Loaded agent registry: " + registryPath);
@@ -468,6 +480,18 @@ public class AgentRegistry {
             logger.error("Failed to load agent registry: " + e.getMessage(), e);
             agentsFile = null;
         }
+    }
+
+    private boolean hasWorkspaceMarker() {
+        Path controlRoomDir = registryPath.getParent().getParent();
+        return Files.exists(controlRoomDir.resolve("workspace.json"));
+    }
+
+    private void initializeEmptyRegistry() {
+        agentsFile = new AgentsFile();
+        agentsFile.setVersion(1);
+        agentsFile.setAgents(new ArrayList<>());
+        agentsFile.setRoleSettings(new ArrayList<>());
     }
 
     private boolean normalizeAgentsFile() {

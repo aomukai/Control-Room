@@ -102,7 +102,7 @@ public class Main {
             DashboardLayoutStore dashboardLayoutStore = new DashboardLayoutStore(config.getWorkspacePath(), objectMapper);
 
             // Create and register controllers
-            MemoryController memoryController = new MemoryController(memoryService, decayScheduler, decayConfigStore, objectMapper);
+            MemoryController memoryController = new MemoryController(memoryService, projectContext, decayScheduler, decayConfigStore, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(projectContext, objectMapper),
                 new WorkspaceController(projectContext, creditStore, issueService, notificationStore, objectMapper, config.isDevMode()),

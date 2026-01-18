@@ -67,7 +67,7 @@ public class PreparedWorkspaceService {
             }
             return scene.getContent() != null ? scene.getContent() : "";
         }
-        CanonCard card = findCardByDisplayId(path.displayId);
+        CanonCard card = findCardByDisplayIdOrSlug(path.displayId);
         if (card == null) {
             throw new FileNotFoundException("Card not found: " + relativePath);
         }
@@ -91,7 +91,7 @@ public class PreparedWorkspaceService {
             saveStoryRegistry(registry);
             return;
         }
-        CanonCard card = findCardByDisplayId(path.displayId);
+        CanonCard card = findCardByDisplayIdOrSlug(path.displayId);
         if (card == null) {
             throw new FileNotFoundException("Card not found: " + relativePath);
         }
@@ -154,7 +154,7 @@ public class PreparedWorkspaceService {
             saveStoryRegistry(registry);
             return;
         }
-        CanonCard card = findCardByDisplayId(path.displayId);
+        CanonCard card = findCardByDisplayIdOrSlug(path.displayId);
         if (card == null) {
             throw new FileNotFoundException("Card not found: " + relativePath);
         }
@@ -182,7 +182,7 @@ public class PreparedWorkspaceService {
             return;
         }
 
-        CanonCard card = findCardByDisplayId(source.displayId);
+        CanonCard card = findCardByDisplayIdOrSlug(source.displayId);
         if (card == null) {
             throw new FileNotFoundException("Card not found: " + from);
         }
@@ -230,7 +230,7 @@ public class PreparedWorkspaceService {
             return CanonPath.scenePath(copy.getDisplayId());
         }
 
-        CanonCard card = findCardByDisplayId(path.displayId);
+        CanonCard card = findCardByDisplayIdOrSlug(path.displayId);
         if (card == null) {
             throw new FileNotFoundException("Card not found: " + relativePath);
         }
@@ -246,7 +246,7 @@ public class PreparedWorkspaceService {
         copy.setAnnotationStatus(card.getAnnotationStatus());
         copy.setStatus(card.getStatus());
         saveCard(copy);
-        return CanonPath.cardPath(copy.getType(), copy.getDisplayId());
+        return CanonPath.cardPathFromDisplayId(copy.getDisplayId(), copy.getType());
     }
 
     public List<SearchResult> search(String query) throws IOException {
@@ -264,7 +264,7 @@ public class PreparedWorkspaceService {
         for (CanonCard card : loadAllCards()) {
             String content = card.getContent();
             if (content != null && content.toLowerCase(Locale.ROOT).contains(lower)) {
-                results.add(new SearchResult(CanonPath.cardPath(card.getType(), card.getDisplayId()), 1, preview(content)));
+                results.add(new SearchResult(CanonPath.cardPathFromDisplayId(card.getDisplayId(), card.getType()), 1, preview(content)));
             }
         }
         return results;
@@ -277,7 +277,7 @@ public class PreparedWorkspaceService {
             files.add(new VirtualFile(path, scene.getContent() != null ? scene.getContent() : ""));
         }
         for (CanonCard card : loadAllCards()) {
-            String path = CanonPath.cardPath(card.getType(), card.getDisplayId());
+            String path = CanonPath.cardPathFromDisplayId(card.getDisplayId(), card.getType());
             files.add(new VirtualFile(path, card.getContent() != null ? card.getContent() : ""));
         }
         return files;
@@ -308,10 +308,9 @@ public class PreparedWorkspaceService {
     private FileNode buildCompendiumFolder(String bucket) throws IOException {
         String path = "Compendium/" + bucket;
         FileNode folder = new FileNode(bucket, path, "folder");
-        String type = bucketToType(bucket);
         List<CanonCard> cards = loadAllCards();
         cards.stream()
-            .filter(card -> type.equalsIgnoreCase(card.getType()))
+            .filter(card -> bucketMatches(bucket, card))
             .sorted(Comparator.comparing(CanonCard::getTitle, String.CASE_INSENSITIVE_ORDER))
             .forEach(card -> {
                 String filename = CanonPath.cardFileName(card.getDisplayId());
@@ -376,6 +375,28 @@ public class PreparedWorkspaceService {
         return null;
     }
 
+    private CanonCard findCardByDisplayIdOrSlug(String displayId) throws IOException {
+        CanonCard exact = findCardByDisplayId(displayId);
+        if (exact != null) {
+            return exact;
+        }
+        String slug = extractSlug(displayId);
+        if (slug == null) {
+            return null;
+        }
+        CanonCard match = null;
+        for (CanonCard card : loadAllCards()) {
+            String cardSlug = extractSlug(card.getDisplayId());
+            if (cardSlug != null && cardSlug.equalsIgnoreCase(slug)) {
+                if (match != null) {
+                    return null;
+                }
+                match = card;
+            }
+        }
+        return match;
+    }
+
     private StoryScene findSceneByDisplayId(String displayId) throws IOException {
         return findSceneByDisplayId(loadStoryRegistry(), displayId);
     }
@@ -391,6 +412,10 @@ public class PreparedWorkspaceService {
 
     private void saveCard(CanonCard card) throws IOException {
         Path cardPath = resolveCardPath(card);
+        Path legacyPath = resolveLegacyCardPath(card);
+        if (!cardPath.equals(legacyPath) && Files.exists(legacyPath)) {
+            Files.delete(legacyPath);
+        }
         Files.createDirectories(cardPath.getParent());
         mapper.writerWithDefaultPrettyPrinter().writeValue(cardPath.toFile(), card);
     }
@@ -398,6 +423,21 @@ public class PreparedWorkspaceService {
     private Path resolveCardPath(CanonCard card) {
         String typePrefix = CanonPath.cardPrefix(card.getType());
         String slug = CanonPath.cardSlug(card.getDisplayId(), card.getTitle());
+        if (card.getDisplayId() != null && card.getDisplayId().contains(":")) {
+            int colonIndex = card.getDisplayId().indexOf(':');
+            typePrefix = card.getDisplayId().substring(0, colonIndex).toUpperCase(Locale.ROOT);
+            String displaySlug = card.getDisplayId().substring(colonIndex + 1);
+            if (!displaySlug.isBlank()) {
+                slug = displaySlug.toLowerCase(Locale.ROOT);
+            }
+        }
+        String filename = typePrefix + "-" + slug + ".json";
+        return workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards").resolve(filename);
+    }
+
+    private Path resolveLegacyCardPath(CanonCard card) {
+        String typePrefix = CanonPath.cardPrefix(card.getType());
+        String slug = slugify(card.getTitle());
         String filename = typePrefix + "-" + slug + ".json";
         return workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards").resolve(filename);
     }
@@ -446,12 +486,45 @@ public class PreparedWorkspaceService {
         }
     }
 
+    private boolean bucketMatches(String bucket, CanonCard card) {
+        String displayBucket = CanonPath.bucketFromDisplayId(card.getDisplayId());
+        if (displayBucket != null) {
+            return bucket.equalsIgnoreCase(displayBucket);
+        }
+        String typeBucket = CanonPath.bucketFromType(card.getType());
+        return bucket.equalsIgnoreCase(typeBucket);
+    }
+
     private String preview(String content) {
         String trimmed = content.trim();
         if (trimmed.length() > 100) {
             return trimmed.substring(0, 100) + "...";
         }
         return trimmed;
+    }
+
+    private String extractSlug(String displayId) {
+        if (displayId == null || displayId.isBlank()) {
+            return null;
+        }
+        int colonIndex = displayId.indexOf(':');
+        if (colonIndex >= 0 && colonIndex < displayId.length() - 1) {
+            return displayId.substring(colonIndex + 1);
+        }
+        int dashIndex = displayId.indexOf('-');
+        if (dashIndex >= 0 && dashIndex < displayId.length() - 1) {
+            return displayId.substring(dashIndex + 1);
+        }
+        return displayId;
+    }
+
+    private String slugify(String value) {
+        if (value == null || value.isBlank()) {
+            return "item";
+        }
+        String slug = value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-");
+        slug = slug.replaceAll("(^-|-$)", "");
+        return slug.isEmpty() ? "item" : slug;
     }
 
     private String nowIso() {
@@ -523,6 +596,14 @@ public class PreparedWorkspaceService {
             return "Compendium/" + bucket + "/" + cardFileName(displayId);
         }
 
+        static String cardPathFromDisplayId(String displayId, String type) {
+            String bucket = bucketFromDisplayId(displayId);
+            if (bucket == null) {
+                bucket = bucketFromType(type);
+            }
+            return "Compendium/" + bucket + "/" + cardFileName(displayId);
+        }
+
         static String cardPrefix(String type) {
             switch (type.toLowerCase(Locale.ROOT)) {
                 case "character": return "CHAR";
@@ -545,7 +626,7 @@ public class PreparedWorkspaceService {
             return slugify(title);
         }
 
-        private static String bucketFromType(String type) {
+        static String bucketFromType(String type) {
             switch (type.toLowerCase(Locale.ROOT)) {
                 case "character": return "Characters";
                 case "location": return "Locations";
@@ -557,6 +638,32 @@ public class PreparedWorkspaceService {
                 case "theme": return "Themes";
                 case "glossary": return "Glossary";
                 default: return "Misc";
+            }
+        }
+
+        static String bucketFromDisplayId(String displayId) {
+            if (displayId == null || displayId.isBlank()) {
+                return null;
+            }
+            String prefix = displayId;
+            int colonIndex = displayId.indexOf(':');
+            if (colonIndex > 0) {
+                prefix = displayId.substring(0, colonIndex);
+            } else if (displayId.contains("-")) {
+                prefix = displayId.substring(0, displayId.indexOf('-'));
+            }
+            switch (prefix.toUpperCase(Locale.ROOT)) {
+                case "CHAR": return "Characters";
+                case "LOC": return "Locations";
+                case "CONCEPT": return "Lore";
+                case "FACTION": return "Factions";
+                case "TECH": return "Technology";
+                case "CULTURE": return "Culture";
+                case "EVENT": return "Events";
+                case "THEME": return "Themes";
+                case "GLOSSARY": return "Glossary";
+                case "MISC": return "Misc";
+                default: return null;
             }
         }
 

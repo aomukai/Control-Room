@@ -74,6 +74,10 @@ public class ChatController implements Controller {
             }
 
             if (agentId != null && !agentId.isBlank()) {
+                if (!agentsUnlocked()) {
+                    ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+                    return;
+                }
                 Agent agent = projectContext.agents().getAgent(agentId);
                 if (agent == null) {
                     ctx.status(404).json(Map.of("error", "Agent not found: " + agentId));
@@ -132,6 +136,12 @@ public class ChatController implements Controller {
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private boolean agentsUnlocked() {
+        return projectContext != null
+            && projectContext.preparation() != null
+            && projectContext.preparation().areAgentsUnlocked();
     }
 
     private Map<String, Object> buildResponse(String content, MemoryService.MemoryResult memoryResult,

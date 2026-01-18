@@ -49,7 +49,7 @@ public class FileController implements Controller {
 
     private void getTree(Context ctx) {
         try {
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 ctx.json(projectContext.preparedWorkspace().getTree());
             } else {
                 ctx.json(projectContext.workspace().getTree(""));
@@ -68,7 +68,7 @@ public class FileController implements Controller {
                 return;
             }
             String content;
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 content = projectContext.preparedWorkspace().readFile(path);
             } else {
                 content = projectContext.workspace().readFile(path);
@@ -89,7 +89,7 @@ public class FileController implements Controller {
                 return;
             }
             String content = ctx.body();
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 projectContext.preparedWorkspace().writeFile(path, content);
             } else {
                 projectContext.workspace().writeFile(path, content);
@@ -114,13 +114,13 @@ public class FileController implements Controller {
             }
 
             if ("folder".equals(type)) {
-                if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                     ctx.status(400).json(Map.of("error", "Folders are not created in prepared mode."));
                     return;
                 }
                 projectContext.workspace().createFolder(path);
             } else {
-                if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+                if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                     projectContext.preparedWorkspace().createFile(path, initialContent);
                 } else {
                     projectContext.workspace().createFile(path, initialContent);
@@ -140,7 +140,7 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Path parameter required"));
                 return;
             }
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 projectContext.preparedWorkspace().deleteEntry(path);
             } else {
                 projectContext.workspace().deleteEntry(path);
@@ -164,7 +164,7 @@ public class FileController implements Controller {
                 ctx.status(400).json(Map.of("error", "Both 'from' and 'to' paths required"));
                 return;
             }
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 projectContext.preparedWorkspace().renameEntry(from, to);
             } else {
                 projectContext.workspace().renameEntry(from, to);
@@ -188,7 +188,7 @@ public class FileController implements Controller {
                 return;
             }
             String newPath;
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 newPath = projectContext.preparedWorkspace().duplicateEntry(path);
             } else {
                 newPath = projectContext.workspace().duplicateEntry(path);
@@ -207,7 +207,7 @@ public class FileController implements Controller {
             String query = ctx.queryParam("q");
             String pattern = ctx.queryParam("pattern");
             List<SearchResult> results;
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 results = projectContext.preparedWorkspace().search(query);
             } else {
                 results = projectContext.workspace().search(query, pattern);
@@ -226,7 +226,7 @@ public class FileController implements Controller {
                 return;
             }
             List<SceneSegment> segments;
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 segments = projectContext.preparedWorkspace().getSceneSegments(path);
             } else {
                 segments = projectContext.workspace().getSceneSegments(path);
@@ -248,7 +248,7 @@ public class FileController implements Controller {
                 ctx.json(Map.of("ok", false, "error", "Path is required"));
                 return;
             }
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 ctx.json(Map.of("ok", false, "error", "Prepared projects are virtual-only."));
                 return;
             }
@@ -318,7 +318,7 @@ public class FileController implements Controller {
                 ctx.json(Map.of("ok", false, "error", "Path is required"));
                 return;
             }
-            if (projectContext.preparation() != null && projectContext.preparation().isPrepared()) {
+            if (projectContext.preparation() != null && projectContext.preparation().isVirtualReady()) {
                 ctx.json(Map.of("ok", false, "error", "Prepared projects are virtual-only."));
                 return;
             }

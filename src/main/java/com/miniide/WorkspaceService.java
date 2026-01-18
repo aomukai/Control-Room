@@ -642,6 +642,11 @@ public class WorkspaceService {
         meta.setDisplayName(workspaceRoot.getFileName() != null ? workspaceRoot.getFileName().toString() : "workspace");
 
         if (!Files.exists(metadataPath)) {
+            if (hasPreparationArtifacts()) {
+                meta.setPrepared(true);
+                meta.setPrepStage("prepared");
+                meta.setAgentsUnlocked(true);
+            }
             return meta;
         }
         try {
@@ -649,11 +654,39 @@ public class WorkspaceService {
             if (stored.getDisplayName() == null || stored.getDisplayName().isBlank()) {
                 stored.setDisplayName(meta.getDisplayName());
             }
+            if (stored.getPrepStage() == null || stored.getPrepStage().isBlank()) {
+                if (stored.isPrepared()) {
+                    stored.setPrepStage("prepared");
+                } else if (stored.getPreparedMode() != null && !stored.getPreparedMode().isBlank()) {
+                    stored.setPrepStage("draft");
+                } else {
+                    stored.setPrepStage("none");
+                }
+            }
+            if ("none".equalsIgnoreCase(stored.getPrepStage()) && hasPreparationArtifacts()) {
+                stored.setPrepared(true);
+                stored.setPrepStage("prepared");
+                stored.setAgentsUnlocked(true);
+            }
+            if (!stored.isAgentsUnlocked() && stored.isPrepared()) {
+                stored.setAgentsUnlocked(true);
+            }
             return stored;
         } catch (IOException e) {
             log("Failed to read workspace metadata: " + e.getMessage());
             return meta;
         }
+    }
+
+    private boolean hasPreparationArtifacts() {
+        Path controlRoom = workspaceRoot.resolve(".control-room");
+        if (!Files.exists(controlRoom)) {
+            return false;
+        }
+        Path storyManifest = controlRoom.resolve("story").resolve("manifest.json");
+        Path canonManifest = controlRoom.resolve("canon").resolve("manifest.json");
+        Path ingestManifest = controlRoom.resolve("ingest").resolve("manifest.json");
+        return Files.exists(storyManifest) || Files.exists(canonManifest) || Files.exists(ingestManifest);
     }
 
     /**

@@ -131,6 +131,26 @@ public class AppConfig {
     }
 
     /**
+     * Resolve the configured workspace root from config (or default if none).
+     */
+    public static Path getConfiguredWorkspaceRoot() throws IOException {
+        Properties props = new Properties();
+        Path configDir = getConfigDirectory();
+        Path configPath = configDir.resolve(CONFIG_FILE_NAME);
+        if (Files.exists(configPath)) {
+            try (var input = Files.newInputStream(configPath)) {
+                props.load(input);
+            }
+        }
+        String storedRoot = props.getProperty("workspace.root");
+        Path root = (storedRoot != null && !storedRoot.isBlank())
+            ? Paths.get(storedRoot).toAbsolutePath().normalize()
+            : getDefaultWorkspaceRoot();
+        Files.createDirectories(root);
+        return root;
+    }
+
+    /**
      * Find an available port, starting with the preferred port.
      * If the preferred port is in use, finds the next available port.
      */
@@ -302,12 +322,28 @@ public class AppConfig {
             String name = workspaceName;
             if (name == null || name.isBlank()) {
                 String storedName = config.getProperty("workspace.name");
-                name = (storedName == null || storedName.isBlank()) ? "default" : storedName;
+                name = (storedName == null || storedName.isBlank()) ? null : storedName;
+            }
+
+            // Ensure workspace root directory exists
+            Files.createDirectories(root);
+
+            // If no project name specified, return workspace root (NO_PROJECT state)
+            if (name == null || name.isBlank()) {
+                persistWorkspaceConfig(null, root, null);
+                return root;
             }
 
             Path resolved = root.resolve(name).toAbsolutePath().normalize();
-            persistWorkspaceConfig(null, root, name);
-            return resolved;
+            // Only return project path if it has the .control-room marker (is a valid project)
+            if (Files.exists(resolved.resolve(".control-room"))) {
+                persistWorkspaceConfig(null, root, name);
+                return resolved;
+            }
+
+            // Project doesn't exist or isn't valid - return workspace root (NO_PROJECT state)
+            persistWorkspaceConfig(null, root, null);
+            return root;
         }
 
         private Properties loadConfig() throws IOException {
@@ -345,6 +381,8 @@ public class AppConfig {
             }
             if (name != null && !name.isBlank()) {
                 props.setProperty("workspace.name", name);
+            } else {
+                props.remove("workspace.name");
             }
 
             try (var output = Files.newOutputStream(configPath)) {

@@ -8,6 +8,8 @@ public class WorkspaceMetadata {
     private boolean prepared;
     private String preparedMode;
     private String preparedAt;
+    private String prepStage;
+    private boolean agentsUnlocked;
 
     public String getDisplayName() {
         return displayName;
@@ -63,5 +65,21 @@ public class WorkspaceMetadata {
 
     public void setPreparedAt(String preparedAt) {
         this.preparedAt = preparedAt;
+    }
+
+    public String getPrepStage() {
+        return prepStage;
+    }
+
+    public void setPrepStage(String prepStage) {
+        this.prepStage = prepStage;
+    }
+
+    public boolean isAgentsUnlocked() {
+        return agentsUnlocked;
+    }
+
+    public void setAgentsUnlocked(boolean agentsUnlocked) {
+        this.agentsUnlocked = agentsUnlocked;
     }
 }

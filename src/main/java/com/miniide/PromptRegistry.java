@@ -21,8 +21,12 @@ public class PromptRegistry {
         this.registryPath = workspaceRoot.resolve(".control-room").resolve("prompts").resolve("prompts.json");
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
-        ensureRegistryExists();
-        loadFromDisk();
+        if (hasWorkspaceMarker()) {
+            ensureRegistryExists();
+            loadFromDisk();
+        } else {
+            initializeEmptyRegistry();
+        }
     }
 
     public List<PromptTool> listPrompts() {
@@ -157,9 +161,14 @@ public class PromptRegistry {
     }
 
     private void ensureRegistryExists() {
+        if (!hasWorkspaceMarker()) {
+            logger.info("Skipping prompt registry creation - no .control-room marker (NO_PROJECT state)");
+            return;
+        }
         if (Files.exists(registryPath)) {
             return;
         }
+
         try {
             Files.createDirectories(registryPath.getParent());
             PromptToolsFile emptyRegistry = new PromptToolsFile();
@@ -171,6 +180,10 @@ public class PromptRegistry {
     }
 
     private void loadFromDisk() {
+        if (!hasWorkspaceMarker()) {
+            initializeEmptyRegistry();
+            return;
+        }
         try {
             promptFile = objectMapper.readValue(registryPath.toFile(), PromptToolsFile.class);
             logger.info("Loaded prompt registry: " + registryPath);
@@ -178,6 +191,16 @@ public class PromptRegistry {
             logger.error("Failed to load prompt registry: " + e.getMessage(), e);
             promptFile = null;
         }
+    }
+
+    private boolean hasWorkspaceMarker() {
+        Path controlRoomDir = registryPath.getParent().getParent();
+        return Files.exists(controlRoomDir.resolve("workspace.json"));
+    }
+
+    private void initializeEmptyRegistry() {
+        promptFile = new PromptToolsFile();
+        promptFile.setPrompts(new ArrayList<>());
     }
 
     private String generateUniqueId(String baseId) {

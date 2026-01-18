@@ -8,6 +8,8 @@ import com.miniide.CreditStore;
 import com.miniide.IssueMemoryService;
 import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
+import com.miniide.WorkspaceService;
+import com.miniide.models.WorkspaceMetadata;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -147,27 +149,44 @@ public class WorkspaceController implements Controller {
     private void getWorkspaceInfo(Context ctx) {
         try {
             Path current = projectContext.workspace().getWorkspaceRoot();
-            Path root = current.getParent() != null ? current.getParent() : current;
-            String currentName = current.getFileName() != null ? current.getFileName().toString() : current.toString();
+            Path root = AppConfig.getConfiguredWorkspaceRoot();
+            boolean projectSelected = isProjectPath(current);
 
-            List<String> names = new ArrayList<>();
+            // Build list of valid projects (directories with .control-room marker)
+            List<String> validProjects = new ArrayList<>();
             if (Files.exists(root) && Files.isDirectory(root)) {
                 try (var stream = Files.list(root)) {
                     stream.filter(Files::isDirectory)
+                        .filter(path -> Files.exists(path.resolve(".control-room")))
                         .map(path -> path.getFileName() != null ? path.getFileName().toString() : path.toString())
                         .sorted()
-                        .forEach(names::add);
+                        .forEach(validProjects::add);
                 }
             }
 
-            ctx.json(Map.of(
-                "currentPath", current.toString(),
-                "rootPath", root.toString(),
-                "currentName", currentName,
-                "available", names,
-                "metadata", projectContext.workspace().loadMetadata(),
-                "devMode", devMode
-            ));
+            // Build response - NO nulls allowed
+            java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("rootPath", root.toString());
+            response.put("available", validProjects);
+            response.put("hasProjects", !validProjects.isEmpty());
+            response.put("devMode", devMode);
+
+            if (projectSelected) {
+                // PROJECT_UNPREPARED or PROJECT_PREPARED
+                response.put("state", "PROJECT_SELECTED");
+                response.put("projectSelected", true);
+                response.put("currentPath", current.toString());
+                response.put("currentName", current.getFileName() != null ? current.getFileName().toString() : "");
+                response.put("metadata", projectContext.workspace().loadMetadata());
+            } else {
+                // NO_PROJECT - no current path, no metadata
+                response.put("state", "NO_PROJECT");
+                response.put("projectSelected", false);
+                // currentPath and currentName intentionally omitted
+                // metadata intentionally omitted
+            }
+
+            ctx.json(response);
         } catch (Exception e) {
             logger.error("Failed to get workspace info: " + e.getMessage(), e);
             ctx.status(500).json(Controller.errorBody(e));
@@ -189,8 +208,7 @@ public class WorkspaceController implements Controller {
                 return;
             }
 
-            Path current = projectContext.workspace().getWorkspaceRoot();
-            Path root = current.getParent() != null ? current.getParent() : current;
+            Path root = AppConfig.getConfiguredWorkspaceRoot();
             Path target = root.resolve(trimmed).normalize();
 
             if (!target.startsWith(root)) {
@@ -199,6 +217,15 @@ public class WorkspaceController implements Controller {
             }
 
             Files.createDirectories(target);
+            Path metadataPath = target.resolve(".control-room").resolve("workspace.json");
+            if (!Files.exists(metadataPath)) {
+                WorkspaceMetadata meta = new WorkspaceMetadata();
+                meta.setDisplayName(trimmed);
+                meta.setPrepared(false);
+                meta.setPrepStage("none");
+                meta.setAgentsUnlocked(false);
+                new WorkspaceService(target).saveMetadata(meta);
+            }
             AppConfig.persistWorkspaceSelection(root, trimmed);
             projectContext.switchWorkspace(target);
             if (creditStore != null) {
@@ -238,7 +265,7 @@ public class WorkspaceController implements Controller {
             }
 
             Path current = projectContext.workspace().getWorkspaceRoot();
-            Path root = current.getParent() != null ? current.getParent() : current;
+            Path root = AppConfig.getConfiguredWorkspaceRoot();
             Path target = root.resolve(trimmed).normalize();
 
             if (!target.startsWith(root)) {
@@ -308,6 +335,15 @@ public class WorkspaceController implements Controller {
                 String color = json.get("accentColor").asText("");
                 meta.setAccentColor(trimToLength(color, 16));
             }
+            if (json.has("prepStage")) {
+                meta.setPrepStage(json.get("prepStage").asText(""));
+            }
+            if (json.has("agentsUnlocked")) {
+                meta.setAgentsUnlocked(json.get("agentsUnlocked").asBoolean(false));
+            }
+            if (json.has("prepared")) {
+                meta.setPrepared(json.get("prepared").asBoolean(false));
+            }
 
             var saved = projectContext.workspace().saveMetadata(meta);
             ctx.json(Map.of("ok", true, "metadata", saved));
@@ -324,5 +360,19 @@ public class WorkspaceController implements Controller {
             return trimmed;
         }
         return trimmed.substring(0, maxLen);
+    }
+
+    private boolean isProjectPath(Path path) throws Exception {
+        if (path == null) {
+            return false;
+        }
+        Path root = AppConfig.getConfiguredWorkspaceRoot();
+        if (path.normalize().equals(root.normalize())) {
+            return false;
+        }
+        if (path.getParent() == null || !path.getParent().normalize().equals(root.normalize())) {
+            return false;
+        }
+        return Files.exists(path.resolve(".control-room"));
     }
 }
