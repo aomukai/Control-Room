@@ -31,9 +31,6 @@ workspace/**/.control-room/agents/*.json
 data/*.json
 data/*.wav
 
-# Piper TTS voice models (downloaded via setup-piper.ps1)
-data/voices/
-
 # Local workspace UI state
 workspace/**/.controlroom/state/*.json
 
