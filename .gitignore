@@ -21,7 +21,8 @@ Thumbs.db
 nul
 
 # Design Documents
-# docs/ is now tracked and safe to publish.
+# Everything in docs/ is private and must not be uploaded to GitHub. It's critical infrastructure; keep local.
+docs/
 
 # Local agent registry data
 workspace/**/.control-room/agents/*.json
@@ -38,3 +39,6 @@ workspace/**/.controlroom/state/*.json
 
 # Workspace
 workspace/
+# === PRIVATE DEV PHASE (INTENTIONAL) ===
+# docs/ is *not* documentation right now. It contains private, operational project infrastructure.
+# Nothing in docs/ may be pushed to GitHub.
