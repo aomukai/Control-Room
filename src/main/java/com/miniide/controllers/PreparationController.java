@@ -62,6 +62,7 @@ public class PreparationController implements Controller {
         app.get("/api/preparation/debug", this::getDebugSnapshot);
         app.get("/api/preparation/canon-review", this::getCanonReview);
         app.post("/api/preparation/canon/confirm", this::confirmCanonReview);
+        app.post("/api/preparation/reindex/scene", this::reindexScene);
         app.post("/api/preparation/finalize", this::finalizePreparation);
         app.post("/api/preparation/empty", this::prepareEmpty);
         app.post("/api/preparation/ingest", this::prepareIngest);
@@ -106,6 +107,34 @@ public class PreparationController implements Controller {
             preparationService().confirmCanonReview();
             ctx.json(Map.of("ok", true));
         } catch (IllegalStateException e) {
+            ctx.status(404).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void reindexScene(Context ctx) {
+        try {
+            if (preparationService() == null || !preparationService().isVirtualReady()) {
+                ctx.status(400).json(Map.of("error", "Prepared project required."));
+                return;
+            }
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String sceneDisplayId = json.has("sceneDisplayId") ? json.get("sceneDisplayId").asText() : null;
+            String mode = json.has("mode") ? json.get("mode").asText() : null;
+            var scene = projectContext.preparedWorkspace().reindexScene(sceneDisplayId, mode);
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("ok", true);
+            response.put("sceneDisplayId", scene.getDisplayId());
+            response.put("indexStatus", scene.getIndexStatus());
+            response.put("lastIndexedHash", scene.getLastIndexedHash());
+            response.put("linkedCardStableIds", scene.getLinkedCardStableIds());
+            response.put("linkedHookIds", scene.getLinkedHookIds());
+            response.put("hookMatches", scene.getHookMatches());
+            ctx.json(response);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (java.io.FileNotFoundException e) {
             ctx.status(404).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));

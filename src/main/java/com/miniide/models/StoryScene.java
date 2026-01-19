@@ -15,6 +15,11 @@ public class StoryScene {
     private String createdAt;
     private String updatedAt;
     private String status;
+    private String lastIndexedHash;
+    private String indexStatus;
+    private List<String> linkedCardStableIds = new ArrayList<>();
+    private List<String> linkedHookIds = new ArrayList<>();
+    private List<HookMatch> hookMatches = new ArrayList<>();
 
     public String getOrigin() {
         return origin;
@@ -102,5 +107,45 @@ public class StoryScene {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getLastIndexedHash() {
+        return lastIndexedHash;
+    }
+
+    public void setLastIndexedHash(String lastIndexedHash) {
+        this.lastIndexedHash = lastIndexedHash;
+    }
+
+    public String getIndexStatus() {
+        return indexStatus;
+    }
+
+    public void setIndexStatus(String indexStatus) {
+        this.indexStatus = indexStatus;
+    }
+
+    public List<String> getLinkedCardStableIds() {
+        return linkedCardStableIds;
+    }
+
+    public void setLinkedCardStableIds(List<String> linkedCardStableIds) {
+        this.linkedCardStableIds = linkedCardStableIds != null ? linkedCardStableIds : new ArrayList<>();
+    }
+
+    public List<String> getLinkedHookIds() {
+        return linkedHookIds;
+    }
+
+    public void setLinkedHookIds(List<String> linkedHookIds) {
+        this.linkedHookIds = linkedHookIds != null ? linkedHookIds : new ArrayList<>();
+    }
+
+    public List<HookMatch> getHookMatches() {
+        return hookMatches;
+    }
+
+    public void setHookMatches(List<HookMatch> hookMatches) {
+        this.hookMatches = hookMatches != null ? hookMatches : new ArrayList<>();
     }
 }

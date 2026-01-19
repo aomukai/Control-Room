@@ -1,8 +1,10 @@
 package com.miniide;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.models.CanonCard;
 import com.miniide.models.FileNode;
+import com.miniide.models.HookMatch;
 import com.miniide.models.SceneSegment;
 import com.miniide.models.SearchResult;
 import com.miniide.models.StoryRegistry;
@@ -14,13 +16,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 public class PreparedWorkspaceService {
     private final Path workspaceRoot;
@@ -290,6 +297,42 @@ public class PreparedWorkspaceService {
         return segments;
     }
 
+    public StoryScene reindexScene(String sceneDisplayId, String mode) throws IOException {
+        String trimmedId = sceneDisplayId != null ? sceneDisplayId.trim() : "";
+        if (trimmedId.isEmpty()) {
+            throw new IllegalArgumentException("Scene displayId is required.");
+        }
+        String effectiveMode = mode != null ? mode.trim().toLowerCase(Locale.ROOT) : "index";
+        if (!effectiveMode.equals("index") && !effectiveMode.equals("full") && !effectiveMode.equals("markers")) {
+            throw new IllegalArgumentException("Unsupported mode: " + mode);
+        }
+
+        StoryRegistry registry = loadStoryRegistry();
+        StoryScene scene = findSceneByDisplayId(registry, trimmedId);
+        if (scene == null) {
+            throw new FileNotFoundException("Scene not found: " + trimmedId);
+        }
+
+        String content = scene.getContent() != null ? scene.getContent() : "";
+        Map<String, List<String>> hooksIndex = loadHooksIndex();
+        if (hooksIndex.isEmpty() && !effectiveMode.equals("markers")) {
+            scene.setLastIndexedHash(sha256Hex(content));
+            scene.setIndexStatus("missing");
+            scene.setLinkedCardStableIds(new ArrayList<>());
+            scene.setLinkedHookIds(new ArrayList<>());
+            scene.setHookMatches(new ArrayList<>());
+            saveStoryRegistry(registry);
+            return scene;
+        }
+
+        List<HookMatch> matches = effectiveMode.equals("markers")
+            ? new ArrayList<>()
+            : matchHooksByIndex(content, hooksIndex);
+        applyIndexResults(scene, content, matches);
+        saveStoryRegistry(registry);
+        return scene;
+    }
+
     private FileNode buildScenesFolder() throws IOException {
         FileNode scenesFolder = new FileNode("Scenes", "Story/Scenes", "folder");
         StoryRegistry registry = loadStoryRegistry();
@@ -533,6 +576,80 @@ public class PreparedWorkspaceService {
 
     private String generateStableId() {
         return "ID-" + java.util.UUID.randomUUID().toString();
+    }
+
+    private Map<String, List<String>> loadHooksIndex() throws IOException {
+        Path hooksPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("hooks-index.json");
+        if (!Files.exists(hooksPath)) {
+            return new LinkedHashMap<>();
+        }
+        return mapper.readValue(hooksPath.toFile(),
+            new TypeReference<Map<String, List<String>>>() {});
+    }
+
+    private List<HookMatch> matchHooksByIndex(String content, Map<String, List<String>> hooksIndex) {
+        List<HookMatch> matches = new ArrayList<>();
+        if (content == null || content.isBlank()) {
+            return matches;
+        }
+        String lower = content.toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, List<String>> entry : hooksIndex.entrySet()) {
+            String hook = entry.getKey();
+            if (hook == null || hook.isBlank()) {
+                continue;
+            }
+            String hookLower = hook.toLowerCase(Locale.ROOT);
+            int idx = lower.indexOf(hookLower);
+            if (idx < 0) {
+                continue;
+            }
+            List<String> stableIds = entry.getValue() != null ? entry.getValue() : List.of();
+            for (String stableId : stableIds) {
+                HookMatch match = new HookMatch();
+                match.setHook(hook);
+                match.setCardStableId(stableId);
+                match.setMatchType("index");
+                match.setConfidence(0.6);
+                match.setStart(idx);
+                match.setEnd(idx + hook.length());
+                matches.add(match);
+            }
+        }
+        return matches;
+    }
+
+    private void applyIndexResults(StoryScene scene, String content, List<HookMatch> matches) {
+        String hash = sha256Hex(content != null ? content : "");
+        scene.setLastIndexedHash(hash);
+        scene.setIndexStatus("ok");
+
+        Set<String> cardIds = new LinkedHashSet<>();
+        Set<String> hooks = new LinkedHashSet<>();
+        for (HookMatch match : matches) {
+            if (match.getCardStableId() != null && !match.getCardStableId().isBlank()) {
+                cardIds.add(match.getCardStableId());
+            }
+            if (match.getHook() != null && !match.getHook().isBlank()) {
+                hooks.add(match.getHook());
+            }
+        }
+        scene.setLinkedCardStableIds(new ArrayList<>(cardIds));
+        scene.setLinkedHookIds(new ArrayList<>(hooks));
+        scene.setHookMatches(matches);
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashed) {
+                sb.append(String.format("%02x", b));
+            }
+            return "sha256:" + sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to hash content", e);
+        }
     }
 
     private static class CanonPath {

@@ -16,6 +16,7 @@ bin/
 # OS
 .DS_Store
 Thumbs.db
+hs_err_pid*.log
 
 # Claude Code
 .claude/
