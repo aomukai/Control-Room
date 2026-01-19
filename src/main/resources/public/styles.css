@@ -7747,6 +7747,320 @@ body.no-project #editor-placeholder .placeholder-text p {
     white-space: nowrap;
 }
 
+/* Wizard Typography & Layout Improvements */
+.prep-step-indicator {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    letter-spacing: 0.02em;
+}
+
+.prep-headline {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.prep-subtext {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+/* Enhanced Drop Zone */
+.prep-dropzone {
+    width: 100%;
+    padding: 28px 20px;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+
+.prep-dropzone:hover {
+    border-color: var(--text-muted);
+    background: var(--bg-lighter);
+}
+
+.prep-dropzone-icon {
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 12px;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.prep-dropzone strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.prep-dropzone span {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.prep-dropzone.is-dragging {
+    border-color: var(--accent);
+    background: rgba(59, 130, 246, 0.08);
+    transform: scale(1.01);
+}
+
+.prep-dropzone.has-files strong {
+    color: var(--accent);
+}
+
+/* Success Animation */
+.prep-dropzone.drop-success {
+    animation: prep-drop-success 0.4s ease-out;
+}
+
+@keyframes prep-drop-success {
+    0% { border-color: var(--border-color); }
+    30% { border-color: #22c55e; background: rgba(34, 197, 94, 0.1); }
+    100% { border-color: var(--border-color); background: var(--bg-dark); }
+}
+
+/* File Card List */
+.prep-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.prep-file-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.prep-file-card:hover {
+    border-color: var(--text-muted);
+}
+
+.prep-file-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+}
+
+.prep-file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.prep-file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prep-file-size {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.prep-file-remove {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.prep-file-remove:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.prep-file-remove svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Summary Section */
+.prep-summary {
+    margin-top: 8px;
+}
+
+.prep-summary-group {
+    margin-bottom: 16px;
+}
+
+.prep-summary-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+.prep-summary-empty {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 8px 0;
+}
+
+/* Final Step - What's Next Guidance */
+.prep-guidance {
+    margin: 16px 0;
+}
+
+.prep-guidance-section {
+    margin-bottom: 20px;
+}
+
+.prep-guidance-section:last-child {
+    margin-bottom: 0;
+}
+
+.prep-guidance-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.prep-guidance-title svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.prep-guidance-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.prep-guidance-list li {
+    position: relative;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    padding-left: 20px;
+    margin-bottom: 6px;
+}
+
+.prep-guidance-list li::before {
+    content: '•';
+    position: absolute;
+    left: 6px;
+    color: var(--text-muted);
+}
+
+.prep-guidance-list li:last-child {
+    margin-bottom: 0;
+}
+
+.prep-guidance-note {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.prep-guidance-warning {
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 12px;
+}
+
+.prep-guidance-warning .prep-guidance-title {
+    color: #fbbf24;
+}
+
+.prep-guidance-warning .prep-guidance-title svg {
+    color: #fbbf24;
+}
+
+.prep-guidance-warning .prep-guidance-note {
+    color: var(--text-secondary);
+}
+
+.prep-finish-cta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 16px;
+}
+
+.prep-finish-cta-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.prep-finish-cta-icon svg {
+    width: 20px;
+    height: 20px;
+    color: #3b82f6;
+}
+
+.prep-finish-cta-text {
+    flex: 1;
+}
+
+.prep-finish-cta-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.prep-finish-cta-text span {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
 /* Canon Review */
 .canon-review-modal {
     width: min(860px, 94vw);

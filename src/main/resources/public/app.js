@@ -1513,28 +1513,94 @@
             return Array.from(dataTransfer.files || []);
         };
 
-        const buildDropZone = (labelText, onFiles) => {
+        const formatFileSize = (bytes) => {
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+        };
+
+        const uploadIcon = `<svg class="prep-dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>`;
+
+        const documentIcon = `<svg class="prep-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+        </svg>`;
+
+        const removeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>`;
+
+        const buildDropZone = (labelText, fileArray, onFilesChanged) => {
             const wrapper = document.createElement('div');
             wrapper.className = 'preparation-row';
-            const label = document.createElement('label');
-            label.className = 'modal-label';
-            label.textContent = labelText;
-            wrapper.appendChild(label);
 
             const dropZone = document.createElement('button');
             dropZone.type = 'button';
             dropZone.className = 'prep-dropzone';
-            dropZone.innerHTML = '<strong>Drop your files/folders here</strong><span>or click to browse</span>';
+            if (fileArray.length > 0) {
+                dropZone.classList.add('has-files');
+            }
+
+            const updateDropZoneContent = () => {
+                const count = fileArray.length;
+                if (count > 0) {
+                    dropZone.innerHTML = `${uploadIcon}<strong>${count} file${count !== 1 ? 's' : ''} added</strong><span>Drop more or click to browse</span>`;
+                    dropZone.classList.add('has-files');
+                } else {
+                    dropZone.innerHTML = `${uploadIcon}<strong>Drop your files here</strong><span>or click to browse (.md, .txt)</span>`;
+                    dropZone.classList.remove('has-files');
+                }
+            };
+            updateDropZoneContent();
 
             const input = document.createElement('input');
             input.type = 'file';
             input.multiple = true;
             input.accept = '.md,.txt';
             input.className = 'prep-dropzone-input';
-            input.setAttribute('webkitdirectory', '');
-            input.setAttribute('directory', '');
-            input.setAttribute('mozdirectory', '');
             dropZone.appendChild(input);
+
+            const fileListContainer = document.createElement('div');
+            fileListContainer.className = 'prep-file-list';
+
+            const renderFileList = () => {
+                fileListContainer.innerHTML = '';
+                fileArray.forEach((file, index) => {
+                    const card = document.createElement('div');
+                    card.className = 'prep-file-card';
+
+                    card.innerHTML = `
+                        ${documentIcon}
+                        <div class="prep-file-info">
+                            <span class="prep-file-name" title="${file.name}">${file.name}</span>
+                            <span class="prep-file-size">${formatFileSize(file.size)}</span>
+                        </div>
+                    `;
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'prep-file-remove';
+                    removeBtn.innerHTML = removeIcon;
+                    removeBtn.title = 'Remove file';
+                    removeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        fileArray.splice(index, 1);
+                        renderFileList();
+                        updateDropZoneContent();
+                        if (onFilesChanged) onFilesChanged();
+                    });
+                    card.appendChild(removeBtn);
+
+                    fileListContainer.appendChild(card);
+                });
+            };
+            renderFileList();
+
+            const triggerSuccessAnimation = () => {
+                dropZone.classList.add('drop-success');
+                setTimeout(() => dropZone.classList.remove('drop-success'), 400);
+            };
 
             const handleFiles = (files) => {
                 const accepted = filterAccepted(files);
@@ -1542,8 +1608,11 @@
                     notificationStore.warning('Only .md and .txt files are supported for ingest.', 'global');
                     return;
                 }
-                onFiles(accepted);
-                renderStep();
+                addFiles(fileArray, accepted);
+                renderFileList();
+                updateDropZoneContent();
+                triggerSuccessAnimation();
+                if (onFilesChanged) onFilesChanged();
             };
 
             input.addEventListener('change', () => {
@@ -1564,11 +1633,13 @@
                 const files = await collectDroppedFiles(event.dataTransfer);
                 handleFiles(files);
             });
-            dropZone.addEventListener('click', () => {
+            dropZone.addEventListener('click', (e) => {
+                if (e.target.closest('.prep-file-remove')) return;
                 input.click();
             });
 
             wrapper.appendChild(dropZone);
+            wrapper.appendChild(fileListContainer);
             return wrapper;
         };
 
@@ -1614,10 +1685,15 @@
 
             if (wizardState.step === 0) {
                 confirmBtn.style.display = 'none';
-                const intro = document.createElement('div');
-                intro.className = 'modal-text';
-                intro.textContent = 'Do you have existing project files to ingest?';
-                body.appendChild(intro);
+                const headline = document.createElement('div');
+                headline.className = 'prep-headline';
+                headline.textContent = "Let's set up your project.";
+                body.appendChild(headline);
+
+                const subtext = document.createElement('div');
+                subtext.className = 'prep-subtext';
+                subtext.textContent = 'Do you have existing writing to bring in - manuscripts, outlines, or worldbuilding notes?';
+                body.appendChild(subtext);
 
                 const choices = document.createElement('div');
                 choices.className = 'preparation-choices';
@@ -1625,7 +1701,7 @@
                 const importBtn = document.createElement('button');
                 importBtn.type = 'button';
                 importBtn.className = 'preparation-choice';
-                importBtn.textContent = 'Yes, I have files to ingest';
+                importBtn.textContent = 'Yes, I have files to import';
                 importBtn.addEventListener('click', () => {
                     wizardState.mode = 'ingest';
                     wizardState.step = 1;
@@ -1635,7 +1711,7 @@
                 const freshBtn = document.createElement('button');
                 freshBtn.type = 'button';
                 freshBtn.className = 'preparation-choice primary';
-                freshBtn.textContent = 'No, start fresh';
+                freshBtn.textContent = 'No, start fresh with a new idea';
                 freshBtn.addEventListener('click', () => {
                     wizardState.mode = 'empty';
                     wizardState.step = 20;
@@ -1648,42 +1724,82 @@
 
                 const hint = document.createElement('div');
                 hint.className = 'modal-hint';
-                hint.textContent = 'Prepared projects are virtual-only: editor + explorer read from canonical state.';
+                hint.style.marginTop = '16px';
+                hint.textContent = 'Your files will be organized into a virtual workspace that Control Room can help you navigate and develop.';
                 body.appendChild(hint);
                 return;
             }
 
             if (wizardState.step === 90) {
                 const headline = document.createElement('div');
-                headline.className = 'modal-text';
-                headline.textContent = 'Review the virtual file structure before finalizing preparation.';
+                headline.className = 'prep-headline';
+                headline.textContent = 'Your project structure is ready!';
                 body.appendChild(headline);
 
-                const pathRow = document.createElement('div');
-                pathRow.className = 'modal-hint';
-                pathRow.textContent = `Target workspace: ${state.workspace.path || '(unknown)'}`;
-                body.appendChild(pathRow);
+                const subtext = document.createElement('div');
+                subtext.className = 'prep-subtext';
+                subtext.textContent = 'We\'ve organized your files into a structure that works well with Control Room\'s AI agents. Here\'s what to do next.';
+                body.appendChild(subtext);
 
-                const treeWrap = document.createElement('div');
-                treeWrap.className = 'prep-tree-preview';
-                body.appendChild(treeWrap);
+                // What's next guidance
+                const guidance = document.createElement('div');
+                guidance.className = 'prep-guidance';
 
-                try {
-                    const tree = await api('/api/tree');
-                    renderTreePreview(tree, treeWrap, 0);
-                } catch (err) {
-                    const error = document.createElement('div');
-                    error.className = 'modal-hint';
-                    error.textContent = `Failed to load file structure: ${err.message}`;
-                    body.appendChild(error);
-                }
+                // Section 1: Review your files
+                const reviewSection = document.createElement('div');
+                reviewSection.className = 'prep-guidance-section';
+                reviewSection.innerHTML = `
+                    <div class="prep-guidance-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                        </svg>
+                        Review and organize your files
+                    </div>
+                    <ul class="prep-guidance-list">
+                        <li>Check if everything landed in the right place</li>
+                        <li>Rename files to be clear and descriptive</li>
+                        <li>Move items between folders using the file tree</li>
+                        <li>Right-click any file or folder for more options</li>
+                    </ul>
+                `;
+                guidance.appendChild(reviewSection);
 
-                const hint = document.createElement('div');
-                hint.className = 'modal-hint';
-                hint.textContent = 'You can reorganize or rename files now. When ready, click "Preparation Completed" in the sidebar to unlock agents.';
-                body.appendChild(hint);
+                // Section 2: Why this matters (warning box)
+                const warningSection = document.createElement('div');
+                warningSection.className = 'prep-guidance-warning';
+                warningSection.innerHTML = `
+                    <div class="prep-guidance-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Worldbuilding matters for your AI agents
+                    </div>
+                    <p class="prep-guidance-note">
+                        Your agents read this structure to understand your story's world. They also write audit trails—notes explaining their decisions—so other agents can follow along.
+                        <strong>Once you add agents, any structural changes become "retcons"</strong> that can cause continuity issues. Take a moment now to get things in order.
+                    </p>
+                `;
+                guidance.appendChild(warningSection);
 
-                setConfirm('Finish Review', () => {
+                body.appendChild(guidance);
+
+                // Final CTA
+                const cta = document.createElement('div');
+                cta.className = 'prep-finish-cta';
+                cta.innerHTML = `
+                    <div class="prep-finish-cta-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div class="prep-finish-cta-text">
+                        <strong>When you're ready, click "Preparation Completed" in the sidebar</strong>
+                        <span>This unlocks your AI agents and finalizes the project structure.</span>
+                    </div>
+                `;
+                body.appendChild(cta);
+
+                setConfirm('Continue to Editor', () => {
                     close();
                     document.removeEventListener('keydown', escapeGuard, true);
                 });
@@ -1693,16 +1809,27 @@
             if (wizardState.mode === 'ingest') {
                 if (wizardState.step === 1) {
                     confirmBtn.style.display = 'none';
-                    const question = document.createElement('div');
-                    question.className = 'modal-text';
-                    question.textContent = 'Do you have a manuscript to ingest?';
-                    body.appendChild(question);
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 1 of 4';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'First, your manuscript.';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Do you have draft chapters, scenes, or a complete manuscript to import?';
+                    body.appendChild(subtext);
+
                     const choices = document.createElement('div');
                     choices.className = 'preparation-choices';
                     const yes = document.createElement('button');
                     yes.type = 'button';
                     yes.className = 'preparation-choice';
-                    yes.textContent = 'Yes';
+                    yes.textContent = 'Yes, I have manuscript files';
                     yes.addEventListener('click', () => {
                         wizardState.step = 2;
                         renderStep();
@@ -1710,7 +1837,7 @@
                     const no = document.createElement('button');
                     no.type = 'button';
                     no.className = 'preparation-choice primary';
-                    no.textContent = 'No';
+                    no.textContent = 'No, skip this';
                     no.addEventListener('click', () => {
                         wizardState.step = 3;
                         renderStep();
@@ -1722,11 +1849,22 @@
                 }
 
                 if (wizardState.step === 2) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 1 of 4 - Manuscript';
+                    body.appendChild(stepIndicator);
+
                     const headline = document.createElement('div');
-                    headline.className = 'modal-text';
-                    headline.textContent = 'Drop manuscript files.';
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add your manuscript files';
                     body.appendChild(headline);
-                    body.appendChild(buildDropZone('Manuscript files (.md/.txt)', (files) => addFiles(wizardState.manuscripts, files)));
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop chapters, scenes, or your complete draft here. You can add multiple files.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Manuscript', wizardState.manuscripts));
                     setConfirm('Next', () => {
                         wizardState.step = 3;
                         renderStep();
@@ -1736,16 +1874,27 @@
 
                 if (wizardState.step === 3) {
                     confirmBtn.style.display = 'none';
-                    const question = document.createElement('div');
-                    question.className = 'modal-text';
-                    question.textContent = 'Do you have an outline to ingest?';
-                    body.appendChild(question);
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 2 of 4';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'What about an outline?';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Story structure, chapter plans, plot notes, or beat sheets?';
+                    body.appendChild(subtext);
+
                     const choices = document.createElement('div');
                     choices.className = 'preparation-choices';
                     const yes = document.createElement('button');
                     yes.type = 'button';
                     yes.className = 'preparation-choice';
-                    yes.textContent = 'Yes';
+                    yes.textContent = 'Yes, I have outline files';
                     yes.addEventListener('click', () => {
                         wizardState.step = 4;
                         renderStep();
@@ -1753,7 +1902,7 @@
                     const no = document.createElement('button');
                     no.type = 'button';
                     no.className = 'preparation-choice primary';
-                    no.textContent = 'No';
+                    no.textContent = 'No, skip this';
                     no.addEventListener('click', () => {
                         wizardState.step = 5;
                         renderStep();
@@ -1765,11 +1914,22 @@
                 }
 
                 if (wizardState.step === 4) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 2 of 4 - Outline';
+                    body.appendChild(stepIndicator);
+
                     const headline = document.createElement('div');
-                    headline.className = 'modal-text';
-                    headline.textContent = 'Drop outline files.';
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add your outline files';
                     body.appendChild(headline);
-                    body.appendChild(buildDropZone('Outline files (.md/.txt)', (files) => addFiles(wizardState.outlines, files)));
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop your structure documents, plot outlines, or chapter plans here.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Outline', wizardState.outlines));
                     setConfirm('Next', () => {
                         wizardState.step = 5;
                         renderStep();
@@ -1779,16 +1939,27 @@
 
                 if (wizardState.step === 5) {
                     confirmBtn.style.display = 'none';
-                    const question = document.createElement('div');
-                    question.className = 'modal-text';
-                    question.textContent = 'Do you have canon files to ingest?';
-                    body.appendChild(question);
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 3 of 4';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Finally, worldbuilding.';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Character sheets, location guides, lore documents, or reference materials?';
+                    body.appendChild(subtext);
+
                     const choices = document.createElement('div');
                     choices.className = 'preparation-choices';
                     const yes = document.createElement('button');
                     yes.type = 'button';
                     yes.className = 'preparation-choice';
-                    yes.textContent = 'Yes';
+                    yes.textContent = 'Yes, I have worldbuilding files';
                     yes.addEventListener('click', () => {
                         wizardState.step = 6;
                         renderStep();
@@ -1796,7 +1967,7 @@
                     const no = document.createElement('button');
                     no.type = 'button';
                     no.className = 'preparation-choice primary';
-                    no.textContent = 'No';
+                    no.textContent = 'No, skip this';
                     no.addEventListener('click', () => {
                         wizardState.step = 7;
                         renderStep();
@@ -1808,11 +1979,22 @@
                 }
 
                 if (wizardState.step === 6) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 3 of 4 - Worldbuilding';
+                    body.appendChild(stepIndicator);
+
                     const headline = document.createElement('div');
-                    headline.className = 'modal-text';
-                    headline.textContent = 'Drop canon files.';
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add your worldbuilding files';
                     body.appendChild(headline);
-                    body.appendChild(buildDropZone('Canon/worldbuilding files (.md/.txt)', (files) => addFiles(wizardState.canon, files)));
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop character sheets, location guides, lore documents, or any reference materials here.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Worldbuilding', wizardState.canon));
                     setConfirm('Next', () => {
                         wizardState.step = 7;
                         renderStep();
@@ -1821,11 +2003,67 @@
                 }
 
                 if (wizardState.step === 7) {
-                    const summary = document.createElement('div');
-                    summary.className = 'modal-hint';
-                    summary.textContent = `Selected: ${wizardState.manuscripts.length} manuscript, ${wizardState.outlines.length} outline, ${wizardState.canon.length} canon files.`;
-                    body.appendChild(summary);
-                    setConfirm('Ingest Files', async () => {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 4 of 4 - Review';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Ready to import';
+                    body.appendChild(headline);
+
+                    const totalFiles = wizardState.manuscripts.length + wizardState.outlines.length + wizardState.canon.length;
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = totalFiles > 0
+                        ? `You've selected ${totalFiles} file${totalFiles !== 1 ? 's' : ''} to import. Review below and click Import to continue.`
+                        : 'No files selected. Go back to add files, or click Import to create an empty project structure.';
+                    body.appendChild(subtext);
+
+                    const summaryContainer = document.createElement('div');
+                    summaryContainer.className = 'prep-summary';
+
+                    const renderSummaryGroup = (label, files) => {
+                        const group = document.createElement('div');
+                        group.className = 'prep-summary-group';
+                        const groupLabel = document.createElement('div');
+                        groupLabel.className = 'prep-summary-label';
+                        groupLabel.textContent = `${label} (${files.length})`;
+                        group.appendChild(groupLabel);
+
+                        if (files.length === 0) {
+                            const empty = document.createElement('div');
+                            empty.className = 'prep-summary-empty';
+                            empty.textContent = 'None selected';
+                            group.appendChild(empty);
+                        } else {
+                            const fileList = document.createElement('div');
+                            fileList.className = 'prep-file-list';
+                            fileList.style.maxHeight = '120px';
+                            files.forEach(file => {
+                                const card = document.createElement('div');
+                                card.className = 'prep-file-card';
+                                card.innerHTML = `
+                                    ${documentIcon}
+                                    <div class="prep-file-info">
+                                        <span class="prep-file-name" title="${file.name}">${file.name}</span>
+                                        <span class="prep-file-size">${formatFileSize(file.size)}</span>
+                                    </div>
+                                `;
+                                fileList.appendChild(card);
+                            });
+                            group.appendChild(fileList);
+                        }
+                        return group;
+                    };
+
+                    summaryContainer.appendChild(renderSummaryGroup('Manuscript', wizardState.manuscripts));
+                    summaryContainer.appendChild(renderSummaryGroup('Outline', wizardState.outlines));
+                    summaryContainer.appendChild(renderSummaryGroup('Worldbuilding', wizardState.canon));
+                    body.appendChild(summaryContainer);
+
+                    setConfirm('Import Files', async () => {
                         confirmBtn.disabled = true;
                         try {
                             const formData = new FormData();
@@ -1859,17 +2097,24 @@
 
             if (wizardState.mode === 'empty') {
                 const headline = document.createElement('div');
-                headline.className = 'modal-text';
-                headline.textContent = 'Give the project a premise. Control Room will scaffold your virtual structure.';
+                headline.className = 'prep-headline';
+                headline.textContent = 'Start with a seed idea';
                 body.appendChild(headline);
+
+                const subtext = document.createElement('div');
+                subtext.className = 'prep-subtext';
+                subtext.textContent = 'Give your project a premise - even a single sentence will do. Control Room will create a workspace structure for you.';
+                body.appendChild(subtext);
 
                 const premiseRow = document.createElement('div');
                 premiseRow.className = 'preparation-row';
-                premiseRow.innerHTML = '<label class="modal-label">Premise</label>';
+                premiseRow.innerHTML = '<label class="modal-label" style="font-size: 13px;">Premise</label>';
                 const premiseInput = document.createElement('textarea');
                 premiseInput.className = 'modal-textarea';
+                premiseInput.style.fontSize = '14px';
+                premiseInput.style.lineHeight = '1.5';
                 premiseInput.rows = 3;
-                premiseInput.placeholder = 'e.g., Wizards in space discover a dead star civilization.';
+                premiseInput.placeholder = 'e.g., Wizards in space discover the ruins of an ancient star civilization.';
                 premiseInput.value = wizardState.premise;
                 premiseInput.addEventListener('input', () => {
                     wizardState.premise = premiseInput.value;
@@ -1879,28 +2124,38 @@
 
                 const elaborateRow = document.createElement('div');
                 elaborateRow.className = 'preparation-row';
-                const elaborateToggle = document.createElement('label');
-                elaborateToggle.className = 'modal-label';
-                elaborateToggle.textContent = 'Would you like to elaborate?';
+                elaborateRow.style.flexDirection = 'row';
+                elaborateRow.style.alignItems = 'center';
+                elaborateRow.style.gap = '8px';
                 const elaborateCheck = document.createElement('input');
                 elaborateCheck.type = 'checkbox';
+                elaborateCheck.id = 'elaborate-checkbox';
                 elaborateCheck.checked = wizardState.elaborate;
                 elaborateCheck.addEventListener('change', () => {
                     wizardState.elaborate = elaborateCheck.checked;
                     renderStep();
                 });
-                elaborateRow.appendChild(elaborateToggle);
+                const elaborateToggle = document.createElement('label');
+                elaborateToggle.className = 'modal-label';
+                elaborateToggle.setAttribute('for', 'elaborate-checkbox');
+                elaborateToggle.style.fontSize = '13px';
+                elaborateToggle.style.margin = '0';
+                elaborateToggle.style.cursor = 'pointer';
+                elaborateToggle.textContent = 'I want to write more about my story idea';
                 elaborateRow.appendChild(elaborateCheck);
+                elaborateRow.appendChild(elaborateToggle);
                 body.appendChild(elaborateRow);
 
                 if (wizardState.elaborate) {
                     const ideaRow = document.createElement('div');
                     ideaRow.className = 'preparation-row';
-                    ideaRow.innerHTML = '<label class="modal-label">Story Idea</label>';
+                    ideaRow.innerHTML = '<label class="modal-label" style="font-size: 13px;">Story Idea</label>';
                     const ideaInput = document.createElement('textarea');
                     ideaInput.className = 'modal-textarea';
+                    ideaInput.style.fontSize = '14px';
+                    ideaInput.style.lineHeight = '1.5';
                     ideaInput.rows = 7;
-                    ideaInput.placeholder = 'Type as much as you want. This becomes the Story Idea seed.';
+                    ideaInput.placeholder = 'Describe your story in as much detail as you like. Characters, setting, plot ideas, themes - anything that helps capture your vision.';
                     ideaInput.value = wizardState.storyIdea;
                     ideaInput.addEventListener('input', () => {
                         wizardState.storyIdea = ideaInput.value;
@@ -1909,7 +2164,7 @@
                     body.appendChild(ideaRow);
                 }
 
-                setConfirm('Prepare Project', async () => {
+                setConfirm('Create Project', async () => {
                     if (!wizardState.premise.trim() && !wizardState.storyIdea.trim()) {
                         notificationStore.warning('Add a premise or story idea to continue.', 'global');
                         return;
@@ -2853,6 +3108,7 @@ async function showWorkspaceSwitcher() {
             const showPrepComplete = !isSettings && state.workspace.projectSelected && state.workspace.prepStage === 'draft' && !state.workspace.agentsUnlocked;
             btnSidebarPrepComplete.style.display = showPrepComplete ? 'flex' : 'none';
             btnSidebarPrepComplete.classList.toggle('prep-button-pulse', showPrepComplete);
+            btnSidebarPrepComplete.classList.toggle('prep-button-attention', showPrepComplete);
         }
 
         // Explorer panel - hidden when NO_PROJECT, only show in editor mode

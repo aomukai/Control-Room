@@ -5,6 +5,8 @@
 # Build output
 build/
 **/build/
+bin/
+**/bin/
 
 # IDE
 .idea/
