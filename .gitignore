@@ -39,6 +39,10 @@ workspace/**/.controlroom/state/*.json
 
 # Workspace
 workspace/
+
+# log files
+*.log
+
 # === PRIVATE DEV PHASE (INTENTIONAL) ===
 # docs/ is *not* documentation right now. It contains private, operational project infrastructure.
 # Nothing in docs/ may be pushed to GitHub.
