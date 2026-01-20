@@ -28,11 +28,17 @@
                     <span class="btn-text">Toggle Mode</span>
                 </button>
                 <!-- Editor-only buttons -->
-                <button class="sidebar-btn" id="btn-toggle-explorer" title="Toggle Explorer" aria-label="Toggle Explorer">
+                <button class="sidebar-btn" id="btn-explorer-story" title="Story Explorer" aria-label="Story Explorer">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/pencil-square.svg" alt="">
+                    </span>
+                    <span class="btn-text">Story</span>
+                </button>
+                <button class="sidebar-btn" id="btn-explorer-compendium" title="Compendium Explorer" aria-label="Compendium Explorer">
                     <span class="btn-icon">
                         <img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt="">
                     </span>
-                    <span class="btn-text">Explorer</span>
+                    <span class="btn-text">Compendium</span>
                 </button>
                 <button class="sidebar-btn" id="btn-open-workspace" title="Open File System" aria-label="Open File System">
                     <span class="btn-icon">
@@ -128,7 +134,7 @@
             <div id="file-tree-area">
                 <div class="sidebar-divider"></div>
                 <div class="file-tree-header">
-                    Files
+                    <span id="file-tree-title">Files</span>
                     <div class="tree-actions">
                         <button class="tree-action-btn" id="btn-new-file" title="New File" aria-label="New File">
                             <span class="btn-icon">

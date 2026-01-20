@@ -119,6 +119,8 @@
     const performSearch = window.performSearch;
     const getExplorerVisible = window.getExplorerVisible;
     const setExplorerVisible = window.setExplorerVisible;
+    const setExplorerScope = window.setExplorerScope;
+    const getExplorerScope = window.getExplorerScope;
     const preparationApi = window.preparationApi;
 
     // API objects are loaded from api.js (window.issueApi, window.agentApi, etc.)
@@ -3069,14 +3071,17 @@ async function showWorkspaceSwitcher() {
         }
 
         // Editor-only sidebar buttons - hidden when NO_PROJECT
-        const btnToggleExplorer = document.getElementById('btn-toggle-explorer');
+        const btnExplorerStory = document.getElementById('btn-explorer-story');
+        const btnExplorerCompendium = document.getElementById('btn-explorer-compendium');
         const btnOpenWorkspace = document.getElementById('btn-open-workspace');
         const btnSidebarSearch = document.getElementById('btn-sidebar-search');
         const btnCommit = document.getElementById('btn-commit');
         const btnOpenTerminal = document.getElementById('btn-open-terminal');
 
         const showEditorButtons = isEditor && !noProject;
-        if (btnToggleExplorer) btnToggleExplorer.style.display = showEditorButtons ? 'flex' : 'none';
+        const showPreparedExplorer = showEditorButtons && state.workspace.prepStage !== 'none';
+        if (btnExplorerStory) btnExplorerStory.style.display = showPreparedExplorer ? 'flex' : 'none';
+        if (btnExplorerCompendium) btnExplorerCompendium.style.display = showPreparedExplorer ? 'flex' : 'none';
         if (btnOpenWorkspace) btnOpenWorkspace.style.display = showEditorButtons ? 'flex' : 'none';
         if (btnSidebarSearch) btnSidebarSearch.style.display = showEditorButtons ? 'flex' : 'none';
         if (btnCommit) btnCommit.style.display = showEditorButtons ? 'flex' : 'none';
@@ -5913,22 +5918,34 @@ async function showWorkspaceSwitcher() {
             });
         }
 
-        if (elements.btnToggleExplorer) {
-            elements.btnToggleExplorer.addEventListener('click', () => {
-                const isVisible = elements.explorerPanel && !elements.explorerPanel.classList.contains('is-hidden');
+        const activateExplorerScope = (scope) => {
+            if (window.versioning && window.versioning.isActive()) {
+                window.versioning.showFileTreePanel();
+            }
+            if (elements.explorerPanel && elements.explorerPanel.classList.contains('is-hidden')) {
+                setExplorerVisible(true);
+            }
+            if (setExplorerScope) {
+                setExplorerScope(scope);
+            }
+        };
 
-                // If versioning panel is active and explorer is visible, switch to file tree
-                if (isVisible && window.versioning && window.versioning.isActive()) {
-                    window.versioning.showFileTreePanel();
-                    // Update button states
-                    const commitBtn = document.getElementById('btn-commit');
-                    if (commitBtn) commitBtn.classList.remove('active');
-                    elements.btnToggleExplorer.classList.add('is-active');
-                    return;
-                }
-
-                setExplorerVisible(!isVisible);
-            });
+        const toggleExplorerScope = (scope) => {
+            const currentScope = getExplorerScope ? getExplorerScope() : null;
+            const isVisible = elements.explorerPanel && !elements.explorerPanel.classList.contains('is-hidden');
+            if (isVisible && currentScope === scope) {
+                setExplorerVisible(false);
+                return;
+            }
+            activateExplorerScope(scope);
+        };
+  
+        if (elements.btnExplorerStory) {
+            elements.btnExplorerStory.addEventListener('click', () => toggleExplorerScope('story'));
+        }
+  
+        if (elements.btnExplorerCompendium) {
+            elements.btnExplorerCompendium.addEventListener('click', () => toggleExplorerScope('compendium'));
         }
 
         if (elements.btnWorkspaceSwitch) {

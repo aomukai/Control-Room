@@ -12,10 +12,13 @@
     const elements = window.elements;
     const api = window.api;
     const editorStateStorageKey = 'control-room:editor-state';
+    const explorerScopeStorageKey = 'control-room:explorer-scope';
     let expandedFolders = new Set();
     let hasSavedExplorerState = false;
     let isRestoringEditorState = false;
     let editorStateRestored = false;
+    let explorerScope = 'all';
+    let fullFileTree = null;
 
     function getEditorStateKey() {
         const root = state.workspace && state.workspace.root ? String(state.workspace.root) : '';
@@ -69,6 +72,115 @@
             localStorage.setItem(getEditorStateKey(), JSON.stringify(payload));
         } catch (err) {
             // ignore storage failures (quota or privacy mode)
+        }
+    }
+
+    function normalizeExplorerScope(scope) {
+        switch (String(scope || '').toLowerCase()) {
+            case 'story':
+                return 'story';
+            case 'compendium':
+                return 'compendium';
+            default:
+                return 'all';
+        }
+    }
+
+    function getStoredExplorerScope() {
+        try {
+            const raw = localStorage.getItem(explorerScopeStorageKey);
+            return normalizeExplorerScope(raw);
+        } catch (err) {
+            return 'all';
+        }
+    }
+
+    function getExplorerScope() {
+        return explorerScope;
+    }
+
+    function isScopeAvailable(tree, scope) {
+        if (!tree || scope === 'all') {
+            return true;
+        }
+        const targetName = scope === 'story' ? 'Story' : 'Compendium';
+        return Array.isArray(tree.children) && tree.children.some(child =>
+            child && String(child.name || '').toLowerCase() === targetName.toLowerCase()
+        );
+    }
+
+    function getScopedTree(tree, scope) {
+        if (!tree || scope === 'all' || !Array.isArray(tree.children)) {
+            return tree;
+        }
+        const targetName = scope === 'story' ? 'Story' : 'Compendium';
+        const match = tree.children.find(child =>
+            child && String(child.name || '').toLowerCase() === targetName.toLowerCase()
+        );
+        return match || tree;
+    }
+
+    function updateSearchPlaceholder() {
+        if (!elements.searchInput) {
+            return;
+        }
+        if (explorerScope === 'story') {
+            elements.searchInput.placeholder = 'Search in Story...';
+        } else if (explorerScope === 'compendium') {
+            elements.searchInput.placeholder = 'Search in Compendium...';
+        } else {
+            elements.searchInput.placeholder = 'Search in Project...';
+        }
+    }
+
+    function updateExplorerScopeUI() {
+        const explorerVisible = elements.explorerPanel
+            ? !elements.explorerPanel.classList.contains('is-hidden')
+            : false;
+        if (elements.fileTreeTitle) {
+            if (explorerScope === 'story') {
+                elements.fileTreeTitle.textContent = 'Story';
+            } else if (explorerScope === 'compendium') {
+                elements.fileTreeTitle.textContent = 'Compendium';
+            } else {
+                elements.fileTreeTitle.textContent = 'Files';
+            }
+        }
+        if (elements.btnExplorerStory) {
+            elements.btnExplorerStory.classList.toggle('is-active', explorerVisible && explorerScope === 'story');
+        }
+        if (elements.btnExplorerCompendium) {
+            elements.btnExplorerCompendium.classList.toggle('is-active', explorerVisible && explorerScope === 'compendium');
+        }
+        updateSearchPlaceholder();
+    }
+
+    function renderExplorerTree() {
+        if (!fullFileTree) {
+            return;
+        }
+        const scopedTree = getScopedTree(fullFileTree, explorerScope);
+        state.fileTree = scopedTree;
+        renderFileTree(scopedTree);
+    }
+
+    function setExplorerScope(scope, options = {}) {
+        let normalized = normalizeExplorerScope(scope);
+        const { persist = true, refresh = true } = options;
+        if (fullFileTree && !isScopeAvailable(fullFileTree, normalized)) {
+            normalized = 'all';
+        }
+        explorerScope = normalized;
+        if (persist) {
+            try {
+                localStorage.setItem(explorerScopeStorageKey, explorerScope);
+            } catch (err) {
+                // ignore storage failures
+            }
+        }
+        updateExplorerScopeUI();
+        if (refresh) {
+            renderExplorerTree();
         }
     }
 
@@ -249,8 +361,13 @@
     async function loadFileTree() {
         try {
             const tree = await api('/api/tree');
-            state.fileTree = tree;
-            renderFileTree(tree);
+            fullFileTree = tree;
+            const storedScope = getStoredExplorerScope();
+            const desiredScope = isScopeAvailable(tree, storedScope)
+                ? storedScope
+                : (isScopeAvailable(tree, 'story') ? 'story' : 'all');
+            setExplorerScope(desiredScope, { persist: true, refresh: false });
+            renderExplorerTree();
             if (window.versioning && window.versioning.applyUnpublishedIndicators) {
                 window.versioning.applyUnpublishedIndicators();
             }
@@ -1199,8 +1316,15 @@
     
         try {
             const results = await api(`/api/search?q=${encodeURIComponent(query)}`);
+            const scopedResults = results.filter(result => {
+                if (!result || !result.file || explorerScope === 'all') {
+                    return true;
+                }
+                const prefix = explorerScope === 'story' ? 'Story/' : 'Compendium/';
+                return result.file.startsWith(prefix);
+            });
     
-            if (results.length === 0) {
+            if (scopedResults.length === 0) {
                 elements.searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
                 const store = getNotificationStore();
                 if (store) {
@@ -1211,7 +1335,7 @@
     
             // Group results by file
             const grouped = new Map();
-            results.forEach(result => {
+            scopedResults.forEach(result => {
                 if (!grouped.has(result.file)) {
                     grouped.set(result.file, []);
                 }
@@ -1268,7 +1392,7 @@
                 elements.searchResults.appendChild(fileGroup);
             });
     
-            log(`Search found ${results.length} results in ${grouped.size} files for "${query}"`, 'info');
+            log(`Search found ${scopedResults.length} results in ${grouped.size} files for "${query}"`, 'info');
         } catch (err) {
             log(`Search failed: ${err.message}`, 'error');
         }
@@ -1330,6 +1454,7 @@
         }
     
         // Focus the search input
+        updateSearchPlaceholder();
         elements.searchInput.focus();
         elements.searchInput.select();
     
@@ -1344,10 +1469,10 @@
     }
     
     function setExplorerVisible(visible) {
-        if (!elements.explorerPanel || !elements.btnToggleExplorer) return;
+        if (!elements.explorerPanel) return;
         elements.explorerPanel.classList.toggle('is-hidden', !visible);
-        elements.btnToggleExplorer.classList.toggle('is-active', visible);
         localStorage.setItem('explorer-visible', visible ? '1' : '0');
+        updateExplorerScopeUI();
 
         // When showing the explorer panel, sync with versioning state
         if (visible && window.versioning) {
@@ -1357,8 +1482,6 @@
             if (commitBtn) {
                 commitBtn.classList.toggle('active', window.versioning.isActive());
             }
-            // Explorer button should be inactive if versioning is shown
-            elements.btnToggleExplorer.classList.toggle('is-active', !window.versioning.isActive());
         }
     }
 
@@ -1380,6 +1503,8 @@
     window.performSearch = performSearch;
     window.getExplorerVisible = getExplorerVisible;
     window.setExplorerVisible = setExplorerVisible;
+    window.setExplorerScope = setExplorerScope;
+    window.getExplorerScope = getExplorerScope;
     window.restoreEditorState = restoreEditorState;
     window.reloadOpenFile = reloadOpenFile;
     window.reloadAllOpenFiles = reloadAllOpenFiles;
