@@ -1356,18 +1356,19 @@
         });
     }
 
-    function showContextMenu(e, node) {
-        hideContextMenu();
+      function showContextMenu(e, node) {
+          hideContextMenu();
 
-        contextMenu = document.createElement('div');
-        contextMenu.className = 'context-menu';
+          contextMenu = document.createElement('div');
+          contextMenu.className = 'context-menu';
 
-        const actions = [];
+          const actions = [];
+          const canRename = window.canRenamePath ? window.canRenamePath(node.path, node.type) : true;
 
-        // Only show "Open in New Tab" for files, not folders
-        if (node.type === 'file') {
-            actions.push({ label: 'Explore', action: () => window.explorePath(node.path, node.type) });
-            actions.push({ label: 'Open in New Tab', action: () => window.openFileInNewTab(node.path) });
+          // Only show "Open in New Tab" for files, not folders
+          if (node.type === 'file') {
+              actions.push({ label: 'Explore', action: () => window.explorePath(node.path, node.type) });
+              actions.push({ label: 'Open in New Tab', action: () => window.openFileInNewTab(node.path) });
             actions.push({ label: 'View History', action: () => {
                 if (window.showFileHistory) {
                     window.showFileHistory(node.path);
@@ -1383,10 +1384,12 @@
             actions.push({ divider: true });
         }
 
-        actions.push({ label: 'Rename', action: () => window.promptRename(node.path, node.type) });
-        actions.push({ label: 'Move...', action: () => window.promptMove(node.path, node.type) });
-        actions.push({ divider: true });
-        actions.push({ label: 'Delete', action: () => window.promptDelete(node.path, node.type) });
+          if (canRename) {
+              actions.push({ label: 'Rename', action: () => window.promptRename(node.path, node.type) });
+          }
+          actions.push({ label: 'Move...', action: () => window.promptMove(node.path, node.type) });
+          actions.push({ divider: true });
+          actions.push({ label: 'Delete', action: () => window.promptDelete(node.path, node.type) });
 
         actions.forEach(item => {
             if (item.divider) {

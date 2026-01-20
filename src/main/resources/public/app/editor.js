@@ -164,6 +164,20 @@
         renderFileTree(scopedTree);
     }
 
+    function canRenamePath(path, nodeType) {
+        const normalized = normalizeWorkspacePath(path);
+        const isFolder = nodeType === 'folder';
+        if (isFolder) {
+            if (normalized.startsWith('Compendium/')) {
+                return false;
+            }
+            if (state.workspace && state.workspace.prepStage && state.workspace.prepStage !== 'none') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     function setExplorerScope(scope, options = {}) {
         let normalized = normalizeExplorerScope(scope);
         const { persist = true, refresh = true } = options;
@@ -943,6 +957,14 @@
     
     async function promptRename(oldPath, nodeType = 'file') {
         oldPath = normalizeWorkspacePath(oldPath);
+        if (!canRenamePath(oldPath, nodeType)) {
+            log('Rename is not allowed for this item.', 'warning');
+            const store = getNotificationStore();
+            if (store) {
+                store.warning('Rename is not allowed for this item.', 'editor');
+            }
+            return;
+        }
         showModal('Rename', oldPath, async (newPath) => {
             newPath = normalizeWorkspacePath(newPath);
             if (!newPath || newPath === oldPath) return;
@@ -1505,6 +1527,7 @@
     window.setExplorerVisible = setExplorerVisible;
     window.setExplorerScope = setExplorerScope;
     window.getExplorerScope = getExplorerScope;
+    window.canRenamePath = canRenamePath;
     window.restoreEditorState = restoreEditorState;
     window.reloadOpenFile = reloadOpenFile;
     window.reloadAllOpenFiles = reloadAllOpenFiles;
