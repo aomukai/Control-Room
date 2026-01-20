@@ -552,13 +552,15 @@ public class PreparedWorkspaceService {
         }
         int colonIndex = displayId.indexOf(':');
         if (colonIndex >= 0 && colonIndex < displayId.length() - 1) {
-            return displayId.substring(colonIndex + 1);
+            String slug = displayId.substring(colonIndex + 1);
+            return CanonPath.stripKnownCardPrefix(slug);
         }
         int dashIndex = displayId.indexOf('-');
         if (dashIndex >= 0 && dashIndex < displayId.length() - 1) {
-            return displayId.substring(dashIndex + 1);
+            String slug = displayId.substring(dashIndex + 1);
+            return CanonPath.stripKnownCardPrefix(slug);
         }
-        return displayId;
+        return CanonPath.stripKnownCardPrefix(displayId);
     }
 
     private String slugify(String value) {
@@ -686,9 +688,9 @@ public class PreparedWorkspaceService {
                 String base = filename.substring(0, filename.length() - 3);
                 String type = bucketToTypeStatic(bucket);
                 String prefix = cardPrefix(type);
-                String slug = base;
-                if (base.toUpperCase(Locale.ROOT).startsWith(prefix + "-")) {
-                    slug = base.substring(prefix.length() + 1);
+                String slug = stripKnownCardPrefix(base);
+                if (slug.toUpperCase(Locale.ROOT).startsWith(prefix + "-")) {
+                    slug = slug.substring(prefix.length() + 1);
                 }
                 String displayId = prefix + ":" + slug;
                 return new CanonPath(Kind.CARD, displayId, titleFromBase(base), type);
@@ -797,6 +799,31 @@ public class PreparedWorkspaceService {
                 case "glossary": return "glossary";
                 default: return "misc";
             }
+        }
+
+        private static String stripKnownCardPrefix(String base) {
+            if (base == null || base.isBlank()) {
+                return base;
+            }
+            String[] prefixes = {
+                "CHAR", "LOC", "CONCEPT", "FACTION", "TECH",
+                "CULTURE", "EVENT", "THEME", "GLOSSARY", "MISC"
+            };
+            String value = base;
+            boolean trimmed = true;
+            while (trimmed) {
+                trimmed = false;
+                String upper = value.toUpperCase(Locale.ROOT);
+                for (String prefix : prefixes) {
+                    String marker = prefix + "-";
+                    if (upper.startsWith(marker)) {
+                        value = value.substring(prefix.length() + 1);
+                        trimmed = true;
+                        break;
+                    }
+                }
+            }
+            return value;
         }
 
         private static String titleFromBase(String base) {
