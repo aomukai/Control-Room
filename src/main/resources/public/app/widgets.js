@@ -1133,6 +1133,491 @@
         }
     }
 
+    // Scene Editor Widget - Recent files with focus editing modal
+    class SceneEditorWidget extends Widget {
+        constructor(instance, manifest) {
+            super(instance, manifest);
+            this.recentFiles = [];
+            this.ttsAudio = null;
+            this.ttsPlaying = false;
+        }
+
+        async render() {
+            if (!this.container) return;
+
+            this.container.innerHTML = `
+                <div class="widget-scene-editor">
+                    <div class="scene-editor-loading">Loading recent files...</div>
+                </div>
+            `;
+
+            await this.loadRecentFiles();
+        }
+
+        async loadRecentFiles() {
+            try {
+                const versioningApi = window.versioningApi;
+                if (!versioningApi) {
+                    this.renderError('Versioning not available');
+                    return;
+                }
+
+                const data = await versioningApi.snapshots();
+                const snapshots = data.snapshots || [];
+
+                // Extract unique files from snapshots, sorted by most recent edit
+                const fileMap = new Map();
+                for (const snapshot of snapshots) {
+                    if (!snapshot.files) continue;
+                    for (const file of snapshot.files) {
+                        // Only include scene-like files (txt, md) from story directories
+                        const path = file.path || '';
+                        if (!this.isSceneFile(path)) continue;
+
+                        const existing = fileMap.get(path);
+                        const timestamp = new Date(snapshot.publishedAt).getTime();
+                        if (!existing || timestamp > existing.timestamp) {
+                            fileMap.set(path, {
+                                path: path,
+                                timestamp: timestamp,
+                                snapshotId: snapshot.id,
+                                snapshotName: snapshot.name
+                            });
+                        }
+                    }
+                }
+
+                // Sort by timestamp (newest first) and take top N
+                const maxFiles = this.instance.settings.maxFiles || 8;
+                this.recentFiles = Array.from(fileMap.values())
+                    .sort((a, b) => b.timestamp - a.timestamp)
+                    .slice(0, maxFiles);
+
+                this.renderFileList();
+            } catch (err) {
+                console.error('[SceneEditor] Failed to load recent files:', err);
+                this.renderError('Failed to load recent files');
+            }
+        }
+
+        isSceneFile(path) {
+            // Include markdown and text files, typically scene content
+            const lowerPath = path.toLowerCase();
+            if (!lowerPath.endsWith('.md') && !lowerPath.endsWith('.txt')) return false;
+            // Exclude system files
+            if (lowerPath.includes('.control-room/')) return false;
+            if (lowerPath.startsWith('compendium/')) return false;
+            return true;
+        }
+
+        renderFileList() {
+            if (!this.container) return;
+
+            if (this.recentFiles.length === 0) {
+                this.container.innerHTML = `
+                    <div class="widget-scene-editor">
+                        <div class="scene-editor-empty">
+                            <div class="scene-editor-empty-icon">📝</div>
+                            <div class="scene-editor-empty-text">No recent scenes</div>
+                            <div class="scene-editor-empty-hint">Edit and publish scenes to see them here</div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            const fileListHtml = this.recentFiles.map((file, index) => {
+                const fileName = file.path.split('/').pop();
+                const dirPath = file.path.substring(0, file.path.lastIndexOf('/')) || '';
+                const timeAgo = this.formatTimeAgo(file.timestamp);
+
+                return `
+                    <div class="scene-editor-file" data-index="${index}" data-path="${escapeHtml(file.path)}">
+                        <div class="scene-editor-file-icon">📄</div>
+                        <div class="scene-editor-file-info">
+                            <div class="scene-editor-file-name">${escapeHtml(fileName)}</div>
+                            <div class="scene-editor-file-meta">
+                                ${dirPath ? `<span class="scene-editor-file-dir">${escapeHtml(dirPath)}</span>` : ''}
+                                <span class="scene-editor-file-time">${timeAgo}</span>
+                            </div>
+                        </div>
+                        <div class="scene-editor-file-arrow">→</div>
+                    </div>
+                `;
+            }).join('');
+
+            this.container.innerHTML = `
+                <div class="widget-scene-editor">
+                    <div class="scene-editor-file-list">
+                        ${fileListHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        renderError(message) {
+            if (!this.container) return;
+            this.container.innerHTML = `
+                <div class="widget-scene-editor">
+                    <div class="scene-editor-error">${escapeHtml(message)}</div>
+                </div>
+            `;
+        }
+
+        formatTimeAgo(timestamp) {
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return 'just now';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+            if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+            return new Date(timestamp).toLocaleDateString();
+        }
+
+        attachEventListeners() {
+            if (!this.container) return;
+
+            // Click on file to open in focus editor
+            this.container.querySelectorAll('.scene-editor-file').forEach(el => {
+                el.addEventListener('click', () => {
+                    const path = el.dataset.path;
+                    if (path) {
+                        this.openFocusEditor(path);
+                    }
+                });
+            });
+        }
+
+        async openFocusEditor(filePath) {
+            const fileApi = window.fileApi;
+            const issueApi = window.issueApi;
+            if (!fileApi) {
+                console.error('[SceneEditor] File API not available');
+                return;
+            }
+
+            let originalContent = '';
+            let currentContent = '';
+
+            try {
+                // Load file content (API returns plain text, not JSON)
+                originalContent = await fileApi.getFile(filePath);
+                if (typeof originalContent !== 'string') {
+                    originalContent = '';
+                }
+                currentContent = originalContent;
+            } catch (err) {
+                console.error('[SceneEditor] Failed to load file:', err);
+                window.notifications?.error('Failed to load file: ' + err.message);
+                return;
+            }
+
+            const fileName = filePath.split('/').pop();
+            const self = this;
+
+            // Create focus editor modal
+            const modalContent = document.createElement('div');
+            modalContent.className = 'focus-editor-container';
+            modalContent.innerHTML = `
+                <div class="focus-editor-header">
+                    <div class="focus-editor-title">
+                        <span class="focus-editor-icon">📝</span>
+                        <span class="focus-editor-filename">${escapeHtml(fileName)}</span>
+                        <span class="focus-editor-path">${escapeHtml(filePath)}</span>
+                    </div>
+                    <div class="focus-editor-status">
+                        <span class="focus-editor-dirty-indicator" style="display: none;">●</span>
+                        <span class="focus-editor-status-text">No changes</span>
+                    </div>
+                </div>
+                <div class="focus-editor-toolbar">
+                    <div class="focus-editor-tts-controls">
+                        <button class="focus-editor-btn focus-editor-tts-btn" type="button" title="Play TTS">
+                            <span class="focus-editor-tts-icon">▶</span>
+                            <span class="focus-editor-tts-label">Play</span>
+                        </button>
+                    </div>
+                    <div class="focus-editor-word-count">0 words</div>
+                </div>
+                <div class="focus-editor-content">
+                    <textarea class="focus-editor-textarea" placeholder="Start writing...">${escapeHtml(originalContent)}</textarea>
+                </div>
+                <div class="focus-editor-footer">
+                    <div class="focus-editor-hint">Changes are not saved until you click Save</div>
+                    <div class="focus-editor-actions">
+                        <button class="focus-editor-btn focus-editor-cancel-btn" type="button">Cancel</button>
+                        <button class="focus-editor-btn focus-editor-save-btn btn-primary" type="button" disabled>Save</button>
+                    </div>
+                </div>
+            `;
+
+            // Create modal backdrop
+            const backdrop = document.createElement('div');
+            backdrop.className = 'focus-editor-backdrop';
+            backdrop.appendChild(modalContent);
+            document.body.appendChild(backdrop);
+
+            // Get references to elements
+            const textarea = modalContent.querySelector('.focus-editor-textarea');
+            const saveBtn = modalContent.querySelector('.focus-editor-save-btn');
+            const cancelBtn = modalContent.querySelector('.focus-editor-cancel-btn');
+            const ttsBtn = modalContent.querySelector('.focus-editor-tts-btn');
+            const dirtyIndicator = modalContent.querySelector('.focus-editor-dirty-indicator');
+            const statusText = modalContent.querySelector('.focus-editor-status-text');
+            const wordCount = modalContent.querySelector('.focus-editor-word-count');
+
+            // Update word count
+            const updateWordCount = () => {
+                const text = textarea.value.trim();
+                const words = text ? text.split(/\s+/).length : 0;
+                wordCount.textContent = `${words} word${words !== 1 ? 's' : ''}`;
+            };
+            updateWordCount();
+
+            // Track dirty state
+            const updateDirtyState = () => {
+                const isDirty = textarea.value !== originalContent;
+                saveBtn.disabled = !isDirty;
+                dirtyIndicator.style.display = isDirty ? 'inline' : 'none';
+                statusText.textContent = isDirty ? 'Unsaved changes' : 'No changes';
+                updateWordCount();
+            };
+
+            textarea.addEventListener('input', () => {
+                currentContent = textarea.value;
+                updateDirtyState();
+            });
+
+            // TTS functionality
+            ttsBtn.addEventListener('click', async () => {
+                if (self.ttsPlaying) {
+                    self.stopTts();
+                    ttsBtn.querySelector('.focus-editor-tts-icon').textContent = '▶';
+                    ttsBtn.querySelector('.focus-editor-tts-label').textContent = 'Play';
+                    ttsBtn.classList.remove('playing');
+                } else {
+                    const textToRead = textarea.selectionStart !== textarea.selectionEnd
+                        ? textarea.value.substring(textarea.selectionStart, textarea.selectionEnd)
+                        : textarea.value;
+
+                    if (!textToRead.trim()) {
+                        window.notifications?.info('No text to read');
+                        return;
+                    }
+
+                    ttsBtn.querySelector('.focus-editor-tts-icon').textContent = '⏹';
+                    ttsBtn.querySelector('.focus-editor-tts-label').textContent = 'Stop';
+                    ttsBtn.classList.add('playing');
+                    await self.playTts(textToRead, () => {
+                        ttsBtn.querySelector('.focus-editor-tts-icon').textContent = '▶';
+                        ttsBtn.querySelector('.focus-editor-tts-label').textContent = 'Play';
+                        ttsBtn.classList.remove('playing');
+                    });
+                }
+            });
+
+            // Cancel button
+            cancelBtn.addEventListener('click', () => {
+                const isDirty = textarea.value !== originalContent;
+                if (isDirty) {
+                    if (!confirm('Discard unsaved changes?')) return;
+                }
+                self.stopTts();
+                backdrop.remove();
+            });
+
+            // Save button
+            saveBtn.addEventListener('click', async () => {
+                const newContent = textarea.value;
+                if (newContent === originalContent) return;
+
+                try {
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = 'Saving...';
+
+                    // Save the file
+                    await fileApi.saveFile(filePath, newContent);
+
+                    // Create diff for issue
+                    const diff = self.createDiff(originalContent, newContent, filePath);
+
+                    // Create issue for Chief of Staff
+                    const chiefOfStaff = getChiefOfStaffAgent();
+                    const issueData = {
+                        title: `Manual edit: ${fileName}`,
+                        description: `User manually edited ${filePath} via Focus Editor.\n\n**Changes:**\n\`\`\`diff\n${diff}\n\`\`\``,
+                        priority: 'low',
+                        tags: ['manual-edit', 'focus-editor'],
+                        assignedTo: chiefOfStaff?.id || null
+                    };
+
+                    if (issueApi) {
+                        await issueApi.create(issueData);
+                    }
+
+                    // Update state
+                    originalContent = newContent;
+                    updateDirtyState();
+                    saveBtn.textContent = 'Save';
+
+                    window.notifications?.success('Saved and notified Chief of Staff');
+
+                    // Optionally close modal after save
+                    // backdrop.remove();
+                } catch (err) {
+                    console.error('[SceneEditor] Failed to save:', err);
+                    window.notifications?.error('Failed to save: ' + err.message);
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save';
+                }
+            });
+
+            // Prevent closing via backdrop click (sticky modal)
+            backdrop.addEventListener('click', (e) => {
+                if (e.target === backdrop) {
+                    // Do nothing - modal is sticky
+                    // Could add a subtle shake animation here
+                    modalContent.classList.add('focus-editor-shake');
+                    setTimeout(() => modalContent.classList.remove('focus-editor-shake'), 300);
+                }
+            });
+
+            // Prevent Escape from closing without confirmation
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    const isDirty = textarea.value !== originalContent;
+                    if (isDirty) {
+                        if (!confirm('Discard unsaved changes?')) return;
+                    }
+                    self.stopTts();
+                    backdrop.remove();
+                    document.removeEventListener('keydown', escapeHandler);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+
+            // Focus textarea
+            textarea.focus();
+        }
+
+        async playTts(text, onEnd) {
+            try {
+                // Use Piper TTS via API
+                const response = await fetch('/api/tts/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text.substring(0, 5000) }) // Limit length
+                });
+
+                if (!response.ok) {
+                    // Try system speech synthesis as fallback
+                    if ('speechSynthesis' in window) {
+                        const utterance = new SpeechSynthesisUtterance(text);
+                        utterance.onend = () => {
+                            this.ttsPlaying = false;
+                            if (onEnd) onEnd();
+                        };
+                        utterance.onerror = () => {
+                            this.ttsPlaying = false;
+                            if (onEnd) onEnd();
+                        };
+                        this.ttsPlaying = true;
+                        this.currentUtterance = utterance;
+                        speechSynthesis.speak(utterance);
+                        return;
+                    }
+                    throw new Error('TTS not available');
+                }
+
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                this.ttsAudio = new Audio(audioUrl);
+                this.ttsAudio.onended = () => {
+                    this.ttsPlaying = false;
+                    URL.revokeObjectURL(audioUrl);
+                    if (onEnd) onEnd();
+                };
+                this.ttsAudio.onerror = () => {
+                    this.ttsPlaying = false;
+                    URL.revokeObjectURL(audioUrl);
+                    if (onEnd) onEnd();
+                };
+                this.ttsPlaying = true;
+                await this.ttsAudio.play();
+            } catch (err) {
+                console.error('[SceneEditor] TTS error:', err);
+                this.ttsPlaying = false;
+                if (onEnd) onEnd();
+                window.notifications?.error('TTS failed: ' + err.message);
+            }
+        }
+
+        stopTts() {
+            if (this.ttsAudio) {
+                this.ttsAudio.pause();
+                this.ttsAudio = null;
+            }
+            if (this.currentUtterance && 'speechSynthesis' in window) {
+                speechSynthesis.cancel();
+                this.currentUtterance = null;
+            }
+            this.ttsPlaying = false;
+        }
+
+        createDiff(oldText, newText, filePath) {
+            // Simple line-by-line diff
+            const oldLines = oldText.split('\n');
+            const newLines = newText.split('\n');
+            const diff = [];
+
+            diff.push(`--- a/${filePath}`);
+            diff.push(`+++ b/${filePath}`);
+
+            // Simple diff: show removed and added lines
+            const maxLen = Math.max(oldLines.length, newLines.length);
+            let inChange = false;
+            let changeStart = 0;
+            let removedLines = [];
+            let addedLines = [];
+
+            for (let i = 0; i < maxLen; i++) {
+                const oldLine = oldLines[i];
+                const newLine = newLines[i];
+
+                if (oldLine !== newLine) {
+                    if (!inChange) {
+                        inChange = true;
+                        changeStart = i;
+                    }
+                    if (oldLine !== undefined) removedLines.push(oldLine);
+                    if (newLine !== undefined) addedLines.push(newLine);
+                } else if (inChange) {
+                    // End of change block
+                    diff.push(`@@ -${changeStart + 1},${removedLines.length} +${changeStart + 1},${addedLines.length} @@`);
+                    removedLines.forEach(l => diff.push('-' + l));
+                    addedLines.forEach(l => diff.push('+' + l));
+                    inChange = false;
+                    removedLines = [];
+                    addedLines = [];
+                }
+            }
+
+            // Handle trailing changes
+            if (inChange) {
+                diff.push(`@@ -${changeStart + 1},${removedLines.length} +${changeStart + 1},${addedLines.length} @@`);
+                removedLines.forEach(l => diff.push('-' + l));
+                addedLines.forEach(l => diff.push('+' + l));
+            }
+
+            return diff.join('\n');
+        }
+
+        async unmount() {
+            this.stopTts();
+            await super.unmount();
+        }
+    }
+
     // Writing Streak Widget - Calendar heatmap of writing activity
     class WritingStreakWidget extends Widget {
         async render() {
@@ -1858,6 +2343,28 @@
                 }
             }
         });
+
+        // Scene Editor
+        widgetRegistry.register({
+            id: 'widget-scene-editor',
+            name: 'Scene Editor',
+            description: 'Recent scenes with focus editing mode',
+            icon: '✍️',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'medium',
+                allowedSizes: ['small', 'medium', 'large']
+            },
+            configurable: true,
+            settings: {
+                maxFiles: {
+                    type: 'number',
+                    label: 'Max Files',
+                    default: 8
+                }
+            }
+        });
     }
 
     // Render widget-based dashboard
@@ -2022,6 +2529,9 @@
                 break;
             case 'widget-writing-streak':
                 widget = new WritingStreakWidget(instance, manifest);
+                break;
+            case 'widget-scene-editor':
+                widget = new SceneEditorWidget(instance, manifest);
                 break;
             default:
                 widget = new Widget(instance, manifest);

@@ -10034,3 +10034,409 @@ body.no-project #editor-placeholder .placeholder-text p {
     background: rgba(102, 187, 106, 0.3);
     box-shadow: 0 0 15px rgba(102, 187, 106, 0.4);
 }
+
+/* ============================================
+   SCENE EDITOR WIDGET
+   ============================================ */
+
+.widget-scene-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 8px;
+}
+
+.scene-editor-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.scene-editor-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--error-color, #ef5350);
+    font-size: 13px;
+}
+
+.scene-editor-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 20px;
+}
+
+.scene-editor-empty-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    opacity: 0.6;
+}
+
+.scene-editor-empty-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.scene-editor-empty-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.scene-editor-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.scene-editor-file {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.scene-editor-file:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent-color);
+    transform: translateX(2px);
+}
+
+.scene-editor-file-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.scene-editor-file-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.scene-editor-file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scene-editor-file-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.scene-editor-file-dir {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.scene-editor-file-time {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.scene-editor-file-arrow {
+    font-size: 14px;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.scene-editor-file:hover .scene-editor-file-arrow {
+    opacity: 1;
+    color: var(--accent-color);
+}
+
+/* ============================================
+   FOCUS EDITOR MODAL
+   ============================================ */
+
+.focus-editor-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(12px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.focus-editor-container {
+    width: 100%;
+    max-width: 1100px;
+    height: calc(100vh - 80px);
+    max-height: 900px;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: focus-editor-enter 0.2s ease-out;
+}
+
+@keyframes focus-editor-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.focus-editor-shake {
+    animation: focus-editor-shake 0.3s ease;
+}
+
+@keyframes focus-editor-shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-5px); }
+    40%, 80% { transform: translateX(5px); }
+}
+
+.focus-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-color);
+}
+
+.focus-editor-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.focus-editor-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.focus-editor-filename {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.focus-editor-path {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.focus-editor-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.focus-editor-dirty-indicator {
+    color: var(--warning-color, #ffa726);
+    font-size: 10px;
+}
+
+.focus-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-color);
+}
+
+.focus-editor-tts-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.focus-editor-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.focus-editor-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent-color);
+}
+
+.focus-editor-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.focus-editor-tts-btn {
+    min-width: 80px;
+}
+
+.focus-editor-tts-btn.playing {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+}
+
+.focus-editor-tts-icon {
+    font-size: 12px;
+}
+
+.focus-editor-word-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.focus-editor-content {
+    flex: 1;
+    padding: 20px 24px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Allow shrinking in flexbox */
+}
+
+.focus-editor-textarea {
+    flex: 1;
+    width: 100%;
+    padding: 24px 28px;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    font-size: 18px;
+    line-height: 1.9;
+    color: var(--text-color);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    resize: none;
+    transition: border-color 0.15s ease;
+    overflow-y: auto;
+}
+
+.focus-editor-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.focus-editor-textarea::placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.focus-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border-color);
+    background: var(--surface-color);
+}
+
+.focus-editor-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.focus-editor-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.focus-editor-cancel-btn {
+    background: transparent;
+}
+
+.focus-editor-save-btn {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+}
+
+.focus-editor-save-btn:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+/* Focus editor responsive */
+@media (max-width: 768px) {
+    .focus-editor-backdrop {
+        padding: 20px;
+    }
+
+    .focus-editor-container {
+        max-height: 95vh;
+    }
+
+    .focus-editor-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .focus-editor-path {
+        max-width: 100%;
+    }
+
+    .focus-editor-footer {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .focus-editor-hint {
+        text-align: center;
+    }
+
+    .focus-editor-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
