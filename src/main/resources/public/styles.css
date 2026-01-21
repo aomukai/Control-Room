@@ -9147,6 +9147,156 @@ body.no-project #editor-placeholder .placeholder-text p {
 }
 
 /* ============================================
+   WRITING STREAK WIDGET
+   ============================================ */
+
+.widget-writing-streak {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 8px;
+    gap: 8px;
+}
+
+.writing-streak-loading,
+.writing-streak-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.writing-streak-error {
+    color: var(--error-color, #ff6b6b);
+}
+
+.writing-streak-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 8px;
+    text-align: center;
+}
+
+.writing-streak-empty-icon {
+    font-size: 24px;
+}
+
+.writing-streak-empty-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.writing-streak-empty-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.writing-streak-grid {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.writing-streak-month-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.writing-streak-month-label {
+    width: 32px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    text-align: right;
+    padding-right: 4px;
+}
+
+.writing-streak-days {
+    display: flex;
+    gap: 2px;
+    flex-wrap: nowrap;
+}
+
+.writing-streak-cell {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    flex-shrink: 0;
+}
+
+.writing-streak-cell:hover {
+    transform: scale(1.4);
+    z-index: 1;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.writing-streak-cell-empty {
+    visibility: hidden;
+}
+
+/* Color levels - green theme like GitHub */
+.writing-streak-level-0 {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.writing-streak-level-1 {
+    background: #0e4429;
+    border: 1px solid #0e4429;
+}
+
+.writing-streak-level-2 {
+    background: #006d32;
+    border: 1px solid #006d32;
+}
+
+.writing-streak-level-3 {
+    background: #26a641;
+    border: 1px solid #26a641;
+}
+
+.writing-streak-level-4 {
+    background: #39d353;
+    border: 1px solid #39d353;
+}
+
+.writing-streak-stats {
+    display: flex;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-wrap: wrap;
+}
+
+.writing-streak-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.writing-streak-stat-icon {
+    font-size: 12px;
+}
+
+.writing-streak-stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* ============================================
    WIDGET FOCUS MODE (CINEMA MODE)
    ============================================ */
 

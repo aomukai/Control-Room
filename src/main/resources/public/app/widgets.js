@@ -1133,6 +1133,253 @@
         }
     }
 
+    // Writing Streak Widget - Calendar heatmap of writing activity
+    class WritingStreakWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            // Show loading state
+            this.container.innerHTML = `
+                <div class="widget-writing-streak">
+                    <div class="writing-streak-loading">Loading activity...</div>
+                </div>
+            `;
+
+            await this.loadData();
+        }
+
+        async loadData() {
+            try {
+                const versioningApi = window.versioningApi;
+                if (!versioningApi) {
+                    this.renderError('Versioning API not available');
+                    return;
+                }
+
+                const data = await versioningApi.snapshots();
+                const snapshots = data.snapshots || [];
+
+                if (snapshots.length === 0) {
+                    this.renderEmpty();
+                    return;
+                }
+
+                const timeRange = this.instance.settings.timeRange || '90days';
+                const metric = this.instance.settings.metric || 'words';
+                const dateMap = this.aggregateByDate(snapshots, metric);
+                const streaks = this.calculateStreaks(dateMap);
+                const totalWords = this.calculateTotalWords(snapshots);
+
+                this.renderHeatmap(dateMap, streaks, totalWords, timeRange, metric);
+            } catch (err) {
+                console.error('[WritingStreak] Failed to load data:', err);
+                this.renderError('Failed to load activity data');
+            }
+        }
+
+        aggregateByDate(snapshots, metric) {
+            const dateMap = new Map();
+
+            for (const snapshot of snapshots) {
+                if (!snapshot.publishedAt) continue;
+
+                const date = new Date(snapshot.publishedAt);
+                const dateStr = this.formatDateKey(date);
+
+                const existing = dateMap.get(dateStr) || { words: 0, snapshots: 0 };
+                existing.words += (snapshot.addedWords || 0);
+                existing.snapshots += 1;
+                dateMap.set(dateStr, existing);
+            }
+
+            return dateMap;
+        }
+
+        formatDateKey(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        calculateStreaks(dateMap) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            let currentStreak = 0;
+            let bestStreak = 0;
+            let tempStreak = 0;
+
+            // Sort dates descending
+            const sortedDates = Array.from(dateMap.keys()).sort().reverse();
+
+            // Calculate current streak (must include today or yesterday)
+            const todayStr = this.formatDateKey(today);
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = this.formatDateKey(yesterday);
+
+            let checkDate = new Date(today);
+            // Allow starting from yesterday if today has no activity yet
+            if (!dateMap.has(todayStr) && dateMap.has(yesterdayStr)) {
+                checkDate = yesterday;
+            }
+
+            while (true) {
+                const dateStr = this.formatDateKey(checkDate);
+                if (dateMap.has(dateStr)) {
+                    currentStreak++;
+                    checkDate.setDate(checkDate.getDate() - 1);
+                } else {
+                    break;
+                }
+            }
+
+            // Calculate best streak
+            for (let i = 0; i < sortedDates.length; i++) {
+                const currentDate = new Date(sortedDates[i]);
+                const prevDate = i > 0 ? new Date(sortedDates[i - 1]) : null;
+
+                if (prevDate) {
+                    const diffDays = Math.round((prevDate - currentDate) / (1000 * 60 * 60 * 24));
+                    if (diffDays === 1) {
+                        tempStreak++;
+                    } else {
+                        bestStreak = Math.max(bestStreak, tempStreak);
+                        tempStreak = 1;
+                    }
+                } else {
+                    tempStreak = 1;
+                }
+            }
+            bestStreak = Math.max(bestStreak, tempStreak);
+
+            return { current: currentStreak, best: bestStreak };
+        }
+
+        calculateTotalWords(snapshots) {
+            return snapshots.reduce((sum, s) => sum + (s.addedWords || 0), 0);
+        }
+
+        getColorLevel(value, metric) {
+            if (value === 0) return 0;
+
+            if (metric === 'snapshots') {
+                if (value >= 5) return 4;
+                if (value >= 3) return 3;
+                if (value >= 2) return 2;
+                return 1;
+            }
+
+            // Words
+            if (value >= 1000) return 4;
+            if (value >= 500) return 3;
+            if (value >= 100) return 2;
+            return 1;
+        }
+
+        getMonthsInRange(timeRange) {
+            const months = [];
+            const today = new Date();
+            let numMonths;
+
+            switch (timeRange) {
+                case '30days': numMonths = 2; break;
+                case 'year': numMonths = 12; break;
+                default: numMonths = 3; // 90days
+            }
+
+            for (let i = 0; i < numMonths; i++) {
+                const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+                months.push({
+                    year: date.getFullYear(),
+                    month: date.getMonth(),
+                    label: date.toLocaleDateString('en-US', { month: 'short' }),
+                    daysInMonth: new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+                });
+            }
+
+            return months.reverse(); // Oldest first
+        }
+
+        renderHeatmap(dateMap, streaks, totalWords, timeRange, metric) {
+            const months = this.getMonthsInRange(timeRange);
+
+            let gridHtml = '<div class="writing-streak-grid">';
+
+            for (const monthInfo of months) {
+                gridHtml += `<div class="writing-streak-month-row">`;
+                gridHtml += `<div class="writing-streak-month-label">${monthInfo.label}</div>`;
+                gridHtml += `<div class="writing-streak-days">`;
+
+                for (let day = 1; day <= 31; day++) {
+                    if (day > monthInfo.daysInMonth) {
+                        gridHtml += `<div class="writing-streak-cell writing-streak-cell-empty"></div>`;
+                        continue;
+                    }
+
+                    const dateStr = `${monthInfo.year}-${String(monthInfo.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const data = dateMap.get(dateStr) || { words: 0, snapshots: 0 };
+                    const value = metric === 'snapshots' ? data.snapshots : data.words;
+                    const level = this.getColorLevel(value, metric);
+
+                    const tooltipText = value > 0
+                        ? `${dateStr}: ${data.words.toLocaleString()} words, ${data.snapshots} snapshot${data.snapshots !== 1 ? 's' : ''}`
+                        : `${dateStr}: No activity`;
+
+                    gridHtml += `<div class="writing-streak-cell writing-streak-level-${level}" title="${escapeHtml(tooltipText)}" data-date="${dateStr}"></div>`;
+                }
+
+                gridHtml += `</div></div>`;
+            }
+
+            gridHtml += '</div>';
+
+            // Format total words
+            const wordsDisplay = totalWords >= 1000
+                ? (totalWords / 1000).toFixed(1) + 'k'
+                : totalWords.toString();
+
+            this.container.innerHTML = `
+                <div class="widget-writing-streak">
+                    ${gridHtml}
+                    <div class="writing-streak-stats">
+                        <span class="writing-streak-stat">
+                            <span class="writing-streak-stat-icon">🔥</span>
+                            <span class="writing-streak-stat-value">${streaks.current}</span> day${streaks.current !== 1 ? 's' : ''}
+                        </span>
+                        <span class="writing-streak-stat">
+                            Best: <span class="writing-streak-stat-value">${streaks.best}</span>
+                        </span>
+                        <span class="writing-streak-stat">
+                            <span class="writing-streak-stat-value">${wordsDisplay}</span> words
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+
+        renderEmpty() {
+            this.container.innerHTML = `
+                <div class="widget-writing-streak">
+                    <div class="writing-streak-empty">
+                        <div class="writing-streak-empty-icon">✨</div>
+                        <div class="writing-streak-empty-text">Start your streak today!</div>
+                        <div class="writing-streak-empty-hint">Publish snapshots to track your progress</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        renderError(message) {
+            this.container.innerHTML = `
+                <div class="widget-writing-streak">
+                    <div class="writing-streak-error">${escapeHtml(message)}</div>
+                </div>
+            `;
+        }
+    }
+
     // Dashboard State Manager
     class DashboardState {
         constructor() {
@@ -1582,6 +1829,35 @@
                 }
             }
         });
+
+        // Writing Streak
+        widgetRegistry.register({
+            id: 'widget-writing-streak',
+            name: 'Writing Streak',
+            description: 'Calendar heatmap of writing activity',
+            icon: '🔥',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'medium',
+                allowedSizes: ['medium', 'large']
+            },
+            configurable: true,
+            settings: {
+                timeRange: {
+                    type: 'select',
+                    label: 'Time Range',
+                    default: '90days',
+                    options: ['30days', '90days', 'year']
+                },
+                metric: {
+                    type: 'select',
+                    label: 'Metric',
+                    default: 'words',
+                    options: ['words', 'snapshots']
+                }
+            }
+        });
     }
 
     // Render widget-based dashboard
@@ -1743,6 +2019,9 @@
                 break;
             case 'widget-pomodoro':
                 widget = new PomodoroWidget(instance, manifest);
+                break;
+            case 'widget-writing-streak':
+                widget = new WritingStreakWidget(instance, manifest);
                 break;
             default:
                 widget = new Widget(instance, manifest);
