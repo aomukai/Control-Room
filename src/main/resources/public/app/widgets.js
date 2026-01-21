@@ -11,6 +11,8 @@
     const showConferenceInviteModal = window.showConferenceInviteModal;
     const isAssistantAgent = window.isAssistantAgent;
     const state = window.state;
+    // Note: notificationStore must be accessed dynamically via window.notificationStore
+    // because it's not yet initialized when this module loads
 
     function getChiefOfStaffAgent() {
         const agents = (state && state.agents && state.agents.list) ? state.agents.list : [];
@@ -1307,7 +1309,7 @@
                 currentContent = originalContent;
             } catch (err) {
                 console.error('[SceneEditor] Failed to load file:', err);
-                window.notifications?.error('Failed to load file: ' + err.message);
+                window.notificationStore?.error('Failed to load file: ' + err.message, 'workbench');
                 return;
             }
 
@@ -1400,7 +1402,7 @@
                         : textarea.value;
 
                     if (!textToRead.trim()) {
-                        window.notifications?.info('No text to read');
+                        window.notificationStore?.info('No text to read', 'workbench');
                         return;
                     }
 
@@ -1444,14 +1446,18 @@
                     const chiefOfStaff = getChiefOfStaffAgent();
                     const issueData = {
                         title: `Manual edit: ${fileName}`,
-                        description: `User manually edited ${filePath} via Focus Editor.\n\n**Changes:**\n\`\`\`diff\n${diff}\n\`\`\``,
+                        body: `User manually edited ${filePath} via Focus Editor.\n\n**Changes:**\n\`\`\`diff\n${diff}\n\`\`\``,
                         priority: 'low',
                         tags: ['manual-edit', 'focus-editor'],
                         assignedTo: chiefOfStaff?.id || null
                     };
 
                     if (issueApi) {
-                        await issueApi.create(issueData);
+                        const issue = await issueApi.create(issueData);
+                        // Create persistent notification in newsfeed
+                        if (issue && issue.id && window.notificationStore?.issueCreated) {
+                            window.notificationStore.issueCreated(issue.id, issue.title, 'user', chiefOfStaff?.name || chiefOfStaff?.id);
+                        }
                     }
 
                     // Update state
@@ -1459,13 +1465,12 @@
                     updateDirtyState();
                     saveBtn.textContent = 'Save';
 
-                    window.notifications?.success('Saved and notified Chief of Staff');
-
-                    // Optionally close modal after save
-                    // backdrop.remove();
+                    // Close modal after successful save
+                    self.stopTts();
+                    backdrop.remove();
                 } catch (err) {
                     console.error('[SceneEditor] Failed to save:', err);
-                    window.notifications?.error('Failed to save: ' + err.message);
+                    window.notificationStore?.error('Failed to save: ' + err.message, 'workbench');
                     saveBtn.disabled = false;
                     saveBtn.textContent = 'Save';
                 }
@@ -1548,7 +1553,7 @@
                 console.error('[SceneEditor] TTS error:', err);
                 this.ttsPlaying = false;
                 if (onEnd) onEnd();
-                window.notifications?.error('TTS failed: ' + err.message);
+                window.notificationStore?.error('TTS failed: ' + err.message, 'workbench');
             }
         }
 
