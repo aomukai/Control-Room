@@ -31,6 +31,7 @@ public class OutlineController implements Controller {
     private static final int MAX_EMPTY_BODIES = 2;
     private static final int LABEL_MAX_WORDS = 16;
     private static final int FINGERPRINT_SNIPPET = 240;
+    private static final String OUTLINE_VIRTUAL_PATH = "Story/SCN-outline.md";
 
     private static final Pattern HEADING_H1 = Pattern.compile("^#\\s+\\S");
     private static final Pattern HEADING_H2 = Pattern.compile("^##\\s+\\S");
@@ -111,10 +112,12 @@ public class OutlineController implements Controller {
 
         boolean hasScenes = outline != null && outline.getScenes() != null && !outline.getScenes().isEmpty();
         boolean needsParse = !hasScenes || outlineScenesBlank(outline);
-        Path sourcePath = outlineSourcePath();
-        if (needsParse && Files.exists(sourcePath)) {
-            OutlineDocument parsed = parseOutlineFromSource(sourcePath, outline);
-            return persistOutline(parsed);
+        if (needsParse) {
+            String source = loadOutlineSource();
+            if (source != null && !source.isBlank()) {
+                OutlineDocument parsed = parseOutlineFromSourceContent(source, outline);
+                return persistOutline(parsed);
+            }
         }
 
         return outline;
@@ -164,8 +167,7 @@ public class OutlineController implements Controller {
         return outline;
     }
 
-    private OutlineDocument parseOutlineFromSource(Path sourcePath, OutlineDocument base) throws Exception {
-        String raw = Files.readString(sourcePath, StandardCharsets.UTF_8);
+    private OutlineDocument parseOutlineFromSourceContent(String raw, OutlineDocument base) {
         String normalized = normalizeNewlines(raw);
         List<String> lines = Arrays.asList(normalized.split("\\n", -1));
 
@@ -179,6 +181,27 @@ public class OutlineController implements Controller {
         }
         outline.setScenes(scenes);
         return outline;
+    }
+
+    private String loadOutlineSource() throws Exception {
+        if (isPreparedProject()) {
+            try {
+                return projectContext.preparedWorkspace().readFile(OUTLINE_VIRTUAL_PATH);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        Path sourcePath = outlineSourcePath();
+        if (Files.exists(sourcePath)) {
+            return Files.readString(sourcePath, StandardCharsets.UTF_8);
+        }
+        return null;
+    }
+
+    private boolean isPreparedProject() {
+        return projectContext != null
+            && projectContext.preparation() != null
+            && projectContext.preparation().isVirtualReady();
     }
 
     private List<OutlineScene> buildScenes(List<SceneSegment> segments, OutlineDocument base) {

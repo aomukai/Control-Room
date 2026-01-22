@@ -671,6 +671,9 @@ public class PreparedWorkspaceService {
         static CanonPath parse(String path) {
             if (path == null) return null;
             String normalized = path.replace('\\', '/');
+            if ("Story/SCN-outline.md".equalsIgnoreCase(normalized)) {
+                return new CanonPath(Kind.SCENE, "SCN:outline", "Outline", null);
+            }
             if (normalized.startsWith("Story/Scenes/")) {
                 String filename = normalized.substring("Story/Scenes/".length());
                 if (!filename.endsWith(".md")) return null;
