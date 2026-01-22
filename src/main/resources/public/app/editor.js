@@ -905,14 +905,19 @@
             confirmBtn.disabled = true;
             try {
                 await outlineApi.save(draft);
-                await issueApi.create({
-                    title: 'Outline updated',
-                    body: buildIssueBody(diff),
-                    openedBy: 'user',
-                    tags: ['outline', 'outline-update']
-                });
-                if (store) {
-                    store.success('Outline saved and issue created.', 'editor');
+                const canCreateIssues = state && state.workspace && state.workspace.agentsUnlocked;
+                if (canCreateIssues) {
+                    await issueApi.create({
+                        title: 'Outline updated',
+                        body: buildIssueBody(diff),
+                        openedBy: 'user',
+                        tags: ['outline', 'outline-update']
+                    });
+                    if (store) {
+                        store.success('Outline saved and issue created.', 'editor');
+                    }
+                } else if (store) {
+                    store.success('Outline saved.', 'editor');
                 }
                 close();
             } catch (err) {
