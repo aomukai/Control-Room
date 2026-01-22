@@ -84,6 +84,17 @@
         'budget-limit'
     ];
 
+    function stripThinkingTags(content) {
+        if (!content) return content;
+        let cleaned = String(content);
+        cleaned = cleaned.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+        cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        cleaned = cleaned.replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '');
+        cleaned = cleaned.replace(/\[think\][\s\S]*?\[\/think\]/gi, '');
+        cleaned = cleaned.replace(/\[thought\][\s\S]*?\[\/thought\]/gi, '');
+        return cleaned.trim();
+    }
+
     function buildStopHookPreamble(agent) {
         if (!agent) return '';
         const lines = [
@@ -118,8 +129,8 @@
     }
 
     function extractStopHook(content) {
-        const text = String(content || '');
-        const lines = text.split('\n');
+        const text = stripThinkingTags(content || '');
+        const lines = String(text || '').split('\n');
         const first = lines[0] ? lines[0].trim() : '';
         const match = first.match(/^\[?STOP[ _-]?HOOK\s*:\s*([a-z-]+)\]?\s*(.*)$/i);
         if (!match) {
@@ -229,6 +240,7 @@
     window.getStatusClass = getStatusClass;
     window.getPriorityClass = getPriorityClass;
     window.formatStatus = formatStatus;
+    window.stripThinkingTags = stripThinkingTags;
     window.buildChatPrompt = buildChatPrompt;
     window.extractStopHook = extractStopHook;
     window.renderSimpleMarkdown = renderSimpleMarkdown;

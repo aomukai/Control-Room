@@ -245,6 +245,9 @@ public class ChatController implements Controller {
         String cleaned = content;
         cleaned = cleaned.replaceAll("(?is)<thinking>.*?</thinking>", "").trim();
         cleaned = cleaned.replaceAll("(?is)<think>.*?</think>", "").trim();
+        cleaned = cleaned.replaceAll("(?is)\\[thinking\\].*?\\[/thinking\\]", "").trim();
+        cleaned = cleaned.replaceAll("(?is)\\[think\\].*?\\[/think\\]", "").trim();
+        cleaned = cleaned.replaceAll("(?is)\\[thought\\].*?\\[/thought\\]", "").trim();
         return cleaned;
     }
 

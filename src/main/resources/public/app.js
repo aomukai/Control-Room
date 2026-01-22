@@ -5266,7 +5266,9 @@ async function showWorkspaceSwitcher() {
 
     function extractJsonObject(text) {
         if (!text) return null;
-        const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const cleaned = typeof stripThinkingTags === 'function'
+            ? stripThinkingTags(text)
+            : String(text).replace(/<think>[\s\S]*?<\/think>/gi, '');
         const markerMatch = cleaned.match(/BEGIN_JSON\s*([\s\S]*?)\s*END_JSON/i);
         if (markerMatch && markerMatch[1]) {
             try {
@@ -6720,7 +6722,9 @@ async function showWorkspaceSwitcher() {
 
         const parseJsonFromText = (text) => {
             if (!text) return null;
-            const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+            const cleaned = typeof stripThinkingTags === 'function'
+                ? stripThinkingTags(text)
+                : text.replace(/<think>[\s\S]*?<\/think>/gi, '');
             const match = cleaned.match(/\{[\s\S]*\}/);
             if (!match) return null;
             const raw = match[0].trim();
