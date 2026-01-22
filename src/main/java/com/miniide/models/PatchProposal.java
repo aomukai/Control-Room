@@ -7,6 +7,7 @@ public class PatchProposal {
     private String id;
     private String title;
     private String description;
+    private String issueId;
     private String filePath;
     private List<TextEdit> edits = new ArrayList<>();
     private String preview;
@@ -38,6 +39,14 @@ public class PatchProposal {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getIssueId() {
+        return issueId;
+    }
+
+    public void setIssueId(String issueId) {
+        this.issueId = issueId;
     }
 
     public String getFilePath() {

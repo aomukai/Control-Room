@@ -2233,6 +2233,22 @@ html, body {
     font-size: 12px;
 }
 
+.patch-link-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.patch-link-btn:hover {
+    border-color: rgba(78, 201, 176, 0.6);
+    transform: translateY(-1px);
+}
+
 .patch-provenance {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

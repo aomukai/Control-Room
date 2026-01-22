@@ -516,6 +516,7 @@
             const payload = {
                 kind: 'review-patch',
                 patchId: patch.id || null,
+                issueId: patch.issueId || null,
                 filePath: filePath || null,
                 filePaths,
                 patchTitle: patch.title || null,
@@ -654,6 +655,18 @@
             meta.className = 'patch-meta patch-diff-only';
             meta.textContent = `${formatRelativeTime(patch.createdAt)} • ${fileCount || 0} file${fileCount === 1 ? '' : 's'}`;
             detail.appendChild(meta);
+
+            if (patch.issueId) {
+                const issueRow = document.createElement('div');
+                issueRow.className = 'patch-meta patch-diff-only';
+                const issueBtn = document.createElement('button');
+                issueBtn.type = 'button';
+                issueBtn.className = 'patch-link-btn';
+                issueBtn.textContent = `Open Issue ${patch.issueId}`;
+                issueBtn.addEventListener('click', () => openIssueModal(patch.issueId));
+                issueRow.appendChild(issueBtn);
+                detail.appendChild(issueRow);
+            }
 
             const provenance = patch.provenance || {};
             const prov = document.createElement('div');
@@ -2778,6 +2791,7 @@ async function showWorkspaceSwitcher() {
         const projectName = payload.projectName || state.workspace.displayName || state.workspace.name;
         const filePath = payload.filePath || (Array.isArray(payload.filePaths) ? payload.filePaths[0] : null);
         if (projectName) crumbs.push({ label: projectName, action: null });
+        if (payload.issueId) crumbs.push({ label: `Issue ${payload.issueId}`, action: 'issue' });
         if (payload.patchId) crumbs.push({ label: `Patch ${payload.patchId}`, action: 'patch' });
         if (filePath) crumbs.push({ label: filePath, action: 'file' });
         return crumbs.length ? crumbs : null;
@@ -2803,6 +2817,11 @@ async function showWorkspaceSwitcher() {
                 button.textContent = crumb.label;
                 button.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    if (crumb.action === 'issue' && payload.issueId) {
+                        closeNotificationCenter();
+                        openIssueModal(payload.issueId);
+                        return;
+                    }
                     if (crumb.action === 'patch' && payload.patchId) {
                         closeNotificationCenter();
                         showPatchReviewModal(payload.patchId);

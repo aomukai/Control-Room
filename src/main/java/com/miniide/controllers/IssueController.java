@@ -12,10 +12,12 @@ import com.miniide.ProjectContext;
 import com.miniide.models.Comment;
 import com.miniide.models.CreditEvent;
 import com.miniide.models.Issue;
+import com.miniide.models.PatchProposal;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -91,6 +93,32 @@ public class IssueController implements Controller {
         app.put("/api/issues/{id}", this::updateIssue);
         app.delete("/api/issues/{id}", this::deleteIssue);
         app.post("/api/issues/{id}/comments", this::addComment);
+        app.post("/api/issues/{id}/patches", this::createIssuePatch);
+    }
+
+    private void createIssuePatch(Context ctx) {
+        try {
+            int issueId = Integer.parseInt(ctx.pathParam("id"));
+            Optional<Issue> issueOpt = issueService.getIssue(issueId);
+            if (issueOpt.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + issueId));
+                return;
+            }
+
+            JsonNode json = objectMapper.readTree(ctx.body());
+            PatchProposal proposal = objectMapper.convertValue(json, PatchProposal.class);
+            proposal.setIssueId(String.valueOf(issueId));
+
+            PatchProposal created = projectContext.patches().create(proposal);
+            sendPatchNotification(created);
+            createPatchIssueComment(issueId, created);
+            ctx.status(201).json(created);
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
+        } catch (Exception e) {
+            logger.error("Error creating patch for issue: " + e.getMessage(), e);
+            ctx.status(400).json(Controller.errorBody(e));
+        }
     }
 
     private void getIssues(Context ctx) {
@@ -388,6 +416,69 @@ public class IssueController implements Controller {
             }
         }
         return null;
+    }
+
+    private void sendPatchNotification(PatchProposal proposal) {
+        if (notificationStore == null || proposal == null) return;
+        String fileLabel = proposal.getFiles() != null && !proposal.getFiles().isEmpty()
+            ? proposal.getFiles().get(0).getFilePath()
+            : proposal.getFilePath();
+        String projectName = null;
+        try {
+            projectName = projectContext.workspace().loadMetadata().getDisplayName();
+        } catch (Exception ignored) {
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("kind", "review-patch");
+        payload.put("patchId", proposal.getId());
+        payload.put("issueId", proposal.getIssueId());
+        payload.put("filePath", fileLabel);
+        payload.put("filePaths", proposal.getFiles() != null
+            ? proposal.getFiles().stream().map(f -> f.getFilePath()).collect(java.util.stream.Collectors.toList())
+            : List.of());
+        payload.put("patchTitle", proposal.getTitle());
+        if (proposal.getProvenance() != null) {
+            payload.put("provenance", proposal.getProvenance());
+        }
+        if (projectName != null && !projectName.isBlank()) {
+            payload.put("projectName", projectName);
+        }
+        notificationStore.push(
+            com.miniide.models.Notification.Level.INFO,
+            com.miniide.models.Notification.Scope.EDITOR,
+            "Patch proposed for " + fileLabel,
+            proposal.getDescription() != null ? proposal.getDescription() : "",
+            com.miniide.models.Notification.Category.ATTENTION,
+            true,
+            "Review Patch",
+            payload,
+            "patch"
+        );
+    }
+
+    private void createPatchIssueComment(int issueId, PatchProposal proposal) {
+        if (proposal == null) return;
+        String title = proposal.getTitle();
+        String message = title != null && !title.isBlank()
+            ? "Patch proposed: " + title
+            : "Patch proposed: " + proposal.getId();
+        String author = "system";
+        if (proposal.getProvenance() != null && proposal.getProvenance().getAgent() != null
+            && !proposal.getProvenance().getAgent().isBlank()) {
+            author = proposal.getProvenance().getAgent();
+        } else if (proposal.getProvenance() != null && proposal.getProvenance().getAuthor() != null
+            && !proposal.getProvenance().getAuthor().isBlank()) {
+            author = proposal.getProvenance().getAuthor();
+        }
+        Comment.CommentAction action = new Comment.CommentAction(
+            "patch-proposed",
+            "patchId: " + proposal.getId()
+        );
+        try {
+            issueService.addComment(issueId, author, message, action, null, null);
+        } catch (Exception e) {
+            logger.warn("Failed to log patch proposal on Issue #" + issueId + ": " + e.getMessage());
+        }
     }
 
     private void awardCommentCredit(Comment comment, int issueId) {

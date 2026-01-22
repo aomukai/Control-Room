@@ -185,6 +185,9 @@ public class PatchController implements Controller {
         Map<String, Object> payload = new HashMap<>();
         payload.put("kind", "review-patch");
         payload.put("patchId", proposal.getId());
+        if (proposal.getIssueId() != null && !proposal.getIssueId().isBlank()) {
+            payload.put("issueId", proposal.getIssueId());
+        }
         payload.put("filePath", fileLabel);
         payload.put("filePaths", proposal.getFiles() != null
             ? proposal.getFiles().stream().map(f -> f.getFilePath()).collect(Collectors.toList())
@@ -242,6 +245,7 @@ public class PatchController implements Controller {
         payload.put("title", patch.getTitle());
         payload.put("status", patch.getStatus());
         payload.put("description", patch.getDescription());
+        payload.put("issueId", patch.getIssueId());
         payload.put("createdAt", patch.getCreatedAt());
         payload.put("provenance", patch.getProvenance());
         payload.put("auditLog", patch.getAuditLog());

@@ -102,6 +102,14 @@
                 throw new Error(err.error || 'Failed to add comment');
             }
             return response.json();
+        },
+
+        async createPatch(issueId, payload) {
+            return api(`/api/issues/${encodeURIComponent(issueId)}/patches`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
         }
     };
 
@@ -325,6 +333,13 @@
     const patchApi = {
         async list() {
             return api('/api/patches');
+        },
+        async create(payload) {
+            return api('/api/patches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
         },
         async get(id) {
             return api(`/api/patches/${encodeURIComponent(id)}`);
