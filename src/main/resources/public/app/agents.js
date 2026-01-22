@@ -3606,7 +3606,7 @@
 
         const chatHint = document.createElement('div');
         chatHint.className = 'conference-chat-hint';
-        chatHint.textContent = 'Conference chat is not wired yet. Messages are local for now.';
+        chatHint.textContent = 'Messages are routed to invited agents (muted agents are skipped).';
 
         const chatInputRow = document.createElement('div');
         chatInputRow.className = 'conference-chat-input-row';
@@ -3693,7 +3693,7 @@
             entry.className = `conference-chat-message ${role}`;
             const header = document.createElement('div');
             header.className = 'conference-chat-message-header';
-            header.textContent = author;
+            header.textContent = author || (role === 'user' ? 'You' : 'Agent');
             const body = document.createElement('div');
             body.className = 'conference-chat-message-body';
             body.textContent = content;
@@ -3703,12 +3703,99 @@
             chatHistory.scrollTop = chatHistory.scrollHeight;
         };
 
-        const sendMessage = () => {
+        const formatConferenceRoster = () => {
+            const names = invited.map(agent => agent.name || 'Agent');
+            return names.length > 0 ? names.join(', ') : 'none';
+        };
+
+        const formatModerators = () => {
+            const names = moderators.map(agent => agent.name || 'Agent');
+            return names.length > 0 ? names.join(', ') : 'none';
+        };
+
+        const formatChatLogForPrompt = (limit = 12) => {
+            const slice = chatLog.slice(-limit);
+            if (slice.length === 0) return 'No prior messages.';
+            return slice.map(entry => `${entry.author}: ${entry.content}`).join('\n');
+        };
+
+        const buildConferencePrompt = (agent, message) => {
+            const agentName = agent?.name || 'Agent';
+            const agentRole = agent?.role || 'role';
+            const lines = [
+                `Conference agenda: ${agenda || 'none'}`,
+                `Attendees: ${formatConferenceRoster()}`,
+                `Moderators: ${formatModerators()}`,
+                `You are ${agentName} (${agentRole}). Respond as this agent.`,
+                'Conversation so far:',
+                formatChatLogForPrompt(),
+                'Latest message:',
+                message,
+                'Keep your reply concise and actionable.'
+            ];
+            const payload = lines.join('\n');
+            return buildChatPrompt ? buildChatPrompt(payload, agent) : payload;
+        };
+
+        const getActiveParticipants = () => {
+            const invitedList = invited.filter(agent => agent && agent.id && !mutedIds.has(agent.id));
+            const moderatorIds = new Set(moderators.map(agent => agent.id));
+            const ordered = [];
+            invitedList.forEach(agent => {
+                if (moderatorIds.has(agent.id)) {
+                    ordered.push(agent);
+                }
+            });
+            invitedList.forEach(agent => {
+                if (!moderatorIds.has(agent.id)) {
+                    ordered.push(agent);
+                }
+            });
+            return ordered;
+        };
+
+        const sendMessage = async () => {
             const text = chatInput.value.trim();
             if (!text) return;
             chatInput.value = '';
+            chatInput.disabled = true;
+            chatSend.disabled = true;
             chatLog.push({ author: 'You', role: 'user', content: text });
-            addChatMessage('user', text);
+            addChatMessage('You', 'user', text);
+
+            const participants = getActiveParticipants();
+            if (participants.length === 0) {
+                notificationStore.warning('No invited agents available to respond.', 'workbench');
+                chatInput.disabled = false;
+                chatSend.disabled = false;
+                return;
+            }
+
+            for (const agent of participants) {
+                try {
+                    const prompt = buildConferencePrompt(agent, text);
+                    const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: prompt, agentId: agent.id })
+                    }), `Conference response from ${agent.name || 'agent'}`);
+                    const parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
+                    const reply = parsed.content || 'No response.';
+                    addChatMessage(agent.name || 'Agent', 'assistant', reply);
+                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, stopHook: parsed.stopHook });
+                    if (parsed.stopHook) {
+                        notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                    }
+                } catch (err) {
+                    const errorMessage = err && err.message ? err.message : 'Agent failed to respond.';
+                    addChatMessage(agent.name || 'Agent', 'assistant', `Error: ${errorMessage}`);
+                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Error: ${errorMessage}` });
+                    notificationStore.warning(`Conference response failed for ${agent.name || 'agent'}.`, 'workbench');
+                }
+            }
+
+            chatInput.disabled = false;
+            chatSend.disabled = false;
         };
 
         chatSend.addEventListener('click', sendMessage);
