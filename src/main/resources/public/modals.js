@@ -88,6 +88,8 @@
         const {
             closeOnCancel = true,
             closeOnConfirm = false,
+            closeOnOverlay = true,
+            closeOnEscape = true,
             confirmTitle = '',
             cancelTitle = '',
             onClose = null
@@ -152,17 +154,21 @@
         if (closeOnConfirm) {
             confirmBtn.addEventListener('click', close);
         }
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) close();
-        });
+        if (closeOnOverlay) {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) close();
+            });
+        }
 
-        const handleKeydown = (e) => {
-            if (e.key === 'Escape') {
-                close();
-                document.removeEventListener('keydown', handleKeydown);
-            }
-        };
-        document.addEventListener('keydown', handleKeydown);
+        if (closeOnEscape) {
+            const handleKeydown = (e) => {
+                if (e.key === 'Escape') {
+                    close();
+                    document.removeEventListener('keydown', handleKeydown);
+                }
+            };
+            document.addEventListener('keydown', handleKeydown);
+        }
 
         return { overlay, modal, body, confirmBtn, cancelBtn, close };
     }

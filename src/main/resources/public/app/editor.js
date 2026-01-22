@@ -19,6 +19,13 @@
     let editorStateRestored = false;
     let explorerScope = 'all';
     let fullFileTree = null;
+    const OUTLINE_VIRTUAL_PATH = 'Story/SCN-outline.md';
+
+    function isOutlinePath(path) {
+        const normalized = normalizeWorkspacePath(path || '');
+        return normalized.toLowerCase() === OUTLINE_VIRTUAL_PATH.toLowerCase()
+            || normalized.toLowerCase().endsWith('/scn-outline.md');
+    }
 
     function getEditorStateKey() {
         const root = state.workspace && state.workspace.root ? String(state.workspace.root) : '';
@@ -406,7 +413,18 @@
                 container.appendChild(folderItem.element);
                 container = folderItem.childContainer;
             }
-    
+
+            if (isStoryRoot(node)) {
+                const outlineNode = {
+                    name: 'SCN-outline.md',
+                    path: OUTLINE_VIRTUAL_PATH,
+                    type: 'file',
+                    virtual: true
+                };
+                const outlineItem = createTreeItem(outlineNode, depth + 1);
+                container.appendChild(outlineItem.element);
+            }
+
             node.children.forEach(child => {
                 renderFileTree(child, container, depth + 1);
             });
@@ -423,10 +441,21 @@
         const name = String(node.name || '');
         return name.startsWith('.') && name !== '.' && name !== '..';
     }
+
+    function isStoryRoot(node) {
+        if (!node || node.type !== 'folder') {
+            return false;
+        }
+        const path = normalizeWorkspacePath(node.path || '');
+        return path === 'Story';
+    }
     
     function createTreeItem(node, depth) {
         const item = document.createElement('div');
         item.className = `tree-item ${node.type === 'folder' ? 'tree-folder' : 'tree-file'}`;
+        if (node.virtual) {
+            item.classList.add('tree-item-virtual');
+        }
         item.style.setProperty('--indent', `${depth * 16}px`);
     
         const icon = document.createElement('span');
@@ -487,12 +516,14 @@
                 openFile(node.path);
             });
     
-            item.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                if (window.showContextMenu) {
-                    window.showContextMenu(e, node);
-                }
-            });
+            if (!node.virtual) {
+                item.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    if (window.showContextMenu) {
+                        window.showContextMenu(e, node);
+                    }
+                });
+            }
         }
     
         item.dataset.path = node.path;
@@ -529,6 +560,14 @@
     async function openFile(path) {
         path = normalizeWorkspacePath(path);
         try {
+            if (isOutlinePath(path)) {
+                const existingTabId = findTabIdByPath(path);
+                if (existingTabId) {
+                    closeTab(existingTabId, true);
+                }
+                showOutlineEditorModal();
+                return;
+            }
             // Check if there's already a tab for this path
             const existingTabId = findTabIdByPath(path);
             if (existingTabId) {
@@ -556,6 +595,14 @@
     async function openFileInNewTab(path) {
         path = normalizeWorkspacePath(path);
         try {
+            if (isOutlinePath(path)) {
+                const existingTabId = findTabIdByPath(path);
+                if (existingTabId) {
+                    closeTab(existingTabId, true);
+                }
+                showOutlineEditorModal();
+                return;
+            }
             log(`Opening file in new tab: ${path}`, 'info');
     
             // Ensure file is loaded (reuses existing if already loaded)
@@ -571,6 +618,318 @@
             log(`Failed to open file: ${err.message}`, 'error');
         }
     }
+
+    function showOutlineEditorModal() {
+        const createModalShell = window.modals ? window.modals.createModalShell : null;
+        const outlineApi = window.outlineApi;
+        const issueApi = window.issueApi;
+        const store = getNotificationStore();
+        if (!createModalShell || !outlineApi || !issueApi) {
+            if (store) {
+                store.error('Outline editor is unavailable.', 'editor');
+            }
+            return;
+        }
+
+        const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Story Outline',
+            'Accept',
+            'Cancel',
+            { closeOnCancel: false, closeOnConfirm: false, closeOnOverlay: false, closeOnEscape: false }
+        );
+        modal.classList.add('outline-modal');
+        confirmBtn.disabled = true;
+
+        const intro = document.createElement('div');
+        intro.className = 'outline-intro';
+        intro.textContent = 'Reorder scenes and edit scene briefs. Changes apply only when accepted.';
+        body.appendChild(intro);
+
+        const list = document.createElement('div');
+        list.className = 'outline-list';
+        body.appendChild(list);
+
+        const status = document.createElement('div');
+        status.className = 'outline-status';
+        status.textContent = 'Loading outline...';
+        body.appendChild(status);
+
+        let original = null;
+        let draft = null;
+
+        const cloneOutline = (outline) => JSON.parse(JSON.stringify(outline || {}));
+
+        const setDirty = (dirty) => {
+            confirmBtn.disabled = !dirty;
+        };
+
+        const stripMarkdown = (value) => {
+            if (!value) return '';
+            let text = String(value);
+            text = text.replace(/```[\s\S]*?```/g, '');
+            text = text.replace(/`([^`]+)`/g, '$1');
+            text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+            text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+            text = text.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+            text = text.replace(/^\s{0,3}>\s?/gm, '');
+            text = text.replace(/^\s*[-*+]\s+/gm, '');
+            text = text.replace(/^\s*\d+\.\s+/gm, '');
+            text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+            text = text.replace(/\*([^*]+)\*/g, '$1');
+            text = text.replace(/__([^_]+)__/g, '$1');
+            text = text.replace(/_([^_]+)_/g, '$1');
+            text = text.replace(/~~([^~]+)~~/g, '$1');
+            text = text.replace(/[ \t]+\n/g, '\n');
+            text = text.replace(/\n{3,}/g, '\n\n');
+            return text.trim();
+        };
+
+        const clampText = (value, max) => {
+            if (!value) return '';
+            if (value.length <= max) return value;
+            const clipped = value.slice(0, Math.max(0, max - 3)).trimEnd();
+            return clipped + '...';
+        };
+
+        const firstSentence = (value) => {
+            const text = stripMarkdown(value);
+            if (!text) return '';
+            const match = text.match(/(.+?[.!?])(\s|$)/);
+            if (match) return match[1].trim();
+            const newline = text.indexOf('\n');
+            if (newline > 0) return text.slice(0, newline).trim();
+            return text;
+        };
+
+        const getDisplayTitle = (entry) => {
+            const rawTitle = entry && entry.title ? String(entry.title) : '';
+            const baseTitle = rawTitle.trim() ? stripMarkdown(rawTitle) : firstSentence(entry?.summary || '');
+            const fullTitle = baseTitle || 'Scene';
+            return {
+                fullTitle,
+                displayTitle: clampText(fullTitle, 140)
+            };
+        };
+
+        const getDisplaySummary = (entry) => {
+            const summary = stripMarkdown(entry?.summary || '');
+            return summary || 'Click to add scene brief';
+        };
+
+        const summarizeForIssue = (value) => {
+            const summary = stripMarkdown(value || '');
+            if (!summary) return '';
+            return clampText(summary, 160);
+        };
+
+        const renderList = () => {
+            list.innerHTML = '';
+            if (!draft || !Array.isArray(draft.scenes) || draft.scenes.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'outline-empty';
+                empty.textContent = 'No scenes available.';
+                list.appendChild(empty);
+                return;
+            }
+
+            draft.scenes.forEach((entry, index) => {
+                const displayTitle = getDisplayTitle(entry);
+                const card = document.createElement('div');
+                card.className = 'outline-card';
+
+                const header = document.createElement('div');
+                header.className = 'outline-card-header';
+
+                const title = document.createElement('div');
+                title.className = 'outline-card-title';
+                title.textContent = displayTitle.displayTitle;
+                title.title = displayTitle.fullTitle;
+
+                const controls = document.createElement('div');
+                controls.className = 'outline-card-controls';
+
+                const upBtn = document.createElement('button');
+                upBtn.type = 'button';
+                upBtn.className = 'outline-move-btn';
+                upBtn.textContent = 'Up';
+                upBtn.disabled = index === 0;
+                upBtn.addEventListener('click', () => {
+                    if (index === 0) return;
+                    const moved = draft.scenes.splice(index, 1)[0];
+                    draft.scenes.splice(index - 1, 0, moved);
+                    setDirty(true);
+                    renderList();
+                });
+
+                const downBtn = document.createElement('button');
+                downBtn.type = 'button';
+                downBtn.className = 'outline-move-btn';
+                downBtn.textContent = 'Down';
+                downBtn.disabled = index === draft.scenes.length - 1;
+                downBtn.addEventListener('click', () => {
+                    if (index >= draft.scenes.length - 1) return;
+                    const moved = draft.scenes.splice(index, 1)[0];
+                    draft.scenes.splice(index + 1, 0, moved);
+                    setDirty(true);
+                    renderList();
+                });
+
+                controls.appendChild(upBtn);
+                controls.appendChild(downBtn);
+
+                header.appendChild(title);
+                header.appendChild(controls);
+                card.appendChild(header);
+
+                const summary = document.createElement('div');
+                summary.className = 'outline-summary';
+                summary.textContent = getDisplaySummary(entry);
+                card.appendChild(summary);
+
+                summary.addEventListener('click', () => {
+                    if (summary.dataset.editing === '1') return;
+                    summary.dataset.editing = '1';
+                    summary.innerHTML = '';
+
+                    const textarea = document.createElement('textarea');
+                    textarea.className = 'outline-summary-input';
+                    textarea.rows = 2;
+                    textarea.value = stripMarkdown(entry.summary || '');
+
+                    const doneBtn = document.createElement('button');
+                    doneBtn.type = 'button';
+                    doneBtn.className = 'outline-summary-done';
+                    doneBtn.textContent = 'Done';
+
+                    const finishEdit = () => {
+                        entry.summary = textarea.value.trim();
+                        summary.dataset.editing = '';
+                        setDirty(true);
+                        renderList();
+                    };
+
+                    doneBtn.addEventListener('click', finishEdit);
+                    textarea.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            finishEdit();
+                        }
+                    });
+
+                    summary.appendChild(textarea);
+                    summary.appendChild(doneBtn);
+                    setTimeout(() => textarea.focus(), 0);
+                });
+
+                list.appendChild(card);
+            });
+        };
+
+        const buildDiffPayload = () => {
+            const before = (original?.scenes || []).map(scene => scene.sceneId).filter(Boolean);
+            const after = (draft?.scenes || []).map(scene => scene.sceneId).filter(Boolean);
+            const summaryChanges = [];
+            const beforeMap = new Map();
+            (original?.scenes || []).forEach(scene => {
+                if (scene && scene.sceneId) {
+                    beforeMap.set(scene.sceneId, scene.summary || '');
+                }
+            });
+            (draft?.scenes || []).forEach(scene => {
+                if (!scene || !scene.sceneId) return;
+                const prev = beforeMap.get(scene.sceneId) || '';
+                const next = scene.summary || '';
+                if (prev !== next) {
+                    summaryChanges.push({
+                        sceneId: scene.sceneId,
+                        before: summarizeForIssue(prev),
+                        after: summarizeForIssue(next),
+                        beforeLength: prev.length,
+                        afterLength: next.length
+                    });
+                }
+            });
+            return { before, after, summaryChanges };
+        };
+
+        const buildIssueBody = (diff) => {
+            const lines = [];
+            lines.push('Target: outline');
+            lines.push('Action: outline.update');
+            lines.push('');
+            lines.push(`Order before: ${diff.before.join(', ') || '(none)'}`);
+            lines.push(`Order after: ${diff.after.join(', ') || '(none)'}`);
+            if (diff.summaryChanges.length) {
+                lines.push('');
+                lines.push('Summary changes:');
+                diff.summaryChanges.forEach(change => {
+                    const entry = (draft?.scenes || []).find(scene => scene.sceneId === change.sceneId);
+                    const sceneTitle = entry && entry.title ? stripMarkdown(entry.title) : '';
+                    const title = sceneTitle ? ` (${sceneTitle})` : '';
+                    lines.push(`- ${change.sceneId}${title}: "${change.before}" -> "${change.after}"`);
+                });
+            }
+            lines.push('');
+            lines.push('Payload:');
+            lines.push(JSON.stringify({
+                target: 'outline',
+                action: 'outline.update',
+                payload: diff
+            }));
+            return lines.join('\n');
+        };
+
+        const loadOutline = async () => {
+            try {
+                const response = await outlineApi.get();
+                original = response.outline || {};
+                draft = cloneOutline(original);
+                const scenes = Array.isArray(original.scenes) ? original.scenes : [];
+                status.textContent = scenes.length ? '' : 'No scenes found for outline.';
+                setDirty(false);
+                renderList();
+            } catch (err) {
+                status.textContent = `Failed to load outline: ${err.message}`;
+            }
+        };
+
+        confirmBtn.addEventListener('click', async () => {
+            if (!draft) {
+                return;
+            }
+            const diff = buildDiffPayload();
+            if (!diff.summaryChanges.length && diff.before.join() === diff.after.join()) {
+                close();
+                return;
+            }
+            confirmBtn.disabled = true;
+            try {
+                await outlineApi.save(draft);
+                await issueApi.create({
+                    title: 'Outline updated',
+                    body: buildIssueBody(diff),
+                    openedBy: 'user',
+                    tags: ['outline', 'outline-update']
+                });
+                if (store) {
+                    store.success('Outline saved and issue created.', 'editor');
+                }
+                close();
+            } catch (err) {
+                if (store) {
+                    store.error(`Failed to save outline: ${err.message}`, 'editor');
+                }
+                confirmBtn.disabled = false;
+            }
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            close();
+        });
+
+        loadOutline();
+    }
+
     
     // Ensure a file is loaded into openFiles (loads from backend if needed)
     async function ensureFileLoaded(path) {

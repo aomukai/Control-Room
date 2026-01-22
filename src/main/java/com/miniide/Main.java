@@ -115,6 +115,7 @@ public class Main {
                 new CreditController(creditStore, objectMapper),
                 memoryController,
                 new PatchController(projectContext, notificationStore, creditStore, objectMapper),
+                new OutlineController(projectContext, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),
                 new TtsController(objectMapper),

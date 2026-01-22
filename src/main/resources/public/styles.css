@@ -278,6 +278,11 @@ html, body {
     background: var(--accent-color);
 }
 
+.tree-item-virtual .tree-name {
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
 .tree-icon {
     margin-right: 6px;
     font-size: 14px;
@@ -307,6 +312,116 @@ html, body {
 
 .tree-children.expanded {
     display: block;
+}
+
+.outline-modal {
+    width: min(900px, 90vw);
+    max-height: 85vh;
+    overflow: hidden;
+}
+
+.outline-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: calc(85vh - 120px);
+    overflow: hidden;
+}
+
+.outline-intro {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.outline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.outline-card {
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.outline-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.outline-card-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-bright);
+}
+
+.outline-card-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.outline-move-btn {
+    border: 1px solid var(--border-color);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.outline-move-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.outline-summary {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.4;
+    background: var(--bg-dark);
+    border: 1px dashed var(--border-color);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: pointer;
+}
+
+.outline-summary-input {
+    width: 100%;
+    min-height: 60px;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px;
+    font-size: 12px;
+    resize: vertical;
+    margin-bottom: 6px;
+}
+
+.outline-summary-done {
+    border: 1px solid var(--border-color);
+    background: var(--bg-light);
+    color: var(--text-primary);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.outline-status,
+.outline-empty {
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
 /* Main Container */

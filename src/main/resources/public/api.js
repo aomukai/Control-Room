@@ -113,6 +113,19 @@
         }
     };
 
+    const outlineApi = {
+        async get() {
+            return api('/api/outline');
+        },
+        async save(payload) {
+            return api('/api/outline', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        }
+    };
+
     // Credit API
     const creditApi = {
         async listProfiles() {
@@ -644,6 +657,7 @@
     // Expose all APIs on window for app.js to use
     window.api = api;
     window.issueApi = issueApi;
+    window.outlineApi = outlineApi;
     window.creditApi = creditApi;
     window.agentApi = agentApi;
     window.agentEndpointsApi = agentEndpointsApi;
