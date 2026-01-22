@@ -640,10 +640,21 @@
         modal.classList.add('outline-modal');
         confirmBtn.disabled = true;
 
+        // Header with intro text and scene count
+        const header = document.createElement('div');
+        header.className = 'outline-header';
+
         const intro = document.createElement('div');
         intro.className = 'outline-intro';
         intro.textContent = 'Reorder scenes and edit scene briefs. Changes apply only when accepted.';
-        body.appendChild(intro);
+
+        const sceneCount = document.createElement('div');
+        sceneCount.className = 'outline-scene-count';
+        sceneCount.textContent = 'Loading...';
+
+        header.appendChild(intro);
+        header.appendChild(sceneCount);
+        body.appendChild(header);
 
         const list = document.createElement('div');
         list.className = 'outline-list';
@@ -701,19 +712,35 @@
             return text;
         };
 
+        // Extract POV from title (e.g., "Scene Title — Seryn POV" -> { title: "Scene Title", pov: "Seryn" })
+        const extractPov = (title) => {
+            if (!title) return { title: '', pov: null };
+            // Match patterns like "— Name POV", "- Name POV", "– Name POV" (supports Unicode names)
+            const povMatch = title.match(/\s*[—–-]\s*(.+?)\s+POV\s*$/i);
+            if (povMatch) {
+                return {
+                    title: title.slice(0, povMatch.index).trim(),
+                    pov: povMatch[1].trim()
+                };
+            }
+            return { title: title.trim(), pov: null };
+        };
+
         const getDisplayTitle = (entry) => {
             const rawTitle = entry && entry.title ? String(entry.title) : '';
             const baseTitle = rawTitle.trim() ? stripMarkdown(rawTitle) : firstSentence(entry?.summary || '');
-            const fullTitle = baseTitle || 'Scene';
+            const fullTitle = baseTitle || 'Untitled Scene';
+            const { title: cleanTitle, pov } = extractPov(fullTitle);
             return {
                 fullTitle,
-                displayTitle: clampText(fullTitle, 140)
+                displayTitle: clampText(cleanTitle || 'Untitled Scene', 100),
+                pov
             };
         };
 
         const getDisplaySummary = (entry) => {
             const summary = stripMarkdown(entry?.summary || '');
-            return summary || 'Click to add scene brief';
+            return summary || '';
         };
 
         const summarizeForIssue = (value) => {
@@ -722,38 +749,134 @@
             return clampText(summary, 160);
         };
 
+        const updateSceneCount = () => {
+            const count = draft?.scenes?.length || 0;
+            sceneCount.textContent = count === 1 ? '1 scene' : `${count} scenes`;
+        };
+
+        // Change detection helpers
+        const getOriginalIndex = (sceneId) => {
+            if (!original?.scenes) return -1;
+            return original.scenes.findIndex(s => s.sceneId === sceneId);
+        };
+
+        const isSceneMoved = (sceneId, currentIndex) => {
+            const origIndex = getOriginalIndex(sceneId);
+            return origIndex !== -1 && origIndex !== currentIndex;
+        };
+
+        const isSceneEdited = (entry) => {
+            if (!original?.scenes) return false;
+            const origScene = original.scenes.find(s => s.sceneId === entry.sceneId);
+            if (!origScene) return false;
+            const origSummary = stripMarkdown(origScene.summary || '');
+            const currSummary = stripMarkdown(entry.summary || '');
+            return origSummary !== currSummary;
+        };
+
         const renderList = () => {
             list.innerHTML = '';
+            updateSceneCount();
+
             if (!draft || !Array.isArray(draft.scenes) || draft.scenes.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'outline-empty';
-                empty.textContent = 'No scenes available.';
+                empty.innerHTML = `
+                    <div class="outline-empty-icon">📖</div>
+                    <div class="outline-empty-text">No scenes in outline yet.</div>
+                `;
                 list.appendChild(empty);
                 return;
             }
 
             draft.scenes.forEach((entry, index) => {
-                const displayTitle = getDisplayTitle(entry);
+                const { displayTitle, fullTitle, pov } = getDisplayTitle(entry);
+                const summaryText = getDisplaySummary(entry);
+                const hasSummary = summaryText.length > 0;
+                const isLongSummary = summaryText.length > 200;
+
+                // Card container
                 const card = document.createElement('div');
                 card.className = 'outline-card';
 
-                const header = document.createElement('div');
-                header.className = 'outline-card-header';
+                // Scene number badge
+                const numberBadge = document.createElement('div');
+                numberBadge.className = 'outline-scene-number';
 
-                const title = document.createElement('div');
-                title.className = 'outline-card-title';
-                title.textContent = displayTitle.displayTitle;
-                title.title = displayTitle.fullTitle;
+                const numberText = document.createElement('span');
+                numberText.className = 'outline-number-text';
+                numberText.textContent = String(index + 1);
+                numberBadge.appendChild(numberText);
 
+                // Change indicators
+                const moved = isSceneMoved(entry.sceneId, index);
+                const edited = isSceneEdited(entry);
+
+                if (moved || edited) {
+                    const indicators = document.createElement('div');
+                    indicators.className = 'outline-change-indicators';
+
+                    if (moved) {
+                        const movedIcon = document.createElement('span');
+                        movedIcon.className = 'outline-indicator moved';
+                        movedIcon.innerHTML = '↕';
+                        movedIcon.title = 'Reordered';
+                        indicators.appendChild(movedIcon);
+                    }
+
+                    if (edited) {
+                        const editedIcon = document.createElement('span');
+                        editedIcon.className = 'outline-indicator edited';
+                        editedIcon.innerHTML = '✎';
+                        editedIcon.title = 'Edited';
+                        indicators.appendChild(editedIcon);
+                    }
+
+                    numberBadge.appendChild(indicators);
+                    card.classList.add('has-changes');
+                }
+
+                card.appendChild(numberBadge);
+
+                // Card content area
+                const content = document.createElement('div');
+                content.className = 'outline-card-content';
+
+                // Header row
+                const headerRow = document.createElement('div');
+                headerRow.className = 'outline-card-header';
+
+                // Title area (title + POV badge)
+                const titleArea = document.createElement('div');
+                titleArea.className = 'outline-card-title-area';
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'outline-card-title';
+                titleEl.textContent = displayTitle;
+                titleEl.title = fullTitle;
+                titleArea.appendChild(titleEl);
+
+                if (pov) {
+                    const povBadge = document.createElement('div');
+                    povBadge.className = 'outline-pov-badge';
+                    povBadge.textContent = `${pov} POV`;
+                    titleArea.appendChild(povBadge);
+                }
+
+                headerRow.appendChild(titleArea);
+
+                // Move controls
                 const controls = document.createElement('div');
                 controls.className = 'outline-card-controls';
 
                 const upBtn = document.createElement('button');
                 upBtn.type = 'button';
                 upBtn.className = 'outline-move-btn';
-                upBtn.textContent = 'Up';
+                upBtn.innerHTML = '&#9650;'; // ▲
+                upBtn.title = 'Move up';
                 upBtn.disabled = index === 0;
-                upBtn.addEventListener('click', () => {
+                upBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (index === 0) return;
                     const moved = draft.scenes.splice(index, 1)[0];
                     draft.scenes.splice(index - 1, 0, moved);
@@ -764,9 +887,11 @@
                 const downBtn = document.createElement('button');
                 downBtn.type = 'button';
                 downBtn.className = 'outline-move-btn';
-                downBtn.textContent = 'Down';
+                downBtn.innerHTML = '&#9660;'; // ▼
+                downBtn.title = 'Move down';
                 downBtn.disabled = index === draft.scenes.length - 1;
-                downBtn.addEventListener('click', () => {
+                downBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (index >= draft.scenes.length - 1) return;
                     const moved = draft.scenes.splice(index, 1)[0];
                     draft.scenes.splice(index + 1, 0, moved);
@@ -776,51 +901,121 @@
 
                 controls.appendChild(upBtn);
                 controls.appendChild(downBtn);
+                headerRow.appendChild(controls);
+                content.appendChild(headerRow);
 
-                header.appendChild(title);
-                header.appendChild(controls);
-                card.appendChild(header);
-
+                // Summary area
                 const summary = document.createElement('div');
                 summary.className = 'outline-summary';
-                summary.textContent = getDisplaySummary(entry);
-                card.appendChild(summary);
 
-                summary.addEventListener('click', () => {
-                    if (summary.dataset.editing === '1') return;
-                    summary.dataset.editing = '1';
+                const renderSummaryView = () => {
                     summary.innerHTML = '';
+                    summary.classList.remove('editing', 'expanded');
+
+                    if (!hasSummary) {
+                        const placeholder = document.createElement('span');
+                        placeholder.className = 'outline-summary-placeholder';
+                        placeholder.textContent = 'Click to add scene brief...';
+                        summary.appendChild(placeholder);
+                    } else {
+                        const textSpan = document.createElement('span');
+                        textSpan.className = 'outline-summary-text';
+                        textSpan.textContent = summaryText;
+                        summary.appendChild(textSpan);
+
+                        if (isLongSummary) {
+                            const toggle = document.createElement('span');
+                            toggle.className = 'outline-expand-toggle';
+                            toggle.textContent = 'show more';
+                            toggle.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                if (summary.classList.contains('expanded')) {
+                                    summary.classList.remove('expanded');
+                                    toggle.textContent = 'show more';
+                                } else {
+                                    summary.classList.add('expanded');
+                                    toggle.textContent = 'show less';
+                                }
+                            });
+                            summary.appendChild(toggle);
+                        }
+                    }
+                };
+
+                const enterEditMode = () => {
+                    summary.innerHTML = '';
+                    summary.classList.add('editing');
+                    summary.classList.remove('expanded');
 
                     const textarea = document.createElement('textarea');
                     textarea.className = 'outline-summary-input';
-                    textarea.rows = 2;
                     textarea.value = stripMarkdown(entry.summary || '');
+                    textarea.placeholder = 'Write a brief description of this scene...';
 
-                    const doneBtn = document.createElement('button');
-                    doneBtn.type = 'button';
-                    doneBtn.className = 'outline-summary-done';
-                    doneBtn.textContent = 'Done';
+                    const actions = document.createElement('div');
+                    actions.className = 'outline-edit-actions';
 
-                    const finishEdit = () => {
-                        entry.summary = textarea.value.trim();
-                        summary.dataset.editing = '';
-                        setDirty(true);
+                    const hint = document.createElement('div');
+                    hint.className = 'outline-keyboard-hint';
+                    hint.innerHTML = '<kbd>Ctrl</kbd>+<kbd>Enter</kbd> to save';
+
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.type = 'button';
+                    cancelBtn.className = 'outline-edit-btn';
+                    cancelBtn.textContent = 'Cancel';
+
+                    const saveBtn = document.createElement('button');
+                    saveBtn.type = 'button';
+                    saveBtn.className = 'outline-edit-btn primary';
+                    saveBtn.textContent = 'Save';
+
+                    const finishEdit = (save) => {
+                        if (save) {
+                            entry.summary = textarea.value.trim();
+                            setDirty(true);
+                        }
                         renderList();
                     };
 
-                    doneBtn.addEventListener('click', finishEdit);
+                    cancelBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        finishEdit(false);
+                    });
+
+                    saveBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        finishEdit(true);
+                    });
+
                     textarea.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                             e.preventDefault();
-                            finishEdit();
+                            finishEdit(true);
+                        }
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            finishEdit(false);
                         }
                     });
 
+                    actions.appendChild(hint);
+                    actions.appendChild(cancelBtn);
+                    actions.appendChild(saveBtn);
+
                     summary.appendChild(textarea);
-                    summary.appendChild(doneBtn);
+                    summary.appendChild(actions);
                     setTimeout(() => textarea.focus(), 0);
+                };
+
+                summary.addEventListener('click', (e) => {
+                    if (summary.classList.contains('editing')) return;
+                    if (e.target.classList.contains('outline-expand-toggle')) return;
+                    enterEditMode();
                 });
 
+                renderSummaryView();
+                content.appendChild(summary);
+                card.appendChild(content);
                 list.appendChild(card);
             });
         };

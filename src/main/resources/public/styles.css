@@ -314,114 +314,387 @@ html, body {
     display: block;
 }
 
-.outline-modal {
-    width: min(900px, 90vw);
-    max-height: 85vh;
+/* ==========================================================================
+   Outline Editor - Story structure at a glance
+   ========================================================================== */
+
+.modal.outline-modal {
+    width: min(900px, 94vw);
+    max-width: none;
+    max-height: 90vh;
     overflow: hidden;
+    padding: 24px;
 }
 
 .outline-modal .modal-body {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    max-height: calc(85vh - 120px);
+    gap: 16px;
+    max-height: calc(88vh - 130px);
     overflow: hidden;
+    padding: 4px 0;
+}
+
+/* Header area with scene count */
+.outline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
 }
 
 .outline-intro {
     font-size: 12px;
     color: var(--text-secondary);
+    line-height: 1.4;
 }
 
+.outline-scene-count {
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-lighter);
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
+
+/* Scene list container */
 .outline-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     overflow-y: auto;
-    padding-right: 4px;
+    padding-right: 6px;
+    padding-bottom: 8px;
 }
 
+.outline-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.outline-list::-webkit-scrollbar-thumb {
+    background: var(--bg-lighter);
+    border-radius: 3px;
+}
+
+/* Individual scene card */
 .outline-card {
-    background: var(--bg-medium);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px 12px;
+    display: flex;
+    flex-direction: row;
+    background: #252526;
+    border: 1px solid #454545;
+    border-radius: 10px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.outline-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: #3c3c3c;
+}
+
+/* Scene number badge - warm amber accent */
+.outline-scene-number {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 52px;
+    min-width: 52px;
+    padding: 8px 0;
+    background: linear-gradient(135deg, #4a3f2a 0%, #3d3425 100%);
+    border-right: 1px solid #454545;
+    border-radius: 10px 0 0 10px;
 }
 
+.outline-number-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: #d4a855;
+}
+
+/* Change indicators */
+.outline-change-indicators {
+    display: flex;
+    gap: 4px;
+}
+
+.outline-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    font-size: 10px;
+    line-height: 1;
+    cursor: default;
+}
+
+.outline-indicator.moved {
+    background: rgba(78, 154, 155, 0.25);
+    color: #4e9a9b;
+    border: 1px solid rgba(78, 154, 155, 0.4);
+}
+
+.outline-indicator.edited {
+    background: rgba(129, 162, 190, 0.25);
+    color: #81a2be;
+    border: 1px solid rgba(129, 162, 190, 0.4);
+}
+
+/* Subtle left border accent for changed cards */
+.outline-card.has-changes {
+    border-left: 2px solid transparent;
+    border-image: linear-gradient(to bottom, #4e9a9b, #81a2be) 1;
+}
+
+/* Card content area */
+.outline-card-content {
+    flex: 1;
+    padding: 14px 18px;
+    min-width: 0;
+}
+
+/* Card header with title and controls */
 .outline-card-header {
     display: flex;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
-    align-items: center;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.outline-card-title-area {
+    flex: 1;
+    min-width: 0;
 }
 
 .outline-card-title {
     font-weight: 600;
-    font-size: 13px;
-    color: var(--text-bright);
+    font-size: 14px;
+    color: #ffffff;
+    line-height: 1.4;
+    word-wrap: break-word;
+    margin-bottom: 5px;
 }
 
+/* POV badge */
+.outline-pov-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #7eb8da;
+    background: rgba(126, 184, 218, 0.12);
+    padding: 2px 8px;
+    border-radius: 10px;
+    width: fit-content;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Move controls */
 .outline-card-controls {
     display: flex;
-    gap: 6px;
+    flex-direction: column;
+    gap: 2px;
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+.outline-card:hover .outline-card-controls {
+    opacity: 1;
 }
 
 .outline-move-btn {
-    border: 1px solid var(--border-color);
-    background: var(--bg-light);
-    color: var(--text-primary);
-    font-size: 11px;
-    padding: 4px 8px;
-    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    border: 1px solid #454545;
+    background: #2d2d2d;
+    color: #cccccc;
+    font-size: 10px;
+    border-radius: 5px;
     cursor: pointer;
+    transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.outline-move-btn:hover:not(:disabled) {
+    background: var(--bg-lighter);
+    border-color: var(--text-secondary);
 }
 
 .outline-move-btn:disabled {
-    opacity: 0.5;
+    opacity: 0.3;
     cursor: not-allowed;
 }
 
+/* Summary/brief area */
 .outline-summary {
-    font-size: 12px;
-    color: var(--text-primary);
-    line-height: 1.4;
-    background: var(--bg-dark);
-    border: 1px dashed var(--border-color);
+    font-size: 13px;
+    color: #cccccc;
+    line-height: 1.55;
+    background: #1e1e1e;
+    border: 1px solid transparent;
     border-radius: 6px;
-    padding: 8px;
+    padding: 12px 14px;
     cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.outline-summary:hover {
+    border-color: #454545;
+    background: rgba(30, 30, 30, 0.8);
+}
+
+.outline-summary-placeholder {
+    color: #858585;
+    font-style: italic;
+}
+
+/* Collapsed summary with fade */
+.outline-summary-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.outline-summary.expanded .outline-summary-text {
+    display: block;
+    -webkit-line-clamp: unset;
+}
+
+/* Expand/collapse toggle */
+.outline-expand-toggle {
+    display: block;
+    color: #7eb8da;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 6px;
+    opacity: 0.85;
+}
+
+.outline-expand-toggle:hover {
+    text-decoration: underline;
+    opacity: 1;
+}
+
+/* Edit mode */
+.outline-summary.editing {
+    background: #1a1a1a;
+    border-color: #0e639c;
+    cursor: default;
+    padding: 12px 14px;
 }
 
 .outline-summary-input {
     width: 100%;
-    min-height: 60px;
-    background: var(--bg-dark);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 6px;
-    font-size: 12px;
+    min-height: 150px;
+    background: transparent;
+    color: #cccccc;
+    border: none;
+    font-size: 13px;
+    line-height: 1.6;
     resize: vertical;
-    margin-bottom: 6px;
+    font-family: inherit;
 }
 
-.outline-summary-done {
+.outline-summary-input:focus {
+    outline: none;
+}
+
+.outline-edit-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+}
+
+.outline-edit-actions > .outline-keyboard-hint {
+    flex: 1;
+}
+
+.outline-edit-actions > .outline-edit-btn:first-of-type {
+    margin-left: auto;
+}
+
+.outline-edit-btn {
     border: 1px solid var(--border-color);
     background: var(--bg-light);
     color: var(--text-primary);
     font-size: 11px;
-    padding: 4px 8px;
-    border-radius: 6px;
+    padding: 5px 12px;
+    border-radius: 5px;
     cursor: pointer;
+    transition: background 0.1s ease;
 }
 
-.outline-status,
-.outline-empty {
-    font-size: 12px;
+.outline-edit-btn:hover {
+    background: var(--bg-lighter);
+}
+
+.outline-edit-btn.primary {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+.outline-edit-btn.primary:hover {
+    background: var(--accent-hover);
+}
+
+/* Status and empty states */
+.outline-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    font-size: 13px;
     color: var(--text-secondary);
+}
+
+.outline-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.outline-empty-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.outline-empty-text {
+    font-size: 13px;
+}
+
+/* Keyboard hint */
+.outline-keyboard-hint {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.outline-keyboard-hint kbd {
+    background: var(--bg-lighter);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 10px;
 }
 
 /* Main Container */
