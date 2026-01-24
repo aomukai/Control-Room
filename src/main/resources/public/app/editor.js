@@ -1239,14 +1239,6 @@
             item.classList.toggle('selected', item.dataset.path === tabData.path);
         });
     
-        // Update Reveal File, Open Folder, and Find button states
-        const prepared = state.workspace && state.workspace.prepared;
-        elements.btnRevealFile.disabled = prepared || !tabData.path;
-        elements.btnOpenFolder.disabled = prepared || !tabData.path;
-        elements.btnFind.disabled = !tabData.path;
-        if (elements.btnViewHistory) {
-            elements.btnViewHistory.disabled = !tabData.path;
-        }
         persistEditorState();
     }
     
@@ -1341,12 +1333,6 @@
                 state.activeTabId = null;
                 elements.editorPlaceholder.classList.remove('hidden');
                 elements.monacoEditor.classList.remove('active');
-                elements.btnRevealFile.disabled = true;
-                elements.btnOpenFolder.disabled = true;
-                elements.btnFind.disabled = true;
-                if (elements.btnViewHistory) {
-                    elements.btnViewHistory.disabled = true;
-                }
             }
         }
     

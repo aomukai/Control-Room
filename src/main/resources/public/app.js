@@ -2804,12 +2804,6 @@ async function showWorkspaceSwitcher() {
             }
         });
 
-        if (elements.notificationBell) {
-            elements.notificationBell.addEventListener('click', () => {
-                toggleNotificationCenter();
-            });
-        }
-
         if (elements.notificationMarkRead) {
             elements.notificationMarkRead.addEventListener('click', () => {
                 notificationStore.markAllRead();
@@ -3368,19 +3362,19 @@ async function showWorkspaceSwitcher() {
         // Editor-only sidebar buttons - hidden when NO_PROJECT
         const btnExplorerStory = document.getElementById('btn-explorer-story');
         const btnExplorerCompendium = document.getElementById('btn-explorer-compendium');
-        const btnOpenWorkspace = document.getElementById('btn-open-workspace');
         const btnSidebarSearch = document.getElementById('btn-sidebar-search');
         const btnCommit = document.getElementById('btn-commit');
-        const btnOpenTerminal = document.getElementById('btn-open-terminal');
+        const btnSidebarFileHistory = document.getElementById('btn-sidebar-file-history');
+        const btnSidebarNewIssue = document.getElementById('btn-sidebar-new-issue');
 
         const showEditorButtons = isEditor && !noProject;
         const showPreparedExplorer = showEditorButtons && state.workspace.prepStage !== 'none';
         if (btnExplorerStory) btnExplorerStory.style.display = showPreparedExplorer ? 'flex' : 'none';
         if (btnExplorerCompendium) btnExplorerCompendium.style.display = showPreparedExplorer ? 'flex' : 'none';
-        if (btnOpenWorkspace) btnOpenWorkspace.style.display = showEditorButtons ? 'flex' : 'none';
         if (btnSidebarSearch) btnSidebarSearch.style.display = showEditorButtons ? 'flex' : 'none';
         if (btnCommit) btnCommit.style.display = showEditorButtons ? 'flex' : 'none';
-        if (btnOpenTerminal) btnOpenTerminal.style.display = showEditorButtons ? 'flex' : 'none';
+        if (btnSidebarFileHistory) btnSidebarFileHistory.style.display = showEditorButtons ? 'flex' : 'none';
+        if (btnSidebarNewIssue) btnSidebarNewIssue.style.display = showEditorButtons ? 'flex' : 'none';
 
         // Workbench-only sidebar buttons - hidden when NO_PROJECT
         const btnSidebarIssues = document.getElementById('btn-sidebar-issues');
@@ -6715,20 +6709,6 @@ async function showWorkspaceSwitcher() {
             });
         }
 
-        document.getElementById('btn-open-workspace').addEventListener('click', async () => {
-            log('Opening Project folder...', 'info');
-            try {
-                const result = await api('/api/workspace/open', { method: 'POST' });
-                if (result.ok) {
-                    log('Project folder opened', 'success');
-                } else {
-                    log(`Failed to open Project folder: ${result.error}`, 'error');
-                }
-            } catch (err) {
-                log(`Failed to open Project folder: ${err.message}`, 'error');
-            }
-        });
-
         if (elements.btnSidebarSearch) {
             elements.btnSidebarSearch.addEventListener('click', () => {
                 openWorkspaceSearch();
@@ -6740,73 +6720,15 @@ async function showWorkspaceSwitcher() {
             saveAllFiles();
         });
 
-        document.getElementById('btn-open-terminal').addEventListener('click', async () => {
-            log('Opening terminal at Project...', 'info');
-            try {
-                const result = await api('/api/workspace/terminal', { method: 'POST' });
-                if (result.ok) {
-                    log(`Terminal opened (${result.terminal || 'terminal'})`, 'success');
-                } else {
-                    log(`Failed to open terminal: ${result.error}`, 'error');
-                }
-            } catch (err) {
-                log(`Failed to open terminal: ${err.message}`, 'error');
-            }
-        });
-
         if (elements.btnOpenSettings) {
             elements.btnOpenSettings.addEventListener('click', () => {
                 setViewMode('settings');
             });
         }
 
-        elements.btnRevealFile.addEventListener('click', async () => {
-            if (!state.activeFile) return;
-            log(`Revealing file: ${state.activeFile}`, 'info');
-            try {
-                const result = await api('/api/file/reveal', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: state.activeFile })
-                });
-                if (result.ok) {
-                    if (result.fallback === 'open-folder') {
-                        log('Reveal failed; opened containing folder instead', 'warning');
-                    } else {
-                        log('File revealed in explorer', 'success');
-                    }
-                } else {
-                    log(`Failed to reveal file: ${result.error}`, 'error');
-                }
-            } catch (err) {
-                log(`Failed to reveal file: ${err.message}`, 'error');
-            }
-        });
-
-        elements.btnOpenFolder.addEventListener('click', async () => {
-            if (!state.activeFile) {
-                log('No active file to open containing folder', 'warning');
-                return;
-            }
-            log(`Opening containing folder for: ${state.activeFile}`, 'info');
-            try {
-                const result = await api('/api/file/open-folder', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: state.activeFile })
-                });
-                if (result.ok) {
-                    log('Containing folder opened', 'success');
-                } else {
-                    log(`Failed to open containing folder: ${result.error}`, 'error');
-                }
-            } catch (err) {
-                log(`Failed to open containing folder: ${err.message}`, 'error');
-            }
-        });
-
-        if (elements.btnViewHistory) {
-            elements.btnViewHistory.addEventListener('click', () => {
+        // Sidebar File History button
+        if (elements.btnSidebarFileHistory) {
+            elements.btnSidebarFileHistory.addEventListener('click', () => {
                 if (!state.activeFile) {
                     log('No active file to view history', 'warning');
                     return;
@@ -6817,20 +6739,12 @@ async function showWorkspaceSwitcher() {
             });
         }
 
-        // Find button - triggers Monaco find widget
-        elements.btnFind.addEventListener('click', () => {
-            if (state.editor && state.activeFile) {
-                state.editor.trigger('keyboard', 'actions.find');
-                log('Find in file (Ctrl+F)', 'info');
-            } else {
-                log('No file open to search', 'warning');
-            }
-        });
-
-        // Search button - opens Project search
-        elements.btnSearch.addEventListener('click', () => {
-            openWorkspaceSearch();
-        });
+        // Sidebar New Issue button
+        if (elements.btnSidebarNewIssue) {
+            elements.btnSidebarNewIssue.addEventListener('click', () => {
+                showIssueCreateModal();
+            });
+        }
 
         document.getElementById('btn-new-file').addEventListener('click', () => promptNewFile('file'));
         document.getElementById('btn-new-folder').addEventListener('click', () => promptNewFile('folder'));
@@ -6891,12 +6805,6 @@ async function showWorkspaceSwitcher() {
                 performSearch(elements.searchInput.value);
             }
         });
-
-        if (elements.btnCreateIssue) {
-            elements.btnCreateIssue.addEventListener('click', () => {
-                showIssueCreateModal();
-            });
-        }
 
         // Chat
         elements.chatSend.addEventListener('click', sendChatMessage);

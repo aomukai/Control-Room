@@ -40,12 +40,6 @@
                     </span>
                     <span class="btn-text">Compendium</span>
                 </button>
-                <button class="sidebar-btn" id="btn-open-workspace" title="Open File System" aria-label="Open File System">
-                    <span class="btn-icon">
-                        <img src="assets/icons/heroicons_outline/folder-open.svg" alt="">
-                    </span>
-                    <span class="btn-text">File System</span>
-                </button>
                 <button class="sidebar-btn" id="btn-sidebar-search" title="Search in Project" aria-label="Search in Project">
                     <span class="btn-icon">
                         <img src="assets/icons/heroicons_outline/magnifying-glass.svg" alt="">
@@ -58,11 +52,17 @@
                     </span>
                     <span class="btn-text">History</span>
                 </button>
-                <button class="sidebar-btn" id="btn-open-terminal" title="Open Terminal Here" aria-label="Open Terminal Here">
+                <button class="sidebar-btn" id="btn-sidebar-file-history" title="View File History" aria-label="View File History">
                     <span class="btn-icon">
-                        <img src="assets/icons/heroicons_outline/command-line.svg" alt="">
+                        <img src="assets/icons/heroicons_outline/arrow-path.svg" alt="">
                     </span>
-                    <span class="btn-text">Terminal</span>
+                    <span class="btn-text">File History</span>
+                </button>
+                <button class="sidebar-btn" id="btn-sidebar-new-issue" title="Create New Issue" aria-label="Create New Issue">
+                    <span class="btn-icon">
+                        <img src="assets/icons/heroicons_outline/plus-circle.svg" alt="">
+                    </span>
+                    <span class="btn-text">New Issue</span>
                 </button>
                 <!-- Workbench-only buttons -->
                 <button class="sidebar-btn" id="btn-sidebar-issues" title="Issues" aria-label="Issues">
@@ -215,35 +215,7 @@
                     <div id="center-area">
                     <!-- Top Tab Strip -->
                     <div id="tab-strip">
-                        <div class="tab-strip-label">file Navigation (open files tabs)</div>
-                        <div class="project-context-badge" id="project-context-editor"></div>
                         <div id="tabs-container"></div>
-                        <div class="tab-strip-actions">
-                            <button class="tab-action-btn" id="btn-find" title="Find in File (Ctrl+F)" disabled aria-label="Find in File (Ctrl+F)">
-                                <span class="btn-icon">🔍</span>
-                                <span class="btn-text">Find</span>
-                            </button>
-                            <button class="tab-action-btn" id="btn-search" title="Search in Project (Ctrl+Shift+F)" aria-label="Search in Project (Ctrl+Shift+F)">
-                                <span class="btn-icon">🔎</span>
-                                <span class="btn-text">Search</span>
-                            </button>
-                            <button class="tab-action-btn" id="btn-create-issue" title="Create Issue" aria-label="Create Issue">
-                                <span class="btn-icon">+</span>
-                                <span class="btn-text">New Issue</span>
-                            </button>
-                            <button class="tab-action-btn" id="btn-view-history" title="View History" aria-label="View History" disabled>
-                                <span class="btn-icon">H</span>
-                                <span class="btn-text">History</span>
-                            </button>
-                            <button class="tab-action-btn" id="btn-reveal-file" title="Reveal File in Explorer" disabled>
-                                <span class="btn-icon">📍</span>
-                                <span class="btn-text">Reveal File</span>
-                            </button>
-                            <button class="tab-action-btn" id="btn-open-folder" title="Open Containing Folder" disabled>
-                                <span class="btn-icon">📂</span>
-                                <span class="btn-text">Open Folder</span>
-                            </button>
-                        </div>
                     </div>
 
                     <!-- Vertical Split: Editor and Console -->
@@ -301,22 +273,12 @@
                     </div>
 
                     <!-- Status Bar -->
-                    <div id="status-bar">
-                        <div id="status-left">
-                            <span id="status-text">Ready</span>
-                            <button id="status-alert" class="hidden" type="button"></button>
-                        </div>
-                        <div id="status-right">
-                            <button id="notification-bell" type="button" title="Notifications">Bell</button>
-                            <span id="notification-count" class="hidden">0</span>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Right Chat Panel -->
                 <div id="chat-panel">
                     <div class="chat-header">
-                        <span class="chat-title">Chat with AI</span>
+                        <div class="project-context-badge" id="project-context-editor"></div>
                         <div class="chat-header-actions">
                             <select id="agent-select" title="Agent" aria-label="Agent">
                                 <option value="">Loading agents...</option>
