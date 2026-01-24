@@ -114,6 +114,7 @@ public class Main {
                 new IssueController(issueService, projectContext, creditStore, notificationStore, objectMapper),
                 new CreditController(creditStore, objectMapper),
                 memoryController,
+                new TieringController(projectContext, objectMapper),
                 new PatchController(projectContext, issueService, notificationStore, creditStore, objectMapper),
                 new OutlineController(projectContext, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),

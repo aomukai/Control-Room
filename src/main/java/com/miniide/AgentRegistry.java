@@ -570,6 +570,65 @@ public class AgentRegistry {
         return updated;
     }
 
+    public com.miniide.models.AgentModelRecord getModelRecord(String agentId, String modelId) {
+        Agent agent = getAgent(agentId);
+        if (agent == null || modelId == null || modelId.isBlank()) {
+            return null;
+        }
+        List<com.miniide.models.AgentModelRecord> records = agent.getModelRecords();
+        if (records == null) {
+            return null;
+        }
+        String normalized = modelId.trim();
+        for (com.miniide.models.AgentModelRecord record : records) {
+            if (record != null && normalized.equals(record.getModelId())) {
+                return record;
+            }
+        }
+        return null;
+    }
+
+    public com.miniide.models.AgentModelRecord getOrCreateModelRecord(String agentId, String modelId) {
+        Agent agent = getAgent(agentId);
+        if (agent == null || modelId == null || modelId.isBlank()) {
+            return null;
+        }
+        String normalized = modelId.trim();
+        com.miniide.models.AgentModelRecord existing = getModelRecord(agentId, normalized);
+        if (existing != null) {
+            return existing;
+        }
+        List<com.miniide.models.AgentModelRecord> records = agent.getModelRecords();
+        if (records == null) {
+            records = new ArrayList<>();
+            agent.setModelRecords(records);
+        }
+        com.miniide.models.AgentModelRecord record = new com.miniide.models.AgentModelRecord();
+        record.setModelId(normalized);
+        record.setRole(agent.getRole());
+        long now = System.currentTimeMillis();
+        record.setActivatedAt(now);
+        record.setActive(false);
+        if (agent.getActiveModelId() == null || agent.getActiveModelId().isBlank()) {
+            agent.setActiveModelId(normalized);
+            record.setActive(true);
+        } else if (normalized.equals(agent.getActiveModelId())) {
+            record.setActive(true);
+        }
+        record.setCapabilityProfile(new com.miniide.models.AgentCapabilityProfile());
+        record.setPerformance(new com.miniide.models.AgentPerformanceStats());
+        records.add(record);
+        return record;
+    }
+
+    public boolean saveAgent(Agent agent) {
+        if (agent == null) {
+            return false;
+        }
+        agent.setUpdatedAt(System.currentTimeMillis());
+        return saveToDisk();
+    }
+
     private boolean syncModelRecord(Agent agent, String modelId) {
         if (agent == null || modelId == null || modelId.isBlank()) {
             return false;
