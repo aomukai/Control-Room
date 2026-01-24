@@ -23,10 +23,6 @@ hs_err_pid*.log
 
 nul
 
-# Design Documents
-# Everything in docs/ is private and must not be uploaded to GitHub. It's critical infrastructure; keep local.
-docs/
-
 # Local agent registry data
 workspace/**/.control-room/agents/*.json
 
@@ -42,7 +38,3 @@ workspace/
 
 # log files
 *.log
-
-# === PRIVATE DEV PHASE (INTENTIONAL) ===
-# docs/ is *not* documentation right now. It contains private, operational project infrastructure.
-# Nothing in docs/ may be pushed to GitHub.

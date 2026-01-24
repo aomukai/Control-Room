@@ -35,17 +35,41 @@ Requirements:
 
 - Java 17+ JDK
 - Gradle (or use the included Gradle wrapper)
+- Linux: `bash`, `curl` or `wget`, and `python` (for optional Piper TTS)
 
 Run:
 
 ```bash
 git clone <repository-url>
 cd control-room
-./gradlew run        # Linux / macOS
-gradlew.bat run      # Windows
+./run.sh             # Linux / macOS
+gradlew.bat run      # Windows (CLI)
 ```
 
 On Windows you can also double-click `run.bat`.
+
+### Linux Quick Start (first time)
+
+Install dependencies (examples):
+
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install -y openjdk-17-jdk curl python3
+
+# Fedora
+sudo dnf install -y java-17-openjdk curl python3
+
+# Arch
+sudo pacman -S jdk17-openjdk curl python
+```
+
+Then:
+
+```bash
+chmod +x run.sh scripts/start-piper.sh
+./run.sh
+```
 
 ## Workspace And Data Locations
 
@@ -136,6 +160,16 @@ Issues:
 - PUT `/api/issues/{id}`
 - DELETE `/api/issues/{id}`
 - POST `/api/issues/{id}/comments`
+- POST `/api/issues/{id}/patches`
+
+Issue Memory (interest levels):
+
+- GET `/api/issue-memory/agents/{agentId}`
+- GET `/api/issue-memory/agents/{agentId}/issues/{issueId}`
+- POST `/api/issue-memory/agents/{agentId}/issues/{issueId}/access`
+- POST `/api/issue-memory/agents/{agentId}/issues/{issueId}/applied`
+- POST `/api/issue-memory/agents/{agentId}/issues/{issueId}/irrelevant`
+- POST `/api/issue-memory/decay`
 
 Agents:
 
@@ -220,3 +254,25 @@ Control Room uses:
 - [Heroicons](https://heroicons.com/) by Tailwind Labs
 - [Lucide](https://lucide.dev/) by Lucide Contributors
 - [Piper](https://github.com/rhasspy/piper)
+Patches:
+
+- GET `/api/patches`
+- GET `/api/patches/{id}`
+- POST `/api/patches`
+- POST `/api/patches/ai`
+- POST `/api/patches/{id}/apply`
+- POST `/api/patches/{id}/reject`
+- DELETE `/api/patches/{id}`
+- POST `/api/patches/cleanup`
+- POST `/api/patches/simulate`
+- GET `/api/patches/{id}/audit`
+- GET `/api/patches/audit/export`
+
+Tiering:
+
+- GET `/api/tiers/policy`
+- PUT `/api/tiers/policy`
+- GET `/api/tiers/agents`
+- GET `/api/tiers/agents/{id}`
+- GET `/api/tiers/agents/{id}/caps`
+- POST `/api/tiers/agents/{id}/task-result`
