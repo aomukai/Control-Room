@@ -4,6 +4,85 @@
 
     let issueActivityAgentId = null;
     const renderSimpleMarkdown = window.renderSimpleMarkdown;
+
+    // Status options for issues
+    const ISSUE_STATUS_OPTIONS = [
+        { value: 'open', label: 'Open' },
+        { value: 'waiting', label: 'Waiting' },
+        { value: 'closed', label: 'Closed' }
+    ];
+
+    // Helper to resolve agent from label (accessed lazily to ensure window.resolveAgentIdFromLabel is available)
+    function getAgentFromLabel(agentLabel) {
+        if (!agentLabel) return null;
+        const resolver = window.resolveAgentIdFromLabel;
+        const agentId = typeof resolver === 'function' ? resolver(agentLabel) : null;
+        const agents = (state && state.agents && state.agents.list) || [];
+        return agentId ? agents.find(a => a.id === agentId) : null;
+    }
+
+    // Render agent avatar HTML (reusable for author/assignee/comments)
+    function renderAgentAvatarHtml(agentLabel, size = 'small') {
+        const avatarClass = size === 'small' ? 'issue-agent-avatar' : 'comment-avatar';
+        const emojiClass = size === 'small' ? 'issue-agent-avatar-emoji' : 'comment-avatar-emoji';
+        const initialsClass = size === 'small' ? 'issue-agent-avatar-initials' : 'comment-avatar-initials';
+
+        if (!agentLabel) {
+            return `<div class="${avatarClass}"><span class="${initialsClass}">?</span></div>`;
+        }
+
+        const agent = getAgentFromLabel(agentLabel);
+
+        if (agent) {
+            if (agent.avatar && agent.avatar.startsWith('data:image')) {
+                return `<div class="${avatarClass}"><img src="${agent.avatar}" alt="${escapeHtml(agent.name || agentLabel)}"></div>`;
+            } else if (agent.emoji) {
+                return `<div class="${avatarClass}"><span class="${emojiClass}">${agent.emoji}</span></div>`;
+            }
+        }
+
+        // Fallback to initials
+        const name = agent ? (agent.name || agentLabel) : agentLabel;
+        const initials = String(name).substring(0, 2).toUpperCase();
+        return `<div class="${avatarClass}"><span class="${initialsClass}">${escapeHtml(initials)}</span></div>`;
+    }
+
+    // Render agent chip (avatar + name) for header
+    function renderAgentChipHtml(agentLabel) {
+        if (!agentLabel) return '';
+
+        const agent = getAgentFromLabel(agentLabel);
+        const displayName = agent ? (agent.name || agentLabel) : agentLabel;
+
+        return `
+            <div class="issue-agent-chip">
+                ${renderAgentAvatarHtml(agentLabel, 'small')}
+                <span class="issue-agent-name">${escapeHtml(displayName)}</span>
+            </div>
+        `;
+    }
+
+    // Build assignee dropdown options
+    function buildAssigneeOptions(currentAssignee) {
+        const agents = (state && state.agents && state.agents.list) || [];
+        const enabledAgents = agents.filter(a => a.enabled !== false);
+
+        let html = '<option value="">Unassigned</option>';
+        enabledAgents.forEach(agent => {
+            const selected = (currentAssignee && (agent.id === currentAssignee || agent.name === currentAssignee)) ? ' selected' : '';
+            html += `<option value="${escapeHtml(agent.id)}"${selected}>${escapeHtml(agent.name || agent.id)}</option>`;
+        });
+        return html;
+    }
+
+    // Build status dropdown options
+    function buildStatusOptions(currentStatus) {
+        return ISSUE_STATUS_OPTIONS.map(opt => {
+            const selected = opt.value === currentStatus ? ' selected' : '';
+            return `<option value="${opt.value}"${selected}>${opt.label}</option>`;
+        }).join('');
+    }
+
     const ROADMAP_STATUS_MAP = {
         idea: 'Idea',
         plan: 'Plan',
@@ -535,8 +614,9 @@
                 setAgentActivityState(issueActivityAgentId, 'idle');
                 issueActivityAgentId = null;
             }
-            const assignedId = resolveAgentIdFromLabel(issue.assignedTo);
-            const openedId = resolveAgentIdFromLabel(issue.openedBy);
+            const resolver = window.resolveAgentIdFromLabel;
+            const assignedId = typeof resolver === 'function' ? resolver(issue.assignedTo) : null;
+            const openedId = typeof resolver === 'function' ? resolver(issue.openedBy) : null;
             issueActivityAgentId = assignedId || openedId;
             if (issueActivityAgentId) {
                 setAgentActivityState(issueActivityAgentId, 'reading', `Reviewing Issue #${issue.id}`);
@@ -630,8 +710,9 @@
             const issue = state.issueModal.issue;
             const statusLabel = issue.status.replace(/-/g, ' ');
             const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
-            const roadmapLabel = roadmapStatus || 'None';
             const roadmapOptions = buildRoadmapStatusOptions(roadmapStatus);
+            const statusOptions = buildStatusOptions(issue.status);
+            const assigneeOptions = buildAssigneeOptions(issue.assignedTo);
 
             // Build tags HTML
             const tagsHtml = otherTags.length > 0
@@ -640,7 +721,7 @@
 
             const patchIds = extractPatchIds(issue.comments || []);
 
-            // Build comments HTML
+            // Build comments HTML with avatars
             let commentsHtml = '';
             if (issue.comments && issue.comments.length > 0) {
                 commentsHtml = issue.comments.map(comment => {
@@ -655,12 +736,15 @@
                     }
                     return `
                         <div class="issue-comment">
-                            <div class="comment-header">
-                                <span class="comment-author">${escapeHtml(comment.author || 'Unknown')}</span>
-                                <span class="comment-timestamp">${formatRelativeTime(comment.timestamp)}</span>
-                                ${actionBadge}
+                            ${renderAgentAvatarHtml(comment.author, 'medium')}
+                            <div class="comment-content">
+                                <div class="comment-header">
+                                    <span class="comment-author">${escapeHtml(comment.author || 'Unknown')}</span>
+                                    <span class="comment-timestamp">${formatRelativeTime(comment.timestamp)}</span>
+                                    ${actionBadge}
+                                </div>
+                                <div class="comment-body issue-markdown">${formatIssueBody(comment.body || '')}</div>
                             </div>
-                            <div class="comment-body issue-markdown">${formatIssueBody(comment.body || '')}</div>
                         </div>
                     `;
                 }).join('');
@@ -678,66 +762,60 @@
                         `).join('')}
                     </div>
                 `
-                : '<div class="issue-no-patches">No patches linked</div>';
+                : '';
+
+            // Status action button
+            const isOpen = issue.status === 'open';
+            const isClosed = issue.status === 'closed';
+            const statusActionBtn = isClosed
+                ? `<button type="button" class="issue-action-btn issue-action-success issue-reopen-btn">Reopen Issue</button>`
+                : `<button type="button" class="issue-action-btn issue-action-danger issue-close-btn">${isOpen ? 'Close Issue' : 'Close Issue'}</button>`;
 
             modal.innerHTML = `
                 <div class="issue-modal-header">
                     <div class="issue-modal-title-row">
-                        <h2 id="issue-modal-title" class="issue-modal-title">Issue #${issue.id}: ${escapeHtml(issue.title)}</h2>
+                        <h2 id="issue-modal-title" class="issue-modal-title">#${issue.id}: ${escapeHtml(issue.title)}</h2>
                         <span class="issue-status-pill ${getStatusClass(issue.status)}">${escapeHtml(statusLabel)}</span>
                     </div>
                     <div class="issue-modal-meta-row">
                         <span class="issue-meta-item">
-                            <span class="issue-meta-label">Author:</span>
-                            <span class="issue-meta-value">${escapeHtml(issue.openedBy || 'Unknown')}</span>
+                            <span class="issue-meta-label">Opened by</span>
+                            ${renderAgentChipHtml(issue.openedBy || 'Unknown')}
                         </span>
-                        ${issue.assignedTo ? `
-                            <span class="issue-meta-item">
-                                <span class="issue-meta-label">Assignee:</span>
-                                <span class="issue-meta-value">${escapeHtml(issue.assignedTo)}</span>
-                            </span>
-                        ` : ''}
+                        <span class="issue-meta-item">
+                            <span class="issue-meta-label">Assigned to</span>
+                            ${issue.assignedTo ? renderAgentChipHtml(issue.assignedTo) : '<span class="issue-meta-value" style="color: var(--text-secondary)">Unassigned</span>'}
+                        </span>
                     </div>
                     <button type="button" class="issue-modal-close" aria-label="Close">&times;</button>
                 </div>
 
                 <div class="issue-modal-body">
-                      <div class="issue-meta-section">
-                          <div class="issue-meta-group">
-                              <span class="issue-meta-label">Tags:</span>
-                              <div class="issue-tags-container">${tagsHtml}</div>
-                          </div>
-                          <div class="issue-meta-group">
-                              <span class="issue-meta-label">Roadmap:</span>
-                              <span class="issue-roadmap-pill ${roadmapStatus ? 'is-set' : 'is-empty'}">${escapeHtml(roadmapLabel)}</span>
-                          </div>
-                          <div class="issue-meta-group issue-roadmap-controls">
-                              <span class="issue-meta-label">Update:</span>
-                              <div class="issue-roadmap-actions">
-                                  <select class="modal-select issue-roadmap-select">
-                                      ${roadmapOptions}
-                                  </select>
-                                  <button type="button" class="modal-btn modal-btn-secondary issue-roadmap-apply">Apply</button>
-                              </div>
-                          </div>
-                          <div class="issue-meta-group">
-                              <span class="issue-meta-label">Priority:</span>
-                              <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
-                          </div>
+                    <div class="issue-meta-section">
                         <div class="issue-meta-group">
-                            <span class="issue-meta-label">Created:</span>
+                            <span class="issue-meta-label">Status</span>
+                            <select class="modal-select issue-status-select">${statusOptions}</select>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Assignee</span>
+                            <select class="modal-select issue-assignee-select">${assigneeOptions}</select>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Roadmap</span>
+                            <select class="modal-select issue-roadmap-select">${roadmapOptions}</select>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Priority</span>
+                            <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Tags</span>
+                            <div class="issue-tags-container">${tagsHtml}</div>
+                        </div>
+                        <div class="issue-meta-group">
+                            <span class="issue-meta-label">Created</span>
                             <span class="issue-meta-value">${formatTimestamp(issue.createdAt)}</span>
                         </div>
-                        <div class="issue-meta-group">
-                            <span class="issue-meta-label">Updated:</span>
-                            <span class="issue-meta-value">${formatTimestamp(issue.updatedAt)}</span>
-                        </div>
-                        ${issue.closedAt ? `
-                            <div class="issue-meta-group">
-                                <span class="issue-meta-label">Closed:</span>
-                                <span class="issue-meta-value">${formatTimestamp(issue.closedAt)}</span>
-                            </div>
-                        ` : ''}
                     </div>
 
                     <div class="issue-body-section">
@@ -745,24 +823,34 @@
                         <div class="issue-body-content issue-markdown">${formatIssueBody(issue.body || '', 'No description provided.')}</div>
                     </div>
 
-                    <div class="issue-comments-section">
-                        <h3 class="issue-section-title">Comments (${issue.comments ? issue.comments.length : 0})</h3>
-                        <div class="issue-comments-list">${commentsHtml}</div>
-                    </div>
+                    ${patchIds.length ? `
+                        <div class="issue-patches-section">
+                            <h3 class="issue-section-title">Patches</h3>
+                            ${patchesHtml}
+                        </div>
+                    ` : ''}
 
-                    <div class="issue-patches-section">
-                        <h3 class="issue-section-title">Patches</h3>
-                        ${patchesHtml}
+                    <div class="issue-comments-section">
+                        <h3 class="issue-section-title">Discussion (${issue.comments ? issue.comments.length : 0})</h3>
+                        <div class="issue-comments-list">${commentsHtml}</div>
                     </div>
                 </div>
 
                 <div class="issue-modal-footer">
-                    <div class="issue-modal-actions-placeholder">
-                        <!-- Future actions: Add Comment, Close Issue, etc. -->
-                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Add Comment</button>
-                        <button type="button" class="issue-action-btn issue-action-disabled" disabled title="Coming soon">Close Issue</button>
+                    <div class="issue-comment-form">
+                        <div class="issue-comment-input-wrapper">
+                            <textarea class="issue-comment-input" placeholder="Add a comment..." rows="2"></textarea>
+                        </div>
+                        <button type="button" class="issue-action-btn issue-action-primary issue-submit-comment-btn">Comment</button>
                     </div>
-                    <button type="button" class="issue-modal-btn-close">Close</button>
+                    <div class="issue-footer-actions">
+                        <div class="issue-footer-left">
+                            ${statusActionBtn}
+                        </div>
+                        <div class="issue-footer-right">
+                            <button type="button" class="issue-modal-btn-close">Close</button>
+                        </div>
+                    </div>
                 </div>
             `;
         }
@@ -781,6 +869,7 @@
             footerCloseBtn.addEventListener('click', closeIssueModal);
         }
 
+        // Patch review buttons
         const patchButtons = modal.querySelectorAll('[data-patch-id]');
         patchButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -795,41 +884,176 @@
             });
         });
 
-        const roadmapApplyBtn = modal.querySelector('.issue-roadmap-apply');
-        if (roadmapApplyBtn) {
-            roadmapApplyBtn.addEventListener('click', async () => {
+        // Status dropdown change
+        const statusSelect = modal.querySelector('.issue-status-select');
+        if (statusSelect) {
+            statusSelect.addEventListener('change', async () => {
                 const issue = state.issueModal.issue;
-                if (!issue) {
-                    return;
-                }
-                const select = modal.querySelector('.issue-roadmap-select');
-                if (!select) {
-                    return;
-                }
-                const value = select.value;
-                if (!value) {
-                    notificationStore.warning('Select a roadmap status tag first.', 'workbench');
-                    return;
-                }
-                const nextStatus = value === 'none' ? null : value;
-                const { otherTags } = extractRoadmapStatus(issue.tags || []);
-                const nextTags = [...otherTags];
-                if (nextStatus) {
-                    nextTags.push(nextStatus);
-                }
-                roadmapApplyBtn.disabled = true;
+                if (!issue) return;
+                const newStatus = statusSelect.value;
+                if (newStatus === issue.status) return;
+
+                statusSelect.disabled = true;
                 try {
-                    const updated = await issueApi.update(issue.id, { tags: nextTags });
+                    const updated = await issueApi.update(issue.id, { status: newStatus });
                     state.issueModal.issue = updated;
-                    notificationStore.success(`Updated Issue #${updated.id} roadmap status.`, 'workbench');
+                    notificationStore.success(`Issue #${updated.id} status changed to ${newStatus}.`, 'workbench');
                     renderIssueModal();
                     if (state.viewMode && state.viewMode.current === 'workbench') {
                         await loadIssues();
                     }
                 } catch (err) {
-                    notificationStore.error(`Failed to update roadmap status: ${err.message}`, 'workbench');
+                    notificationStore.error(`Failed to update status: ${err.message}`, 'workbench');
+                    statusSelect.value = issue.status;
                 } finally {
-                    roadmapApplyBtn.disabled = false;
+                    statusSelect.disabled = false;
+                }
+            });
+        }
+
+        // Assignee dropdown change
+        const assigneeSelect = modal.querySelector('.issue-assignee-select');
+        if (assigneeSelect) {
+            assigneeSelect.addEventListener('change', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+                const newAssignee = assigneeSelect.value || null;
+
+                assigneeSelect.disabled = true;
+                try {
+                    const updated = await issueApi.update(issue.id, { assignedTo: newAssignee });
+                    state.issueModal.issue = updated;
+                    const assigneeName = newAssignee || 'Unassigned';
+                    notificationStore.success(`Issue #${updated.id} assigned to ${assigneeName}.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to update assignee: ${err.message}`, 'workbench');
+                } finally {
+                    assigneeSelect.disabled = false;
+                }
+            });
+        }
+
+        // Roadmap dropdown change (inline, no apply button)
+        const roadmapSelect = modal.querySelector('.issue-roadmap-select');
+        if (roadmapSelect) {
+            roadmapSelect.addEventListener('change', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+                const value = roadmapSelect.value;
+                const nextStatus = value === 'none' ? null : (value || null);
+                const { otherTags } = extractRoadmapStatus(issue.tags || []);
+                const nextTags = [...otherTags];
+                if (nextStatus) {
+                    nextTags.push(nextStatus);
+                }
+
+                roadmapSelect.disabled = true;
+                try {
+                    const updated = await issueApi.update(issue.id, { tags: nextTags });
+                    state.issueModal.issue = updated;
+                    notificationStore.success(`Issue #${updated.id} roadmap updated.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to update roadmap: ${err.message}`, 'workbench');
+                } finally {
+                    roadmapSelect.disabled = false;
+                }
+            });
+        }
+
+        // Comment submission
+        const commentInput = modal.querySelector('.issue-comment-input');
+        const submitCommentBtn = modal.querySelector('.issue-submit-comment-btn');
+        if (submitCommentBtn && commentInput) {
+            const submitComment = async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+                const body = commentInput.value.trim();
+                if (!body) {
+                    notificationStore.warning('Please enter a comment.', 'workbench');
+                    return;
+                }
+
+                submitCommentBtn.disabled = true;
+                commentInput.disabled = true;
+                try {
+                    await issueApi.addComment(issue.id, { body, author: 'User' });
+                    commentInput.value = '';
+                    notificationStore.success('Comment added.', 'workbench');
+                    // Refresh the issue to show the new comment
+                    const updated = await issueApi.get(issue.id);
+                    state.issueModal.issue = updated;
+                    renderIssueModal();
+                } catch (err) {
+                    notificationStore.error(`Failed to add comment: ${err.message}`, 'workbench');
+                } finally {
+                    submitCommentBtn.disabled = false;
+                    commentInput.disabled = false;
+                }
+            };
+
+            submitCommentBtn.addEventListener('click', submitComment);
+
+            // Ctrl+Enter to submit
+            commentInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    submitComment();
+                }
+            });
+        }
+
+        // Close issue button
+        const closeIssueBtn = modal.querySelector('.issue-close-btn');
+        if (closeIssueBtn) {
+            closeIssueBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+
+                closeIssueBtn.disabled = true;
+                try {
+                    const updated = await issueApi.update(issue.id, { status: 'closed' });
+                    state.issueModal.issue = updated;
+                    notificationStore.success(`Issue #${updated.id} closed.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to close issue: ${err.message}`, 'workbench');
+                } finally {
+                    closeIssueBtn.disabled = false;
+                }
+            });
+        }
+
+        // Reopen issue button
+        const reopenIssueBtn = modal.querySelector('.issue-reopen-btn');
+        if (reopenIssueBtn) {
+            reopenIssueBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+
+                reopenIssueBtn.disabled = true;
+                try {
+                    const updated = await issueApi.update(issue.id, { status: 'open' });
+                    state.issueModal.issue = updated;
+                    notificationStore.success(`Issue #${updated.id} reopened.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to reopen issue: ${err.message}`, 'workbench');
+                } finally {
+                    reopenIssueBtn.disabled = false;
                 }
             });
         }
@@ -850,8 +1074,10 @@
         }
         document.addEventListener('keydown', handleKeydown);
 
-        // Focus the close button for accessibility
-        if (closeBtn) {
+        // Focus the comment input for quick interaction
+        if (commentInput) {
+            commentInput.focus();
+        } else if (closeBtn) {
             closeBtn.focus();
         }
     }
