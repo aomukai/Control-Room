@@ -317,17 +317,7 @@
         // Track current view mode for this modal instance
         let currentViewMode = defaultView; // 'editor' or 'diff'
 
-        const headerRow = document.createElement('div');
-        headerRow.className = 'modal-row space-between patch-diff-only';
-        const headerActions = document.createElement('div');
-        headerActions.className = 'patch-header-actions';
-        const refreshBtn = document.createElement('button');
-        refreshBtn.className = 'modal-btn modal-btn-secondary';
-        refreshBtn.textContent = 'Refresh';
-        headerActions.appendChild(refreshBtn);
-        headerRow.appendChild(headerActions);
-        body.appendChild(headerRow);
-
+        // Hint text (shown when no patch selected)
         const hint = document.createElement('div');
         hint.className = 'modal-hint';
         hint.textContent = 'Select a patch to view details.';
@@ -340,9 +330,28 @@
         const layout = document.createElement('div');
         layout.className = 'patch-layout';
 
+        // Patch list with header
+        const listWrapper = document.createElement('div');
+        listWrapper.className = 'patch-list-wrapper';
+
+        const listHeader = document.createElement('div');
+        listHeader.className = 'patch-list-header';
+        const listTitle = document.createElement('span');
+        listTitle.className = 'patch-list-title';
+        listTitle.textContent = 'Patches';
+        const refreshBtn = document.createElement('button');
+        refreshBtn.type = 'button';
+        refreshBtn.className = 'patch-refresh-btn';
+        refreshBtn.title = 'Refresh patches';
+        refreshBtn.innerHTML = '<img src="assets/icons/heroicons_outline/arrow-path.svg" alt="Refresh">';
+        listHeader.appendChild(listTitle);
+        listHeader.appendChild(refreshBtn);
+        listWrapper.appendChild(listHeader);
+
         const listContainer = document.createElement('div');
-        listContainer.className = 'patch-list patch-diff-only';
-        layout.appendChild(listContainer);
+        listContainer.className = 'patch-list';
+        listWrapper.appendChild(listContainer);
+        layout.appendChild(listWrapper);
 
         const detail = document.createElement('div');
         detail.className = 'patch-detail';
@@ -381,15 +390,26 @@
             patches.forEach(patch => {
                 const item = document.createElement('div');
                 const isSelected = patch.id === currentPatchId;
-                item.className = 'patch-item' + (isSelected ? ' is-selected' : '');
+                const status = patch.status || 'pending';
+                const isProcessed = status === 'applied' || status === 'rejected';
+
+                // Build class list
+                let itemClass = 'patch-item';
+                if (isSelected) itemClass += ' is-selected';
+                if (isProcessed) itemClass += ' is-processed';
+                item.className = itemClass;
+
                 const fileCount = Array.isArray(patch.files) ? patch.files.length : (patch.filePath ? 1 : 0);
-                const fileLabel = Array.isArray(patch.files) && patch.files[0]
+                const fullPath = Array.isArray(patch.files) && patch.files[0]
                     ? patch.files[0].filePath
                     : (patch.filePath || '');
+                // Show just filename in list, full path in tooltip
+                const fileName = fullPath ? fullPath.split('/').pop() : '';
+
                 item.innerHTML = `
                     <div class="patch-item-title">${escapeHtml(patch.title || patch.id)}</div>
-                    <div class="patch-item-meta">${escapeHtml(fileLabel)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
-                    <div class="patch-item-status status-${patch.status || 'pending'}">${patch.status || 'pending'}</div>
+                    <div class="patch-item-meta" title="${escapeHtml(fullPath)}">${escapeHtml(fileName)}${fileCount > 1 ? ` +${fileCount - 1} more` : ''}</div>
+                    <div class="patch-item-status status-${status}">${status}</div>
                     <div class="patch-item-time">${formatRelativeTime(patch.createdAt)}</div>
                 `;
                 item.addEventListener('click', () => {
@@ -477,7 +497,27 @@
 
             const messageDiv = document.createElement('div');
             messageDiv.className = 'patch-agent-message';
-            messageDiv.textContent = 'suggests the following changes...';
+
+            // Build a meaningful message based on patch content
+            let message = '';
+            if (patch.description) {
+                // Use the patch description if available (truncate if long)
+                message = patch.description.length > 80
+                    ? patch.description.substring(0, 77) + '...'
+                    : patch.description;
+            } else {
+                // Generate a summary from file/edit counts
+                const fileCount = Array.isArray(patch.files) ? patch.files.length : (patch.filePath ? 1 : 0);
+                const totalEdits = Array.isArray(patch.files)
+                    ? patch.files.reduce((sum, f) => sum + (Array.isArray(f.replacements) ? f.replacements.length : (Array.isArray(f.edits) ? f.edits.length : 1)), 0)
+                    : 1;
+                if (fileCount === 1) {
+                    message = `proposes ${totalEdits} edit${totalEdits === 1 ? '' : 's'}`;
+                } else {
+                    message = `proposes ${totalEdits} edit${totalEdits === 1 ? '' : 's'} across ${fileCount} files`;
+                }
+            }
+            messageDiv.textContent = message;
 
             infoDiv.appendChild(nameDiv);
             infoDiv.appendChild(messageDiv);
@@ -488,12 +528,39 @@
             // Add action buttons to header (always visible, sticky)
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'patch-agent-actions';
-            actionsDiv.innerHTML = `
+
+            // Primary actions
+            const primaryActions = document.createElement('div');
+            primaryActions.className = 'patch-primary-actions';
+            primaryActions.innerHTML = `
                 <button class="modal-btn modal-btn-primary" id="btn-apply-patch">Apply</button>
                 <button class="modal-btn modal-btn-secondary" id="btn-reject-patch">Reject</button>
-                <button class="modal-btn modal-btn-ghost" id="btn-delete-patch">Delete</button>
-                <button class="modal-btn modal-btn-ghost" id="btn-export-audit">Export Audit</button>
             `;
+
+            // More actions dropdown
+            const moreActions = document.createElement('div');
+            moreActions.className = 'patch-more-actions';
+            moreActions.innerHTML = `
+                <button class="patch-more-btn" title="More actions">⋮</button>
+                <div class="patch-more-menu">
+                    <button class="patch-more-item" id="btn-delete-patch">Delete Patch</button>
+                    <button class="patch-more-item" id="btn-export-audit">Export Audit</button>
+                </div>
+            `;
+
+            // Toggle dropdown
+            const moreBtn = moreActions.querySelector('.patch-more-btn');
+            const moreMenu = moreActions.querySelector('.patch-more-menu');
+            moreBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                moreMenu.classList.toggle('is-open');
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', () => moreMenu.classList.remove('is-open'));
+
+            actionsDiv.appendChild(primaryActions);
+            actionsDiv.appendChild(moreActions);
             header.appendChild(actionsDiv);
 
             agentHeaderContainer.appendChild(header);
@@ -668,16 +735,33 @@
                 detail.appendChild(issueRow);
             }
 
+            // Compact provenance - inline with expandable details
             const provenance = patch.provenance || {};
-            const prov = document.createElement('div');
-            prov.className = 'patch-provenance patch-diff-only';
-            prov.innerHTML = `
-                <div><span class="label">Author</span>${escapeHtml(provenance.author || 'Unknown')}</div>
-                <div><span class="label">Source</span>${escapeHtml(provenance.source || 'manual')}</div>
-                <div><span class="label">Agent</span>${escapeHtml(provenance.agent || '—')}</div>
-                <div><span class="label">Model</span>${escapeHtml(provenance.model || '—')}</div>
-            `;
-            detail.appendChild(prov);
+            const hasProvenance = provenance.agent || provenance.model || provenance.author;
+
+            if (hasProvenance) {
+                const prov = document.createElement('div');
+                prov.className = 'patch-provenance-compact patch-diff-only';
+
+                // Inline summary: "via AgentName using model-name"
+                const summary = document.createElement('span');
+                summary.className = 'patch-provenance-summary';
+                const parts = [];
+                if (provenance.agent) parts.push(`via ${provenance.agent}`);
+                if (provenance.model) parts.push(`using ${provenance.model}`);
+                summary.textContent = parts.join(' ') || `by ${provenance.author || 'Unknown'}`;
+
+                // Full details tooltip
+                const tooltipParts = [];
+                if (provenance.author) tooltipParts.push(`Author: ${provenance.author}`);
+                if (provenance.source) tooltipParts.push(`Source: ${provenance.source}`);
+                if (provenance.agent) tooltipParts.push(`Agent: ${provenance.agent}`);
+                if (provenance.model) tooltipParts.push(`Model: ${provenance.model}`);
+                prov.title = tooltipParts.join('\n');
+
+                prov.appendChild(summary);
+                detail.appendChild(prov);
+            }
 
             if (patch.description) {
                 const desc = document.createElement('div');
@@ -744,7 +828,11 @@
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'patch-file-pill';
-                    btn.textContent = change.filePath || 'Unknown file';
+                    const fullPath = change.filePath || 'Unknown file';
+                    // Show just filename, full path in tooltip
+                    const fileName = fullPath.split('/').pop() || fullPath;
+                    btn.textContent = fileName;
+                    btn.title = fullPath;
                     btn.dataset.anchor = change._anchor;
                     if (fileErrors.has(change.filePath)) {
                         btn.classList.add('has-error');
@@ -759,6 +847,34 @@
                 fileNav.appendChild(nextBtn);
                 detail.appendChild(fileNav);
             }
+
+            // Global view toolbar
+            const viewToolbar = document.createElement('div');
+            viewToolbar.className = 'patch-view-toolbar';
+
+            const viewLabel = document.createElement('span');
+            viewLabel.className = 'patch-view-label';
+            viewLabel.textContent = 'View:';
+
+            const globalEditorBtn = document.createElement('button');
+            globalEditorBtn.type = 'button';
+            globalEditorBtn.className = 'patch-global-view-btn' + (currentViewMode === 'editor' ? ' active' : '');
+            globalEditorBtn.textContent = 'Editor';
+            globalEditorBtn.dataset.view = 'editor';
+
+            const globalDiffBtn = document.createElement('button');
+            globalDiffBtn.type = 'button';
+            globalDiffBtn.className = 'patch-global-view-btn' + (currentViewMode === 'diff' ? ' active' : '');
+            globalDiffBtn.textContent = 'Diff';
+            globalDiffBtn.dataset.view = 'diff';
+
+            viewToolbar.appendChild(viewLabel);
+            viewToolbar.appendChild(globalEditorBtn);
+            viewToolbar.appendChild(globalDiffBtn);
+            detail.appendChild(viewToolbar);
+
+            // Track all view switchers for global toggle
+            const allViewSwitchers = [];
 
             const filesSection = document.createElement('div');
             filesSection.className = 'patch-files';
@@ -777,38 +893,39 @@
 
                     const headerRow = document.createElement('div');
                     headerRow.className = 'patch-file-header';
-                    const fileName = document.createElement('div');
-                    fileName.className = 'patch-file-path';
-                    fileName.textContent = change.filePath || 'Unknown file';
+
+                    const fileInfo = document.createElement('div');
+                    fileInfo.className = 'patch-file-info';
+
+                    const fullPath = change.filePath || 'Unknown file';
+                    const pathParts = fullPath.split('/');
+                    const justFileName = pathParts.pop() || fullPath;
+                    const dirPath = pathParts.length > 0 ? pathParts.join('/') + '/' : '';
+
+                    const fileNameEl = document.createElement('div');
+                    fileNameEl.className = 'patch-file-name';
+                    fileNameEl.textContent = justFileName;
+
+                    if (dirPath) {
+                        const dirPathEl = document.createElement('div');
+                        dirPathEl.className = 'patch-file-dir';
+                        dirPathEl.textContent = dirPath;
+                        fileInfo.appendChild(dirPathEl);
+                    }
+                    fileInfo.appendChild(fileNameEl);
+
                     const fileMeta = document.createElement('div');
                     fileMeta.className = 'patch-file-meta';
                     const replacementCount = Array.isArray(change.replacements) ? change.replacements.length : 0;
                     const editCount = Array.isArray(change.edits) ? change.edits.length : 0;
                     const count = replacementCount || editCount;
                     fileMeta.textContent = `${count} edit${count === 1 ? '' : 's'}`;
-                    headerRow.appendChild(fileName);
+
+                    headerRow.appendChild(fileInfo);
                     headerRow.appendChild(fileMeta);
                     card.appendChild(headerRow);
 
-                    // View switcher container
-                    const viewSwitcher = document.createElement('div');
-                    viewSwitcher.className = 'patch-view-switcher';
-
-                    const editorViewBtn = document.createElement('button');
-                    editorViewBtn.className = 'patch-view-btn active';
-                    editorViewBtn.textContent = 'Editor View';
-                    editorViewBtn.dataset.view = 'editor';
-
-                    const diffViewBtn = document.createElement('button');
-                    diffViewBtn.className = 'patch-view-btn';
-                    diffViewBtn.textContent = 'Diff View';
-                    diffViewBtn.dataset.view = 'diff';
-
-                    viewSwitcher.appendChild(editorViewBtn);
-                    viewSwitcher.appendChild(diffViewBtn);
-                    card.appendChild(viewSwitcher);
-
-                    // Container for both views
+                    // Container for both views (switched via global toggle)
                     const viewContainer = document.createElement('div');
                     viewContainer.className = 'patch-view-container';
 
@@ -822,36 +939,28 @@
                     viewContainer.appendChild(diffBlock);
                     card.appendChild(viewContainer);
 
-                    // View switcher logic
+                    // View switcher logic (called by global toggle)
                     const switchView = (viewType) => {
                         currentViewMode = viewType;
 
                         if (viewType === 'editor') {
-                            editorViewBtn.classList.add('active');
-                            diffViewBtn.classList.remove('active');
                             editorView.classList.add('active');
                             diffBlock.classList.remove('active');
-
-                            // Switch modal to editor layout
                             modal.classList.add('patch-editor-mode');
                             modal.classList.remove('patch-diff-mode');
                         } else {
-                            diffViewBtn.classList.add('active');
-                            editorViewBtn.classList.remove('active');
                             diffBlock.classList.add('active');
                             editorView.classList.remove('active');
-
-                            // Switch modal to diff layout
                             modal.classList.remove('patch-editor-mode');
                             modal.classList.add('patch-diff-mode');
                         }
                     };
 
-                    editorViewBtn.addEventListener('click', () => switchView('editor'));
-                    diffViewBtn.addEventListener('click', () => switchView('diff'));
+                    // Register for global toggle
+                    allViewSwitchers.push(switchView);
 
-                    // Initialize with editor mode
-                    switchView('editor');
+                    // Initialize with current view mode (preserve across patch selection)
+                    switchView(currentViewMode);
 
                     const fileError = document.createElement('div');
                     fileError.className = 'patch-file-error hidden';
@@ -866,6 +975,19 @@
                 });
             }
             detail.appendChild(filesSection);
+
+            // Global view toggle handlers
+            globalEditorBtn.addEventListener('click', () => {
+                globalEditorBtn.classList.add('active');
+                globalDiffBtn.classList.remove('active');
+                allViewSwitchers.forEach(sw => sw('editor'));
+            });
+
+            globalDiffBtn.addEventListener('click', () => {
+                globalDiffBtn.classList.add('active');
+                globalEditorBtn.classList.remove('active');
+                allViewSwitchers.forEach(sw => sw('diff'));
+            });
 
             // Sync nav pills to scroll position
             if (fileNavPills.length && fileCards.length) {
@@ -1248,7 +1370,7 @@
             // Add hint about editability
             const hint = document.createElement('div');
             hint.className = 'editor-hint';
-            hint.textContent = 'Click to edit this content directly. Your changes will be saved when you click "Apply Changes".';
+            hint.textContent = 'You can edit this content directly. Your changes will be saved when you click "Apply".';
             container.appendChild(hint);
 
             return container;
@@ -1258,83 +1380,159 @@
             const container = document.createElement('div');
             container.className = 'patch-diff-table';
             const replacements = change && Array.isArray(change.replacements) ? change.replacements : [];
+
+            // Handle replacements with prose-style view
             if (replacements.length) {
-                const header = document.createElement('div');
-                header.className = 'patch-diff-header';
-                header.innerHTML = `
-                    <div class="diff-col-label">Before</div>
-                    <div class="diff-col-label">After</div>
-                    <div class="diff-file-label">${escapeHtml(filePath || '')}</div>
-                `;
-                container.appendChild(header);
-                container.appendChild(renderReplacementTable(replacements));
+                const diffContent = document.createElement('div');
+                diffContent.className = 'diff-prose-view';
+
+                replacements.forEach((rep, idx) => {
+                    const hunkEl = document.createElement('div');
+                    hunkEl.className = 'diff-prose-hunk';
+
+                    const comparison = document.createElement('div');
+                    comparison.className = 'diff-prose-comparison';
+
+                    const originalBlock = document.createElement('div');
+                    originalBlock.className = 'diff-prose-block diff-prose-original';
+                    const originalLabel = document.createElement('div');
+                    originalLabel.className = 'diff-prose-label';
+                    originalLabel.textContent = 'Original';
+                    const originalContent = document.createElement('div');
+                    originalContent.className = 'diff-prose-content';
+                    originalContent.textContent = rep.before || '(empty)';
+                    if (!rep.before) originalContent.classList.add('empty');
+                    originalBlock.appendChild(originalLabel);
+                    originalBlock.appendChild(originalContent);
+
+                    const proposedBlock = document.createElement('div');
+                    proposedBlock.className = 'diff-prose-block diff-prose-proposed';
+                    const proposedLabel = document.createElement('div');
+                    proposedLabel.className = 'diff-prose-label';
+                    proposedLabel.textContent = 'Proposed';
+                    const proposedContent = document.createElement('div');
+                    proposedContent.className = 'diff-prose-content';
+                    proposedContent.textContent = rep.after || '(empty)';
+                    if (!rep.after) proposedContent.classList.add('empty');
+                    proposedBlock.appendChild(proposedLabel);
+                    proposedBlock.appendChild(proposedContent);
+
+                    comparison.appendChild(originalBlock);
+                    comparison.appendChild(proposedBlock);
+                    hunkEl.appendChild(comparison);
+
+                    if (idx < replacements.length - 1) {
+                        const separator = document.createElement('div');
+                        separator.className = 'diff-prose-separator';
+                        hunkEl.appendChild(separator);
+                    }
+
+                    diffContent.appendChild(hunkEl);
+                });
+
+                container.appendChild(diffContent);
                 return container;
             }
+
             if (!diffText) {
                 container.textContent = 'No diff available';
                 return container;
             }
 
-            const header = document.createElement('div');
-            header.className = 'patch-diff-header';
-            header.innerHTML = `
-                <div class="diff-col-label">Old</div>
-                <div class="diff-col-label">New</div>
-                <div class="diff-file-label">${escapeHtml(filePath || '')}</div>
-            `;
-            container.appendChild(header);
-
-            const table = document.createElement('div');
-            table.className = 'diff-rows';
-
+            // Parse diff and collect into prose blocks
             const rows = parseUnifiedDiff(diffText);
             if (!rows.length) {
                 const empty = document.createElement('div');
                 empty.className = 'patch-detail-empty';
                 empty.textContent = 'No diff available';
-                table.appendChild(empty);
-            } else {
-                rows.forEach(row => {
-                    if (row.type === 'hunk') {
-                        const hunk = document.createElement('div');
-                        hunk.className = 'diff-sxs-row hunk';
-                        hunk.textContent = row.text;
-                        table.appendChild(hunk);
-                        return;
-                    }
-
-                    const div = document.createElement('div');
-                    div.className = `diff-sxs-row ${row.type}`;
-
-                    const left = document.createElement('div');
-                    left.className = 'diff-sxs-cell left';
-                    const leftNum = document.createElement('div');
-                    leftNum.className = 'line-num';
-                    leftNum.textContent = row.leftLine !== null ? row.leftLine : '';
-                    const leftText = document.createElement('div');
-                    leftText.className = 'line-text';
-                    leftText.textContent = row.type === 'add' ? '' : row.text;
-                    left.appendChild(leftNum);
-                    left.appendChild(leftText);
-
-                    const right = document.createElement('div');
-                    right.className = 'diff-sxs-cell right';
-                    const rightNum = document.createElement('div');
-                    rightNum.className = 'line-num';
-                    rightNum.textContent = row.rightLine !== null ? row.rightLine : '';
-                    const rightText = document.createElement('div');
-                    rightText.className = 'line-text';
-                    rightText.textContent = row.type === 'remove' ? '' : row.text;
-                    right.appendChild(rightNum);
-                    right.appendChild(rightText);
-
-                    div.appendChild(left);
-                    div.appendChild(right);
-                    table.appendChild(div);
-                });
+                container.appendChild(empty);
+                return container;
             }
 
-            container.appendChild(table);
+            // Group consecutive changes into hunks for prose display
+            const hunks = [];
+            let currentHunk = { removed: [], added: [], context: [] };
+
+            rows.forEach(row => {
+                if (row.type === 'hunk') {
+                    // Save previous hunk if it has content
+                    if (currentHunk.removed.length || currentHunk.added.length) {
+                        hunks.push(currentHunk);
+                    }
+                    currentHunk = { removed: [], added: [], context: [] };
+                } else if (row.type === 'remove') {
+                    currentHunk.removed.push(row.text);
+                } else if (row.type === 'add') {
+                    currentHunk.added.push(row.text);
+                } else if (row.type === 'context') {
+                    // If we have pending changes, save the hunk
+                    if (currentHunk.removed.length || currentHunk.added.length) {
+                        hunks.push(currentHunk);
+                        currentHunk = { removed: [], added: [], context: [] };
+                    }
+                }
+            });
+
+            // Don't forget the last hunk
+            if (currentHunk.removed.length || currentHunk.added.length) {
+                hunks.push(currentHunk);
+            }
+
+            // Render each hunk as a prose block comparison
+            const diffContent = document.createElement('div');
+            diffContent.className = 'diff-prose-view';
+
+            hunks.forEach((hunk, idx) => {
+                const hunkEl = document.createElement('div');
+                hunkEl.className = 'diff-prose-hunk';
+
+                // Collapse lines into prose, joining with space (prose-friendly)
+                const originalText = hunk.removed.join(' ').trim();
+                const proposedText = hunk.added.join(' ').trim();
+
+                // Create side-by-side prose blocks
+                const comparison = document.createElement('div');
+                comparison.className = 'diff-prose-comparison';
+
+                const originalBlock = document.createElement('div');
+                originalBlock.className = 'diff-prose-block diff-prose-original';
+                const originalLabel = document.createElement('div');
+                originalLabel.className = 'diff-prose-label';
+                originalLabel.textContent = 'Original';
+                const originalContent = document.createElement('div');
+                originalContent.className = 'diff-prose-content';
+                originalContent.textContent = originalText || '(empty)';
+                if (!originalText) originalContent.classList.add('empty');
+                originalBlock.appendChild(originalLabel);
+                originalBlock.appendChild(originalContent);
+
+                const proposedBlock = document.createElement('div');
+                proposedBlock.className = 'diff-prose-block diff-prose-proposed';
+                const proposedLabel = document.createElement('div');
+                proposedLabel.className = 'diff-prose-label';
+                proposedLabel.textContent = 'Proposed';
+                const proposedContent = document.createElement('div');
+                proposedContent.className = 'diff-prose-content';
+                proposedContent.textContent = proposedText || '(empty)';
+                if (!proposedText) proposedContent.classList.add('empty');
+                proposedBlock.appendChild(proposedLabel);
+                proposedBlock.appendChild(proposedContent);
+
+                comparison.appendChild(originalBlock);
+                comparison.appendChild(proposedBlock);
+                hunkEl.appendChild(comparison);
+
+                // Add hunk separator if multiple hunks
+                if (idx < hunks.length - 1) {
+                    const separator = document.createElement('div');
+                    separator.className = 'diff-prose-separator';
+                    hunkEl.appendChild(separator);
+                }
+
+                diffContent.appendChild(hunkEl);
+            });
+
+            container.appendChild(diffContent);
             return container;
         }
 

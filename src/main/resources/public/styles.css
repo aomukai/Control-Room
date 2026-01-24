@@ -2312,6 +2312,7 @@ html, body {
 .patch-review-modal {
     min-width: 85vw;
     max-width: 90vw;
+    height: 85vh;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -2487,6 +2488,86 @@ html, body {
     gap: 8px;
     margin-left: auto;
     flex-shrink: 0;
+    align-items: center;
+}
+
+.patch-primary-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.patch-more-actions {
+    position: relative;
+}
+
+.patch-more-btn {
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.patch-more-btn:hover {
+    background: var(--bg-lighter);
+    color: var(--text-bright);
+    border-color: var(--accent-color);
+}
+
+.patch-more-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 140px;
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: all 0.15s ease;
+}
+
+.patch-more-menu.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.patch-more-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.patch-more-item:hover {
+    background: var(--bg-medium);
+    color: var(--text-bright);
+}
+
+.patch-more-item:first-child {
+    border-radius: 5px 5px 0 0;
+}
+
+.patch-more-item:last-child {
+    border-radius: 0 0 5px 5px;
 }
 
 .patch-layout {
@@ -2497,11 +2578,64 @@ html, body {
     min-height: 0;
 }
 
-.patch-list {
+.patch-list-wrapper {
     flex: 0 0 280px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.patch-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+}
+
+.patch-list-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.patch-refresh-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.patch-refresh-btn:hover {
+    opacity: 1;
+}
+
+.patch-refresh-btn:active {
+    transform: rotate(45deg);
+}
+
+.patch-refresh-btn img {
+    width: 16px;
+    height: 16px;
+    filter: invert(1) opacity(0.8);
+}
+
+.patch-list {
+    flex: 1;
     overflow-y: auto;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
     background: var(--bg-medium);
 }
 
@@ -2562,6 +2696,18 @@ html, body {
 .patch-item-status.status-rejected {
     background: rgba(244, 67, 54, 0.2);
     color: #c62828;
+}
+
+.patch-item.is-processed {
+    opacity: 0.6;
+}
+
+.patch-item.is-processed:hover {
+    opacity: 0.8;
+}
+
+.patch-item.is-processed.is-selected {
+    opacity: 0.85;
 }
 
 .patch-item-time {
@@ -2660,6 +2806,18 @@ html, body {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+}
+
+.patch-provenance-compact {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 4px 0;
+    cursor: help;
+}
+
+.patch-provenance-summary {
+    font-style: italic;
+    opacity: 0.9;
 }
 
 .patch-detail-desc {
@@ -2797,9 +2955,30 @@ html, body {
     font-size: 13px;
 }
 
+.patch-file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.patch-file-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-bright);
+}
+
+.patch-file-dir {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.8;
+}
+
 .patch-file-meta {
     color: var(--text-secondary);
     font-size: 12px;
+    flex-shrink: 0;
 }
 
 .patch-file-error {
@@ -2877,7 +3056,7 @@ html, body {
 
 .patch-diff-header {
     display: grid;
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr;
     background: var(--bg-lighter);
     border-bottom: 2px solid var(--border-color);
     font-weight: 600;
@@ -2888,21 +3067,22 @@ html, body {
 }
 
 .patch-diff-header .diff-col-label {
-    padding: 8px 10px;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.patch-diff-header .diff-col-label:first-child {
     border-right: 1px solid var(--border-color);
-    font-size: 12px;
-    color: var(--text-bright);
 }
 
 .patch-diff-header .diff-file-label {
-    padding: 8px 10px;
-    border-right: none;
-    color: var(--text-secondary);
-    font-size: 12px;
+    display: none; /* File path shown in card header instead */
 }
 
 .diff-rows {
-    max-height: 400px;
     overflow: auto;
     position: relative;
 }
@@ -2910,7 +3090,7 @@ html, body {
 .diff-sxs-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .diff-sxs-row:last-child {
@@ -2919,25 +3099,36 @@ html, body {
 
 .diff-sxs-row.hunk {
     grid-template-columns: 1fr;
-    background: var(--bg-light);
+    background: rgba(130, 170, 255, 0.08);
     color: #82aaff;
     font-weight: 500;
-    padding: 6px 10px;
-    font-size: 12px;
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
+    padding: 8px 12px;
+    font-size: 11px;
+    border-top: 1px solid rgba(130, 170, 255, 0.2);
+    border-bottom: 1px solid rgba(130, 170, 255, 0.2);
+    margin: 4px 0;
+}
+
+.diff-sxs-row.add {
+    background: rgba(76, 175, 80, 0.06);
 }
 
 .diff-sxs-row.add .diff-sxs-cell.right {
-    background: rgba(76, 175, 80, 0.12);
+    background: rgba(76, 175, 80, 0.15);
+    border-left: 3px solid rgba(76, 175, 80, 0.5);
 }
 
 .diff-sxs-row.add .diff-sxs-cell.right .line-text {
     color: #a5d6a7;
 }
 
+.diff-sxs-row.remove {
+    background: rgba(244, 67, 54, 0.06);
+}
+
 .diff-sxs-row.remove .diff-sxs-cell.left {
-    background: rgba(244, 67, 54, 0.12);
+    background: rgba(244, 67, 54, 0.15);
+    border-right: 3px solid rgba(244, 67, 54, 0.5);
 }
 
 .diff-sxs-row.remove .diff-sxs-cell.left .line-text {
@@ -2946,6 +3137,80 @@ html, body {
 
 .diff-sxs-row.context .diff-sxs-cell {
     background: var(--bg-dark);
+}
+
+/* Prose-style diff view (for text/prose content) */
+.diff-prose-view {
+    padding: 12px;
+}
+
+.diff-prose-hunk {
+    margin-bottom: 16px;
+}
+
+.diff-prose-hunk:last-child {
+    margin-bottom: 0;
+}
+
+.diff-prose-comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.diff-prose-block {
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.diff-prose-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 6px 10px;
+    color: var(--text-secondary);
+}
+
+.diff-prose-original .diff-prose-label {
+    background: rgba(244, 67, 54, 0.15);
+    color: #ef9a9a;
+}
+
+.diff-prose-proposed .diff-prose-label {
+    background: rgba(76, 175, 80, 0.15);
+    color: #a5d6a7;
+}
+
+.diff-prose-content {
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background: var(--bg-dark);
+    min-height: 40px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.diff-prose-original .diff-prose-content {
+    border-left: 3px solid rgba(244, 67, 54, 0.5);
+}
+
+.diff-prose-proposed .diff-prose-content {
+    border-left: 3px solid rgba(76, 175, 80, 0.5);
+}
+
+.diff-prose-content.empty {
+    color: var(--text-secondary);
+    font-style: italic;
+    opacity: 0.6;
+}
+
+.diff-prose-separator {
+    height: 1px;
+    background: var(--border-color);
+    margin: 16px 0;
 }
 
 .patch-replacements {
@@ -3001,19 +3266,22 @@ html, body {
 
 .diff-sxs-cell {
     display: grid;
-    grid-template-columns: 60px 1fr;
+    grid-template-columns: 48px 1fr;
     align-items: stretch;
     gap: 0;
+    min-height: 24px;
 }
 
 .diff-sxs-cell .line-num {
-    padding: 5px 10px;
+    padding: 4px 8px;
     color: var(--text-secondary);
-    border-right: 1px solid var(--border-color);
-    background: var(--bg-lighter);
+    opacity: 0.6;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+    background: transparent;
     text-align: right;
     user-select: none;
-    font-size: 11px;
+    font-size: 10px;
+    line-height: 1.6;
 }
 
 .diff-sxs-cell .line-text {
@@ -3024,7 +3292,46 @@ html, body {
     line-height: 1.5;
 }
 
-/* Patch View Switcher */
+/* Global View Toolbar */
+.patch-view-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.patch-view-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-right: 4px;
+}
+
+.patch-global-view-btn {
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.patch-global-view-btn:hover {
+    background: var(--bg-lighter);
+    color: var(--text-bright);
+}
+
+.patch-global-view-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--text-bright);
+}
+
+/* Patch View Switcher (per-file) */
 .patch-view-switcher {
     display: flex;
     gap: 8px;
@@ -3162,7 +3469,7 @@ html, body {
     font-style: italic;
 }
 
-/* Editor Mode Layout Changes */
+/* Editor/Diff Mode Layout Changes */
 .patch-review-modal.patch-editor-mode .patch-diff-only {
     display: none !important;
 }
@@ -3171,14 +3478,10 @@ html, body {
     display: none !important;
 }
 
-.patch-review-modal.patch-editor-mode .patch-layout {
-    grid-template-columns: 1fr;
-}
-
-.patch-review-modal.patch-editor-mode .patch-detail {
-    max-width: 100%;
-    width: 100%;
-    padding: 0 40px;
+/* Keep consistent two-column layout in both modes */
+.patch-review-modal .patch-layout {
+    display: flex;
+    gap: 12px;
 }
 
 /* Conference Invite Modal */
