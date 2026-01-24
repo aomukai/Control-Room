@@ -3381,7 +3381,6 @@ async function showWorkspaceSwitcher() {
         const btnSidebarAssistedMode = document.getElementById('btn-sidebar-assisted-mode');
         const btnSidebarWidgets = document.getElementById('btn-sidebar-widgets');
         const btnSidebarPatchReview = document.getElementById('btn-sidebar-patch-review');
-        const btnSidebarCanonReview = document.getElementById('btn-sidebar-canon-review');
         const btnSidebarPrepareProject = document.getElementById('btn-sidebar-prepare-project');
         const btnSidebarPrepComplete = document.getElementById('btn-sidebar-prep-complete');
 
@@ -3389,9 +3388,6 @@ async function showWorkspaceSwitcher() {
         if (btnSidebarAssistedMode) btnSidebarAssistedMode.style.display = (isWorkbench && workbenchEnabled) ? 'flex' : 'none';
         if (btnSidebarWidgets) btnSidebarWidgets.style.display = (isWorkbench && workbenchEnabled) ? 'flex' : 'none';
         if (btnSidebarPatchReview) btnSidebarPatchReview.style.display = (isWorkbench && workbenchEnabled) ? 'flex' : 'none';
-        if (btnSidebarCanonReview) {
-            btnSidebarCanonReview.style.display = (isWorkbench && state.workspace.projectSelected && state.workspace.prepStage !== 'none') ? 'flex' : 'none';
-        }
         if (btnSidebarPrepareProject) {
             const showPrepare = !isSettings && state.workspace.projectSelected && state.workspace.prepStage === 'none';
             btnSidebarPrepareProject.style.display = showPrepare ? 'flex' : 'none';
@@ -6636,11 +6632,6 @@ async function showWorkspaceSwitcher() {
         const btnSidebarPatchReview = document.getElementById('btn-sidebar-patch-review');
         if (btnSidebarPatchReview) {
             btnSidebarPatchReview.addEventListener('click', () => showPatchReviewModal());
-        }
-
-        const btnSidebarCanonReview = document.getElementById('btn-sidebar-canon-review');
-        if (btnSidebarCanonReview) {
-            btnSidebarCanonReview.addEventListener('click', () => showCanonReviewModal());
         }
 
         const btnSidebarPrepareProject = document.getElementById('btn-sidebar-prepare-project');
