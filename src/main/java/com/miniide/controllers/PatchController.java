@@ -4,14 +4,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
 import com.miniide.CreditStore;
+import com.miniide.IssueMemoryService;
 import com.miniide.PatchService.ApplyOutcome;
 import com.miniide.ProjectContext;
+import com.miniide.models.Comment;
 import com.miniide.models.CreditEvent;
 import com.miniide.models.PatchProposal;
+import com.miniide.models.TextReplace;
 import com.miniide.NotificationStore;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +25,17 @@ import java.util.stream.Collectors;
 public class PatchController implements Controller {
 
     private final ProjectContext projectContext;
+    private final IssueMemoryService issueService;
     private final NotificationStore notificationStore;
     private final CreditStore creditStore;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
-    public PatchController(ProjectContext projectContext, NotificationStore notificationStore,
-                           CreditStore creditStore, ObjectMapper objectMapper) {
+    public PatchController(ProjectContext projectContext, IssueMemoryService issueService,
+                           NotificationStore notificationStore, CreditStore creditStore,
+                           ObjectMapper objectMapper) {
         this.projectContext = projectContext;
+        this.issueService = issueService;
         this.notificationStore = notificationStore;
         this.creditStore = creditStore;
         this.objectMapper = objectMapper;
@@ -42,6 +49,7 @@ public class PatchController implements Controller {
         app.get("/api/patches/{id}/audit", this::exportPatchAudit);
         app.get("/api/patches/audit/export", this::exportAllPatchAudits);
         app.post("/api/patches", this::createPatch);
+        app.post("/api/patches/ai", this::createPatchFromAi);
         app.post("/api/patches/{id}/apply", this::applyPatch);
         app.post("/api/patches/{id}/reject", this::rejectPatch);
         app.delete("/api/patches/{id}", this::deletePatch);
@@ -90,11 +98,132 @@ public class PatchController implements Controller {
         try {
             JsonNode json = objectMapper.readTree(ctx.body());
             PatchProposal proposal = objectMapper.convertValue(json, PatchProposal.class);
+            ensureIssueForPatch(proposal, resolveAgentId(proposal));
             PatchProposal created = projectContext.patches().create(proposal);
             sendPatchNotification(created);
+            appendPatchIssueComment(created);
             ctx.status(201).json(created);
         } catch (Exception e) {
             logger.error("Failed to create patch: " + e.getMessage(), e);
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void createPatchFromAi(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
+            String title = json.has("title") ? json.get("title").asText() : null;
+            String description = json.has("description") ? json.get("description").asText() : null;
+            String filePath = json.has("filePath") ? json.get("filePath").asText() : null;
+            String preview = json.has("preview") ? json.get("preview").asText() : null;
+            String issueId = json.has("issueId") ? json.get("issueId").asText(null) : null;
+
+            if (title == null || title.isBlank()) {
+                ctx.status(400).json(Map.of("error", "title is required"));
+                return;
+            }
+            if (description == null || description.isBlank()) {
+                ctx.status(400).json(Map.of("error", "description is required"));
+                return;
+            }
+            if (filePath == null || filePath.isBlank()) {
+                ctx.status(400).json(Map.of("error", "filePath is required"));
+                return;
+            }
+
+            List<JsonNode> editsNodes = new ArrayList<>();
+            List<JsonNode> replacementNodes = new ArrayList<>();
+            if (json.has("edits") && json.get("edits").isArray()) {
+                json.get("edits").forEach(editsNodes::add);
+            }
+            if (json.has("replacements") && json.get("replacements").isArray()) {
+                json.get("replacements").forEach(replacementNodes::add);
+            }
+            if (editsNodes.isEmpty() && replacementNodes.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "at least one edit or replacement is required"));
+                return;
+            }
+
+            var edits = editsNodes.stream()
+                .map(node -> objectMapper.convertValue(node, com.miniide.models.TextEdit.class))
+                .collect(Collectors.toList());
+            for (int i = 0; i < edits.size(); i++) {
+                var edit = edits.get(i);
+                if (edit.getStartLine() < 1) {
+                    ctx.status(400).json(Map.of("error", "edit " + (i + 1) + ": startLine must be >= 1"));
+                    return;
+                }
+                if (edit.getEndLine() < edit.getStartLine()) {
+                    ctx.status(400).json(Map.of("error", "edit " + (i + 1) + ": endLine must be >= startLine"));
+                    return;
+                }
+            }
+
+            var replacements = replacementNodes.stream()
+                .map(node -> objectMapper.convertValue(node, TextReplace.class))
+                .collect(Collectors.toList());
+            for (int i = 0; i < replacements.size(); i++) {
+                var replacement = replacements.get(i);
+                if (replacement.getBefore() == null || replacement.getBefore().isBlank()) {
+                    ctx.status(400).json(Map.of("error", "replacement " + (i + 1) + ": before is required"));
+                    return;
+                }
+                if (replacement.getOccurrence() != null && replacement.getOccurrence() < 1) {
+                    ctx.status(400).json(Map.of("error", "replacement " + (i + 1) + ": occurrence must be >= 1"));
+                    return;
+                }
+            }
+
+            PatchProposal proposal = new PatchProposal();
+            proposal.setTitle(title);
+            proposal.setDescription(description);
+            proposal.setFilePath(filePath);
+            proposal.setPreview(preview);
+            proposal.setEdits(edits);
+            if (issueId != null && !issueId.isBlank()) {
+                proposal.setIssueId(issueId);
+            }
+
+            com.miniide.models.PatchFileChange change = new com.miniide.models.PatchFileChange();
+            change.setFilePath(filePath);
+            change.setEdits(edits);
+            change.setReplacements(replacements);
+            if (json.has("baseHash") && json.get("baseHash").isTextual()) {
+                change.setBaseHash(json.get("baseHash").asText());
+            }
+            change.setPreview(preview);
+            proposal.setFiles(List.of(change));
+
+            com.miniide.models.PatchProvenance provenance = new com.miniide.models.PatchProvenance();
+            provenance.setSource("agentic-editing");
+            provenance.setAgent(agentId);
+            if (agentId != null && !agentId.isBlank()) {
+                var agent = projectContext.agents().getAgent(agentId);
+                if (agent != null && agent.getName() != null && !agent.getName().isBlank()) {
+                    provenance.setAuthor(agent.getName());
+                } else {
+                    provenance.setAuthor(agentId);
+                }
+                var endpoint = projectContext.agentEndpoints().getEndpoint(agentId);
+                if (endpoint == null && agent != null) {
+                    endpoint = agent.getEndpoint();
+                }
+                if (endpoint != null && endpoint.getModel() != null && !endpoint.getModel().isBlank()) {
+                    provenance.setModel(endpoint.getModel());
+                }
+            } else {
+                provenance.setAuthor("agent");
+            }
+            proposal.setProvenance(provenance);
+
+            ensureIssueForPatch(proposal, agentId);
+            PatchProposal created = projectContext.patches().create(proposal);
+            sendPatchNotification(created);
+            appendPatchIssueComment(created);
+            ctx.status(201).json(created);
+        } catch (Exception e) {
+            logger.error("Failed to create AI patch: " + e.getMessage(), e);
             ctx.status(400).json(Controller.errorBody(e));
         }
     }
@@ -252,5 +381,104 @@ public class PatchController implements Controller {
         payload.put("files", patch.getFiles());
         payload.put("exportedAt", System.currentTimeMillis());
         return payload;
+    }
+
+    private void ensureIssueForPatch(PatchProposal proposal, String agentId) {
+        if (issueService == null || proposal == null) {
+            return;
+        }
+        if (proposal.getIssueId() != null && !proposal.getIssueId().isBlank()) {
+            return;
+        }
+
+        String title = proposal.getTitle();
+        if (title == null || title.isBlank()) {
+            title = proposal.getId() != null ? proposal.getId() : "Patch proposal";
+        }
+        String issueTitle = "Patch proposal: " + title;
+
+        List<String> filePaths = proposal.getFiles() != null
+            ? proposal.getFiles().stream()
+                .map(file -> file != null ? file.getFilePath() : null)
+                .filter(path -> path != null && !path.isBlank())
+                .collect(Collectors.toList())
+            : List.of();
+        if (filePaths.isEmpty() && proposal.getFilePath() != null && !proposal.getFilePath().isBlank()) {
+            filePaths = List.of(proposal.getFilePath());
+        }
+
+        StringBuilder body = new StringBuilder();
+        body.append("Patch proposal created.\n\n");
+        body.append("**Patch**: ").append(title).append("\n");
+        if (!filePaths.isEmpty()) {
+            body.append("**Files**:\n");
+            for (String filePath : filePaths) {
+                body.append("- ").append(filePath).append("\n");
+            }
+            body.append("\n");
+        }
+        if (proposal.getDescription() != null && !proposal.getDescription().isBlank()) {
+            body.append("**Description**:\n").append(proposal.getDescription()).append("\n");
+        }
+
+        String openedBy = (agentId != null && !agentId.isBlank()) ? agentId : "system";
+        String assignedTo = (agentId != null && !agentId.isBlank()) ? agentId : null;
+        List<String> tags = List.of("patch-proposal");
+
+        try {
+            var issue = issueService.createIssue(issueTitle, body.toString(), openedBy, assignedTo, tags, "normal");
+            proposal.setIssueId(String.valueOf(issue.getId()));
+            if (notificationStore != null) {
+                notificationStore.issueCreated(issue.getId(), issue.getTitle(), issue.getOpenedBy(), issue.getAssignedTo());
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to create issue for patch: " + e.getMessage());
+        }
+    }
+
+    private String resolveAgentId(PatchProposal proposal) {
+        if (proposal == null || proposal.getProvenance() == null) {
+            return null;
+        }
+        String agentId = proposal.getProvenance().getAgent();
+        return agentId != null && !agentId.isBlank() ? agentId : null;
+    }
+
+    private void appendPatchIssueComment(PatchProposal proposal) {
+        if (issueService == null || proposal == null) {
+            return;
+        }
+        String issueId = proposal.getIssueId();
+        if (issueId == null || issueId.isBlank()) {
+            return;
+        }
+        int id;
+        try {
+            id = Integer.parseInt(issueId);
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        String title = proposal.getTitle();
+        String message = title != null && !title.isBlank()
+            ? "Patch proposed: " + title
+            : "Patch proposed: " + proposal.getId();
+        String author = "system";
+        if (proposal.getProvenance() != null && proposal.getProvenance().getAgent() != null
+            && !proposal.getProvenance().getAgent().isBlank()) {
+            author = proposal.getProvenance().getAgent();
+        } else if (proposal.getProvenance() != null && proposal.getProvenance().getAuthor() != null
+            && !proposal.getProvenance().getAuthor().isBlank()) {
+            author = proposal.getProvenance().getAuthor();
+        }
+        Comment.CommentAction action = new Comment.CommentAction(
+            "patch-proposed",
+            "patchId: " + proposal.getId()
+        );
+        try {
+            issueService.addComment(id, author, message, action, null, null);
+        } catch (Exception e) {
+            logger.warn("Failed to log patch proposal on Issue #" + issueId + ": " + e.getMessage());
+        }
     }
 }

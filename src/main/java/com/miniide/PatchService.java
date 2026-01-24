@@ -9,6 +9,7 @@ import com.miniide.models.PatchFileChange;
 import com.miniide.models.PatchProposal;
 import com.miniide.models.PatchProvenance;
 import com.miniide.models.TextEdit;
+import com.miniide.models.TextReplace;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,11 +29,13 @@ public class PatchService {
     private final AtomicInteger counter = new AtomicInteger(0);
     private final ObjectMapper mapper = new ObjectMapper();
     private final WorkspaceService workspaceService;
+    private final PreparedWorkspaceService preparedWorkspaceService;
     private final Path storagePath;
     private final Path legacyStoragePath = Paths.get("data/patches.json");
 
-    public PatchService(WorkspaceService workspaceService) {
+    public PatchService(WorkspaceService workspaceService, PreparedWorkspaceService preparedWorkspaceService) {
         this.workspaceService = workspaceService;
+        this.preparedWorkspaceService = preparedWorkspaceService;
         this.storagePath = workspaceService.getWorkspaceRoot()
             .resolve(".control-room")
             .resolve("patches.json")
@@ -107,7 +110,7 @@ public class PatchService {
         List<FileApplyResult> fileResults = new ArrayList<>();
         for (PatchFileChange change : proposal.getFiles()) {
             try {
-                FileChangeComputation computation = computeFileChange(change);
+                FileChangeComputation computation = computeFileChange(change, true);
                 computations.add(computation);
                 fileResults.add(FileApplyResult.success(change.getFilePath(), "Ready"));
             } catch (Exception e) {
@@ -119,7 +122,7 @@ public class PatchService {
 
         // All files validated; write them now
         for (FileChangeComputation computation : computations) {
-            workspaceService.writeFileLines(computation.filePath(), computation.patched());
+            writeFileLines(computation.filePath(), computation.patched());
         }
 
         proposal.setStatus("applied");
@@ -341,7 +344,7 @@ public class PatchService {
         if (proposal == null || proposal.getFiles() == null) return;
         for (PatchFileChange change : proposal.getFiles()) {
             try {
-                FileChangeComputation computation = computeFileChange(change);
+                FileChangeComputation computation = computeFileChange(change, false);
                 change.setDiff(computation.diff());
             } catch (Exception e) {
                 change.setDiff("Unable to compute diff: " + e.getMessage());
@@ -349,12 +352,30 @@ public class PatchService {
         }
     }
 
-    private FileChangeComputation computeFileChange(PatchFileChange change) throws IOException {
+    private FileChangeComputation computeFileChange(PatchFileChange change, boolean requireBaseHash) throws IOException {
         if (change == null || change.getFilePath() == null || change.getFilePath().isBlank()) {
             throw new IllegalArgumentException("File path is required");
         }
-        List<String> original = workspaceService.readFileLines(change.getFilePath());
-        List<String> patched = workspaceService.applyEditsInMemory(new ArrayList<>(original), change.getEdits());
+        String originalContent = readFileContent(change.getFilePath());
+        if (requireBaseHash && change.getBaseHash() != null && !change.getBaseHash().isBlank()) {
+            String currentHash = sha256Hex(originalContent);
+            if (!currentHash.equalsIgnoreCase(change.getBaseHash())) {
+                throw new IllegalStateException("File changed since proposal was created");
+            }
+        }
+        List<String> original = splitLines(originalContent);
+
+        List<TextReplace> replacements = change.getReplacements();
+        String patchedContent;
+        List<String> patched;
+        if (replacements != null && !replacements.isEmpty()) {
+            patchedContent = applyReplacements(originalContent, replacements);
+            patched = splitLines(patchedContent);
+        } else {
+            patched = workspaceService.applyEditsInMemory(new ArrayList<>(original), change.getEdits());
+            patchedContent = joinLines(patched);
+        }
+
         String diff = generateUnifiedDiff(change.getFilePath(), original, patched);
         return new FileChangeComputation(change.getFilePath(), original, patched, diff);
     }
@@ -369,6 +390,128 @@ public class PatchService {
             3
         );
         return String.join("\n", unified);
+    }
+
+    private List<String> splitLines(String content) {
+        if (content == null) {
+            return new ArrayList<>();
+        }
+        return new ArrayList<>(List.of(content.split("\\r?\\n", -1)));
+    }
+
+    private String joinLines(List<String> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return "";
+        }
+        return String.join("\n", lines);
+    }
+
+    private String applyReplacements(String content, List<TextReplace> replacements) {
+        String result = content != null ? content : "";
+        for (TextReplace replacement : replacements) {
+            if (replacement == null) {
+                continue;
+            }
+            String before = replacement.getBefore();
+            String after = replacement.getAfter() != null ? replacement.getAfter() : "";
+            if (before == null || before.isEmpty()) {
+                throw new IllegalArgumentException("Replacement before text is required");
+            }
+
+            List<Integer> indices = findOccurrences(result, before);
+            if (indices.isEmpty()) {
+                throw new IllegalArgumentException("Replacement text not found");
+            }
+            int targetIndex;
+            Integer occurrence = replacement.getOccurrence();
+            if (occurrence != null) {
+                if (occurrence < 1 || occurrence > indices.size()) {
+                    throw new IllegalArgumentException("Replacement occurrence out of range");
+                }
+                targetIndex = indices.get(occurrence - 1);
+            } else {
+                if (indices.size() > 1) {
+                    throw new IllegalArgumentException("Replacement text appears multiple times; specify occurrence");
+                }
+                targetIndex = indices.get(0);
+            }
+
+            result = result.substring(0, targetIndex) + after + result.substring(targetIndex + before.length());
+        }
+        return result;
+    }
+
+    private List<Integer> findOccurrences(String text, String needle) {
+        List<Integer> indices = new ArrayList<>();
+        if (text == null || needle == null || needle.isEmpty()) {
+            return indices;
+        }
+        int from = 0;
+        while (from <= text.length() - needle.length()) {
+            int idx = text.indexOf(needle, from);
+            if (idx < 0) {
+                break;
+            }
+            indices.add(idx);
+            from = idx + needle.length();
+        }
+        return indices;
+    }
+
+    private String sha256Hex(String value) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest((value != null ? value : "").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashed) {
+                sb.append(String.format("%02x", b));
+            }
+            return "sha256:" + sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to hash content", e);
+        }
+    }
+
+    private boolean isPreparedVirtualPath(String relativePath) {
+        if (preparedWorkspaceService == null || workspaceService == null) {
+            return false;
+        }
+        try {
+            var meta = workspaceService.loadMetadata();
+            if (meta == null || !meta.isPrepared()) {
+                return false;
+            }
+            return preparedWorkspaceService.isVirtualPath(relativePath);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private List<String> readFileLines(String relativePath) throws IOException {
+        if (isPreparedVirtualPath(relativePath)) {
+            String content = preparedWorkspaceService.readFile(relativePath);
+            if (content == null) {
+                return new ArrayList<>();
+            }
+            return new ArrayList<>(List.of(content.split("\\r?\\n", -1)));
+        }
+        return workspaceService.readFileLines(relativePath);
+    }
+
+    private String readFileContent(String relativePath) throws IOException {
+        if (isPreparedVirtualPath(relativePath)) {
+            return preparedWorkspaceService.readFile(relativePath);
+        }
+        return workspaceService.readFile(relativePath);
+    }
+
+    private void writeFileLines(String relativePath, List<String> lines) throws IOException {
+        if (isPreparedVirtualPath(relativePath)) {
+            String content = lines == null ? "" : String.join("\n", lines);
+            preparedWorkspaceService.writeFile(relativePath, content);
+            return;
+        }
+        workspaceService.writeFileLines(relativePath, lines);
     }
 
     public record FileChangeComputation(String filePath, List<String> original, List<String> patched, String diff) {}

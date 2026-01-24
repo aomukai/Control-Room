@@ -497,6 +497,25 @@
         return escapeHtml ? escapeHtml(fallback) : fallback;
     }
 
+    function extractPatchIds(comments) {
+        const ids = new Set();
+        if (!Array.isArray(comments)) {
+            return [];
+        }
+        comments.forEach(comment => {
+            const action = comment && comment.action ? comment.action : null;
+            if (!action || action.type !== 'patch-proposed') {
+                return;
+            }
+            const details = action.details || '';
+            const match = String(details).match(/patchId:\s*([\w-]+)/i);
+            if (match && match[1]) {
+                ids.add(match[1]);
+            }
+        });
+        return Array.from(ids);
+    }
+
     async function openIssueModal(issueId) {
         if (!issueId) return;
 
@@ -619,6 +638,8 @@
                 ? otherTags.map(tag => `<span class="issue-tag">${escapeHtml(tag)}</span>`).join('')
                 : '<span class="issue-no-tags">No tags</span>';
 
+            const patchIds = extractPatchIds(issue.comments || []);
+
             // Build comments HTML
             let commentsHtml = '';
             if (issue.comments && issue.comments.length > 0) {
@@ -646,6 +667,18 @@
             } else {
                 commentsHtml = '<div class="issue-no-comments">No comments yet</div>';
             }
+
+            const patchesHtml = patchIds.length
+                ? `
+                    <div class="issue-patches">
+                        ${patchIds.map(patchId => `
+                            <button type="button" class="issue-action-btn issue-action-primary" data-patch-id="${patchId}">
+                                Review Patch ${escapeHtml(patchId)}
+                            </button>
+                        `).join('')}
+                    </div>
+                `
+                : '<div class="issue-no-patches">No patches linked</div>';
 
             modal.innerHTML = `
                 <div class="issue-modal-header">
@@ -716,6 +749,11 @@
                         <h3 class="issue-section-title">Comments (${issue.comments ? issue.comments.length : 0})</h3>
                         <div class="issue-comments-list">${commentsHtml}</div>
                     </div>
+
+                    <div class="issue-patches-section">
+                        <h3 class="issue-section-title">Patches</h3>
+                        ${patchesHtml}
+                    </div>
                 </div>
 
                 <div class="issue-modal-footer">
@@ -742,6 +780,20 @@
         if (footerCloseBtn) {
             footerCloseBtn.addEventListener('click', closeIssueModal);
         }
+
+        const patchButtons = modal.querySelectorAll('[data-patch-id]');
+        patchButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const patchId = btn.getAttribute('data-patch-id');
+                if (patchId) {
+                    if (typeof window.showPatchReviewModal === 'function') {
+                        window.showPatchReviewModal(patchId);
+                    } else if (typeof showPatchReviewModal === 'function') {
+                        showPatchReviewModal(patchId);
+                    }
+                }
+            });
+        });
 
         const roadmapApplyBtn = modal.querySelector('.issue-roadmap-apply');
         if (roadmapApplyBtn) {

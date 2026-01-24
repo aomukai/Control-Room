@@ -31,10 +31,10 @@ public class ProjectContext {
         this.workspaceService = new WorkspaceService(workspaceRoot);
         this.agentRegistry = new AgentRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
-        this.patchService = new PatchService(workspaceService);
+        this.preparedWorkspaceService = new PreparedWorkspaceService(workspaceService.getWorkspaceRoot(), objectMapper);
+        this.patchService = new PatchService(workspaceService, preparedWorkspaceService);
         this.promptRegistry = new PromptRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.preparationService = new ProjectPreparationService(workspaceService.getWorkspaceRoot(), workspaceService, objectMapper);
-        this.preparedWorkspaceService = new PreparedWorkspaceService(workspaceService.getWorkspaceRoot(), objectMapper);
         logger.info("Project context loaded for " + workspaceRoot);
     }
 

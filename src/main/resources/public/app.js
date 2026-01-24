@@ -782,8 +782,10 @@
                     fileName.textContent = change.filePath || 'Unknown file';
                     const fileMeta = document.createElement('div');
                     fileMeta.className = 'patch-file-meta';
+                    const replacementCount = Array.isArray(change.replacements) ? change.replacements.length : 0;
                     const editCount = Array.isArray(change.edits) ? change.edits.length : 0;
-                    fileMeta.textContent = `${editCount} edit${editCount === 1 ? '' : 's'}`;
+                    const count = replacementCount || editCount;
+                    fileMeta.textContent = `${count} edit${count === 1 ? '' : 's'}`;
                     headerRow.appendChild(fileName);
                     headerRow.appendChild(fileMeta);
                     card.appendChild(headerRow);
@@ -810,10 +812,10 @@
                     const viewContainer = document.createElement('div');
                     viewContainer.className = 'patch-view-container';
 
-                    const editorView = renderEditorView(change.filePath || '', change.diff || change.preview || '');
+                    const editorView = renderEditorView(change.filePath || '', change.diff || change.preview || '', change);
                     editorView.className = 'patch-editor-view active';
 
-                    const diffBlock = renderDiffTable(change.filePath || '', change.diff || change.preview || '');
+                    const diffBlock = renderDiffTable(change.filePath || '', change.diff || change.preview || '', change);
                     diffBlock.classList.add('patch-diff-view');
 
                     viewContainer.appendChild(editorView);
@@ -1125,9 +1127,21 @@
             }
         }
 
-        function renderEditorView(filePath, diffText) {
+        function renderEditorView(filePath, diffText, change) {
             const container = document.createElement('div');
             container.className = 'patch-editor-content';
+
+            const replacements = change && Array.isArray(change.replacements) ? change.replacements : [];
+            if (replacements.length) {
+                if (filePath) {
+                    const fileHeading = document.createElement('div');
+                    fileHeading.className = 'editor-file-heading';
+                    fileHeading.textContent = filePath;
+                    container.appendChild(fileHeading);
+                }
+                container.appendChild(renderReplacementSummary(replacements));
+                return container;
+            }
 
             if (!diffText) {
                 container.textContent = 'No changes to show';
@@ -1240,9 +1254,22 @@
             return container;
         }
 
-        function renderDiffTable(filePath, diffText) {
+        function renderDiffTable(filePath, diffText, change) {
             const container = document.createElement('div');
             container.className = 'patch-diff-table';
+            const replacements = change && Array.isArray(change.replacements) ? change.replacements : [];
+            if (replacements.length) {
+                const header = document.createElement('div');
+                header.className = 'patch-diff-header';
+                header.innerHTML = `
+                    <div class="diff-col-label">Before</div>
+                    <div class="diff-col-label">After</div>
+                    <div class="diff-file-label">${escapeHtml(filePath || '')}</div>
+                `;
+                container.appendChild(header);
+                container.appendChild(renderReplacementTable(replacements));
+                return container;
+            }
             if (!diffText) {
                 container.textContent = 'No diff available';
                 return container;
@@ -1309,6 +1336,57 @@
 
             container.appendChild(table);
             return container;
+        }
+
+        function renderReplacementSummary(replacements) {
+            const wrap = document.createElement('div');
+            wrap.className = 'patch-replacements';
+            replacements.forEach((rep, idx) => {
+                const block = document.createElement('div');
+                block.className = 'patch-replacement';
+                const title = document.createElement('div');
+                title.className = 'patch-replacement-title';
+                title.textContent = `Replacement ${idx + 1}`;
+                const before = document.createElement('div');
+                before.className = 'patch-replacement-before';
+                before.textContent = rep.before || '';
+                const after = document.createElement('div');
+                after.className = 'patch-replacement-after';
+                after.textContent = rep.after || '';
+                block.appendChild(title);
+                block.appendChild(before);
+                block.appendChild(after);
+                wrap.appendChild(block);
+            });
+            return wrap;
+        }
+
+        function renderReplacementTable(replacements) {
+            const table = document.createElement('div');
+            table.className = 'diff-rows';
+            replacements.forEach((rep) => {
+                const row = document.createElement('div');
+                row.className = 'diff-sxs-row replacement';
+
+                const left = document.createElement('div');
+                left.className = 'diff-sxs-cell left';
+                const leftText = document.createElement('div');
+                leftText.className = 'line-text';
+                leftText.textContent = rep.before || '';
+                left.appendChild(leftText);
+
+                const right = document.createElement('div');
+                right.className = 'diff-sxs-cell right';
+                const rightText = document.createElement('div');
+                rightText.className = 'line-text';
+                rightText.textContent = rep.after || '';
+                right.appendChild(rightText);
+
+                row.appendChild(left);
+                row.appendChild(right);
+                table.appendChild(row);
+            });
+            return table;
         }
 
         function parseUnifiedDiff(diffText) {
@@ -5423,6 +5501,7 @@ async function showWorkspaceSwitcher() {
         if (elements.btnAiSummarize) elements.btnAiSummarize.disabled = !enabled;
         if (elements.btnAiExplain) elements.btnAiExplain.disabled = !enabled;
         if (elements.btnAiSuggest) elements.btnAiSuggest.disabled = !enabled;
+        if (elements.btnAiPropose) elements.btnAiPropose.disabled = !enabled;
         if (elements.aiFoundationScope) elements.aiFoundationScope.disabled = !enabled;
     }
 
@@ -5441,6 +5520,29 @@ async function showWorkspaceSwitcher() {
         textarea.select();
         document.execCommand('copy');
         textarea.remove();
+    }
+
+    async function computeSha256Hex(text) {
+        if (!window.crypto || !window.crypto.subtle) {
+            return '';
+        }
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text || '');
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return `sha256:${hex}`;
+    }
+
+    function isFileDirty(path) {
+        if (!path || !state.openFiles) {
+            return false;
+        }
+        const file = state.openFiles.get(path);
+        if (!file) {
+            return false;
+        }
+        return file.content !== file.originalContent;
     }
 
     function renderFoundationOutput(toolId, data) {
@@ -5779,32 +5881,472 @@ async function showWorkspaceSwitcher() {
 
                 tab.classList.add('active');
                 document.getElementById(`${tab.dataset.tab}-panel`).classList.add('active');
+                if (tab.dataset.tab === 'ai-actions') {
+                    refreshAIActionsList();
+                }
             });
         });
     }
 
-    // AI Actions (stub)
-    function initAIActions() {
-        document.querySelectorAll('.ai-action-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const action = btn.dataset.action;
-                const [type, id] = action.split('-');
+    // ============================================
+    // AGENTIC EDITING (PATCH PROPOSAL CONTRACT)
+    // ============================================
 
-                if (type === 'preview') {
-                    showDiffPreview(id);
-                } else if (type === 'apply') {
-                    log(`Applied change ${id}`, 'success');
-                    btn.closest('.ai-action-item').remove();
-                } else if (type === 'reject') {
-                    log(`Rejected change ${id}`, 'warning');
-                    btn.closest('.ai-action-item').remove();
+    const AI_PATCH_PROPOSAL_SCHEMA = {
+        tool: 'patch',
+        title: 'Short label for the change',
+        description: '1-2 sentence summary of intent',
+        filePath: 'workspace-relative path',
+        baseHash: 'sha256 of the full file content',
+        replacements: [
+            { before: 'exact snippet', after: 'replacement text', occurrence: 1 }
+        ],
+        edits: [
+            { startLine: 1, endLine: 1, newText: 'replacement text' }
+        ],
+        preview: 'Optional short preview of key changes'
+    };
+
+    function normalizePatchProposalPayload(payload) {
+        const safe = (payload && typeof payload === 'object') ? payload : {};
+        const edits = Array.isArray(safe.edits) ? safe.edits : [];
+        const replacements = Array.isArray(safe.replacements) ? safe.replacements : [];
+        return {
+            tool: 'patch',
+            title: String(safe.title || '').trim(),
+            description: String(safe.description || '').trim(),
+            filePath: String(safe.filePath || '').trim(),
+            baseHash: String(safe.baseHash || '').trim(),
+            replacements: replacements
+                .map(rep => ({
+                    before: String(rep?.before || ''),
+                    after: String(rep?.after ?? ''),
+                    occurrence: Number.isFinite(Number(rep?.occurrence)) ? Number(rep?.occurrence) : null
+                }))
+                .filter(rep => rep.before),
+            edits: edits
+                .map(edit => ({
+                    startLine: Number(edit?.startLine),
+                    endLine: Number(edit?.endLine),
+                    newText: String(edit?.newText ?? '')
+                }))
+                .filter(edit => Number.isFinite(edit.startLine) && Number.isFinite(edit.endLine)),
+            preview: String(safe.preview || '').trim()
+        };
+    }
+
+    function validatePatchProposalPayload(payload) {
+        const errors = [];
+        if (!payload.title) errors.push('title is required');
+        if (!payload.description) errors.push('description is required');
+        if (!payload.filePath) errors.push('filePath is required');
+        const hasReplacements = Array.isArray(payload.replacements) && payload.replacements.length > 0;
+        const hasEdits = Array.isArray(payload.edits) && payload.edits.length > 0;
+        if (!hasReplacements && !hasEdits) {
+            errors.push('at least one replacement or edit is required');
+        }
+        if (hasReplacements) {
+            payload.replacements.forEach((rep, idx) => {
+                if (!rep.before) {
+                    errors.push(`replacement ${idx + 1}: before is required`);
+                }
+                if (rep.occurrence !== null && (!Number.isFinite(rep.occurrence) || rep.occurrence < 1)) {
+                    errors.push(`replacement ${idx + 1}: occurrence must be >= 1`);
                 }
             });
+        }
+        if (hasEdits) {
+            payload.edits.forEach((edit, idx) => {
+                if (!Number.isFinite(edit.startLine) || edit.startLine < 1) {
+                    errors.push(`edit ${idx + 1}: startLine must be >= 1`);
+                }
+                if (!Number.isFinite(edit.endLine) || edit.endLine < edit.startLine) {
+                    errors.push(`edit ${idx + 1}: endLine must be >= startLine`);
+                }
+                if (typeof edit.newText !== 'string') {
+                    errors.push(`edit ${idx + 1}: newText must be a string`);
+                }
+            });
+        }
+        return errors;
+    }
+
+    function buildPatchProposalPrompt(context, attempt) {
+        const base = [
+            'Return ONLY valid JSON wrapped between BEGIN_JSON and END_JSON.',
+            'No markdown, no preface, no code fences.',
+            'Use double quotes for all keys and string values.',
+            'Do not include STOP_HOOK or any extra text.',
+            `Schema: ${JSON.stringify(AI_PATCH_PROPOSAL_SCHEMA)}`,
+            'Use replacements for edits inside lines. Return replacements when possible.',
+            'Each replacement must include an exact "before" substring from the provided text.',
+            'If multiple matches exist, include an occurrence number (1-based).',
+            'Do not rewrite beyond the requested change.',
+            'Keep edits minimal and focused on the user request.'
+        ];
+        if (attempt > 1) {
+            base.unshift('Retry: respond with JSON only. If uncertain, return empty strings/arrays but keep schema.');
+        }
+        base.push(
+            '',
+            `File: ${context.filePath}`,
+            `User request: ${context.request}`,
+            '',
+            'Text:',
+            context.text,
+            '',
+            'BEGIN_JSON',
+            'END_JSON'
+        );
+        return base.join('\n');
+    }
+
+    function getEditorContextForPatch(scope) {
+        if (!state.editor || !state.activeFile) {
+            return { error: 'Open a file first to propose edits.' };
+        }
+        const model = state.editor.getModel();
+        if (!model) {
+            return { error: 'No editor model is available.' };
+        }
+
+        const selection = state.editor.getSelection();
+        const fullText = model.getValue();
+        const selectionText = selection && !selection.isEmpty()
+            ? model.getValueInRange(selection)
+            : '';
+
+        const useSelection = scope === 'selection' || (scope === 'auto' && selectionText.trim());
+        if (useSelection) {
+            if (!selectionText.trim()) {
+                return { error: 'Select some text first, or switch scope to Whole file.' };
+            }
+            return {
+                filePath: state.activeFile,
+                text: selectionText,
+                fullText,
+                startLine: selection.startLineNumber,
+                scopeLabel: 'Selection',
+                charCount: selectionText.length
+            };
+        }
+
+        if (!fullText || !fullText.trim()) {
+            return { error: 'The current file is empty.' };
+        }
+        return {
+            filePath: state.activeFile,
+            text: fullText,
+            fullText,
+            startLine: 1,
+            scopeLabel: state.activeFile ? `File: ${state.activeFile}` : 'File',
+            charCount: fullText.length
+        };
+    }
+
+    function inferPatchTitle(request) {
+        const trimmed = String(request || '').trim();
+        if (!trimmed) return 'Proposed edit';
+        const first = trimmed.split('\n')[0];
+        if (first.length <= 60) return first;
+        return `${first.slice(0, 57).trim()}...`;
+    }
+
+    function validateReplacementsAgainstText(replacements, text) {
+        const source = String(text || '');
+        for (let i = 0; i < replacements.length; i += 1) {
+            const rep = replacements[i];
+            const before = rep.before || '';
+            if (!before) {
+                return `replacement ${i + 1}: before is required`;
+            }
+            const indices = [];
+            let from = 0;
+            while (from <= source.length - before.length) {
+                const idx = source.indexOf(before, from);
+                if (idx < 0) break;
+                indices.push(idx);
+                from = idx + before.length;
+            }
+            if (!indices.length) {
+                return `replacement ${i + 1}: before text not found in file`;
+            }
+            if (rep.occurrence != null) {
+                const occurrence = Number(rep.occurrence);
+                if (!Number.isFinite(occurrence) || occurrence < 1 || occurrence > indices.length) {
+                    return `replacement ${i + 1}: occurrence out of range`;
+                }
+            } else if (indices.length > 1) {
+                return `replacement ${i + 1}: before text appears multiple times; specify occurrence`;
+            }
+        }
+        return '';
+    }
+
+    function openPatchRequestModal(defaultRequest = '') {
+        const modalFactory = typeof createModalShell === 'function'
+            ? createModalShell
+            : (window.modals ? window.modals.createModalShell : null);
+        if (!modalFactory) {
+            notificationStore.error('Modal system not available.', 'editor');
+            return;
+        }
+
+        const { modal, body, confirmBtn, cancelBtn, close } = modalFactory(
+            'Propose Edit',
+            'Propose',
+            'Cancel',
+            { closeOnCancel: true, closeOnConfirm: false }
+        );
+        modal.classList.add('ai-foundation-modal');
+
+        const label = document.createElement('div');
+        label.className = 'modal-hint';
+        label.textContent = 'Describe the change you want the agent to propose.';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'modal-textarea';
+        textarea.placeholder = 'e.g., tighten the dialogue, keep tone; remove repetition in paragraph 3';
+        textarea.value = defaultRequest || '';
+
+        body.appendChild(label);
+        body.appendChild(textarea);
+
+        confirmBtn.addEventListener('click', () => {
+            const request = textarea.value.trim();
+            if (!request) {
+                notificationStore.warning('Please describe the change you want.', 'editor');
+                return;
+            }
+            close();
+            runPatchProposal(request);
         });
 
-        elements.closeDiff.addEventListener('click', () => {
-            elements.diffPreview.classList.add('hidden');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', close);
+        }
+
+        textarea.focus();
+    }
+
+    function showPatchErrorModal(meta, rawText, errorMessage) {
+        const modalFactory = typeof createModalShell === 'function'
+            ? createModalShell
+            : (window.modals ? window.modals.createModalShell : null);
+        if (!modalFactory) {
+            return;
+        }
+        const { modal, body, confirmBtn } = modalFactory(
+            'Propose Edit Error',
+            'Copy Raw',
+            'Close',
+            { closeOnCancel: true, closeOnConfirm: false }
+        );
+        modal.classList.add('ai-foundation-modal');
+
+        confirmBtn.addEventListener('click', async () => {
+            try {
+                await copyToClipboard(rawText || '');
+                notificationStore.success('Copied raw response to clipboard.', 'editor');
+            } catch (err) {
+                notificationStore.error(`Copy failed: ${err.message}`, 'editor');
+            }
         });
+
+        const container = document.createElement('div');
+        container.className = 'ai-foundation-result';
+
+        const metaLine = document.createElement('div');
+        metaLine.className = 'ai-foundation-meta';
+        metaLine.textContent = `${meta.scopeLabel} - ${meta.charCount} chars`;
+        container.appendChild(metaLine);
+
+        const errorLine = document.createElement('div');
+        errorLine.textContent = errorMessage || 'Model did not return valid JSON.';
+        container.appendChild(errorLine);
+
+        body.appendChild(container);
+    }
+
+    async function runPatchProposal(request) {
+        const agentId = state.agents.selectedId;
+        if (!agentId) {
+            notificationStore.warning('Select an agent first.', 'editor');
+            return;
+        }
+        const agent = (state.agents.list || []).find(item => item.id === agentId);
+        const status = state.agents.statusById ? state.agents.statusById[agentId] : null;
+        if (status === 'unconfigured' || status === 'incomplete') {
+            notificationStore.warning('Selected agent is not configured.', 'editor');
+            return;
+        }
+        if (status === 'unreachable') {
+            notificationStore.error('Selected agent endpoint is unreachable.', 'editor');
+            return;
+        }
+        if (agent && Array.isArray(agent.tools) && agent.tools.length) {
+            const toolConfig = agent.tools.find(t => t.id === 'patch');
+            if (toolConfig && toolConfig.enabled === false) {
+                notificationStore.warning('Patch proposals are disabled for this agent.', 'editor');
+                return;
+            }
+        }
+
+        const scope = resolveFoundationScope();
+        const context = getEditorContextForPatch(scope);
+        if (context.error) {
+            notificationStore.warning(context.error, 'editor');
+            return;
+        }
+
+        const promptContext = {
+            filePath: context.filePath,
+            request,
+            text: context.text
+        };
+
+        let baseHash = '';
+        if (!isFileDirty(context.filePath)) {
+            try {
+                baseHash = await computeSha256Hex(context.fullText || context.text);
+            } catch (err) {
+                baseHash = '';
+            }
+        }
+
+        const payloadBase = { agentId, memoryId: undefined, skipToolCatalog: true };
+        let lastError = null;
+        let lastResponseText = '';
+        let normalized = null;
+
+        setFoundationButtonsEnabled(false);
+        log('AI Tool: Propose Edit started', 'info');
+
+        const execute = async (prompt, label) => {
+            const payload = { ...payloadBase, message: prompt };
+            const runChat = () => api('/api/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (typeof withAgentTurn === 'function') {
+                return withAgentTurn(agentId, 'processing', runChat, label);
+            }
+            return runChat();
+        };
+
+        try {
+            for (let attempt = 1; attempt <= 2; attempt += 1) {
+                const prompt = buildPatchProposalPrompt(promptContext, attempt);
+                const response = await execute(prompt, `Propose Edit (attempt ${attempt})`);
+                const responseText = response && response.content ? response.content : '';
+                lastResponseText = responseText;
+                const parsed = extractJsonObject(responseText);
+                if (!parsed) {
+                    lastError = 'Model did not return valid JSON.';
+                    continue;
+                }
+                normalized = normalizePatchProposalPayload(parsed);
+                if (!normalized.title) normalized.title = inferPatchTitle(request);
+                if (!normalized.description) normalized.description = request;
+                normalized.filePath = context.filePath;
+                if (!normalized.baseHash && baseHash) {
+                    normalized.baseHash = baseHash;
+                }
+                if (normalized.replacements && normalized.replacements.length) {
+                    const replacementError = validateReplacementsAgainstText(normalized.replacements, context.fullText || '');
+                    if (replacementError) {
+                        lastError = replacementError;
+                        normalized = null;
+                        continue;
+                    }
+                }
+                const errors = validatePatchProposalPayload(normalized);
+                if (errors.length) {
+                    lastError = errors.join('; ');
+                    normalized = null;
+                    continue;
+                }
+                break;
+            }
+            if (!normalized) {
+                throw new Error(lastError || 'Model did not return a valid patch proposal.');
+            }
+
+            const payload = {
+                agentId,
+                title: normalized.title,
+                description: normalized.description,
+                filePath: normalized.filePath,
+                baseHash: normalized.baseHash,
+                replacements: normalized.replacements,
+                edits: normalized.edits,
+                preview: normalized.preview
+            };
+
+            const created = await patchApi.createFromAi(payload);
+            notificationStore.success(`Patch proposed: ${created.id}`, 'editor');
+            log(`AI Tool: Propose Edit completed (${created.id})`, 'success');
+            refreshAIActionsList();
+        } catch (err) {
+            const message = err.message || lastError || 'Unknown error';
+            notificationStore.error(`Propose Edit failed: ${message}`, 'editor');
+            log(`AI Tool: Propose Edit failed (${message})`, 'error');
+            if (lastResponseText) {
+                showPatchErrorModal(context, lastResponseText, message);
+            }
+        } finally {
+            setFoundationButtonsEnabled(true);
+        }
+    }
+
+    async function refreshAIActionsList() {
+        const list = document.getElementById('ai-actions-list');
+        if (!list || !patchApi) return;
+        list.innerHTML = '';
+        try {
+            const res = await patchApi.list();
+            const patches = (res && res.patches ? res.patches : [])
+                .filter(patch => (patch.status || 'pending') === 'pending');
+            if (!patches.length) {
+                list.innerHTML = '<div class="ai-actions-empty">No proposed changes yet.</div>';
+                return;
+            }
+            patches.forEach(patch => {
+                const item = document.createElement('div');
+                item.className = 'ai-action-item';
+                const info = document.createElement('div');
+                info.className = 'ai-action-info';
+                const fileLabel = Array.isArray(patch.files) && patch.files[0]
+                    ? patch.files[0].filePath
+                    : (patch.filePath || '');
+                info.innerHTML = `
+                    <span class="ai-action-file">${escapeHtml(fileLabel)}</span>
+                    <span class="ai-action-desc">${escapeHtml(patch.title || patch.description || patch.id)}</span>
+                `;
+                const buttons = document.createElement('div');
+                buttons.className = 'ai-action-buttons';
+                const reviewBtn = document.createElement('button');
+                reviewBtn.className = 'ai-action-btn preview';
+                reviewBtn.type = 'button';
+                reviewBtn.textContent = 'Review';
+                reviewBtn.addEventListener('click', () => showPatchReviewModal(patch.id));
+                buttons.appendChild(reviewBtn);
+                item.appendChild(info);
+                item.appendChild(buttons);
+                list.appendChild(item);
+            });
+        } catch (err) {
+            list.innerHTML = `<div class="ai-actions-empty">Failed to load patches: ${escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    // AI Actions
+    function initAIActions() {
+        if (elements.btnAiPropose) {
+            elements.btnAiPropose.addEventListener('click', () => openPatchRequestModal());
+        }
+        refreshAIActionsList();
     }
 
     function showDiffPreview(id) {
@@ -7676,6 +8218,7 @@ async function showWorkspaceSwitcher() {
     window.showProjectPreparationWizard = showProjectPreparationWizard;
     window.showPreparationEntryPrompt = showPreparationEntryPrompt;
     window.showWorkspaceSwitcher = showWorkspaceSwitcher;
+    window.showPatchReviewModal = showPatchReviewModal;
     window.initConsoleTabs = initConsoleTabs;
     window.initAIActions = initAIActions;
     window.initAIFoundation = initAIFoundation;

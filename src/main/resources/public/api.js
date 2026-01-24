@@ -354,6 +354,13 @@
                 body: JSON.stringify(payload || {})
             });
         },
+        async createFromAi(payload) {
+            return api('/api/patches/ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
         async get(id) {
             return api(`/api/patches/${encodeURIComponent(id)}`);
         },

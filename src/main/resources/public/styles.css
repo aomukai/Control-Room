@@ -1074,6 +1074,12 @@ html, body {
     padding: 8px;
 }
 
+.ai-actions-empty {
+    padding: 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 .ai-action-item {
     background: var(--bg-light);
     border: 1px solid var(--border-color);
@@ -2940,6 +2946,57 @@ html, body {
 
 .diff-sxs-row.context .diff-sxs-cell {
     background: var(--bg-dark);
+}
+
+.patch-replacements {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.patch-replacement {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-light);
+    padding: 12px;
+}
+
+.patch-replacement-title {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+.patch-replacement-before,
+.patch-replacement-after {
+    font-size: 13px;
+    line-height: 1.6;
+    padding: 8px;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.patch-replacement-before {
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.35);
+    color: var(--text-primary);
+    text-decoration: line-through;
+}
+
+.patch-replacement-after {
+    margin-top: 8px;
+    background: rgba(76, 175, 80, 0.12);
+    border: 1px solid rgba(76, 175, 80, 0.35);
+    color: var(--text-primary);
+}
+
+.diff-sxs-row.replacement .diff-sxs-cell .line-text {
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .diff-sxs-cell {

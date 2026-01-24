@@ -9,6 +9,8 @@ import java.util.List;
 public class PatchFileChange {
     private String filePath;
     private List<TextEdit> edits = new ArrayList<>();
+    private List<TextReplace> replacements = new ArrayList<>();
+    private String baseHash;
     private String preview;
     /**
      * Computed unified diff (not necessarily persisted).
@@ -29,6 +31,22 @@ public class PatchFileChange {
 
     public void setEdits(List<TextEdit> edits) {
         this.edits = edits != null ? edits : new ArrayList<>();
+    }
+
+    public List<TextReplace> getReplacements() {
+        return replacements;
+    }
+
+    public void setReplacements(List<TextReplace> replacements) {
+        this.replacements = replacements != null ? replacements : new ArrayList<>();
+    }
+
+    public String getBaseHash() {
+        return baseHash;
+    }
+
+    public void setBaseHash(String baseHash) {
+        this.baseHash = baseHash;
     }
 
     public String getPreview() {

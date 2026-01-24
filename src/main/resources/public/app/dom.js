@@ -23,6 +23,7 @@
         btnAiSummarize: document.getElementById('btn-ai-summarize'),
         btnAiExplain: document.getElementById('btn-ai-explain'),
         btnAiSuggest: document.getElementById('btn-ai-suggest'),
+        btnAiPropose: document.getElementById('btn-ai-propose'),
         agentSelect: document.getElementById('agent-select'),
         searchInput: document.getElementById('search-input'),
         searchBtn: document.getElementById('search-btn'),

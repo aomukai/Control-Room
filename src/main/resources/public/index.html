@@ -277,28 +277,7 @@
                                 <div id="ai-actions-panel" class="console-panel">
                                     <div class="ai-actions-header">Proposed Changes</div>
                                     <div id="ai-actions-list">
-                                        <div class="ai-action-item">
-                                            <div class="ai-action-info">
-                                                <span class="ai-action-file">scenes/intro.md</span>
-                                                <span class="ai-action-desc">Add more sensory details to the coffee shop scene</span>
-                                            </div>
-                                            <div class="ai-action-buttons">
-                                                <button class="ai-action-btn preview" data-action="preview-1">Preview</button>
-                                                <button class="ai-action-btn apply" data-action="apply-1">Apply</button>
-                                                <button class="ai-action-btn reject" data-action="reject-1">Reject</button>
-                                            </div>
-                                        </div>
-                                        <div class="ai-action-item">
-                                            <div class="ai-action-info">
-                                                <span class="ai-action-file">chars/mara.md</span>
-                                                <span class="ai-action-desc">Expand character backstory section</span>
-                                            </div>
-                                            <div class="ai-action-buttons">
-                                                <button class="ai-action-btn preview" data-action="preview-2">Preview</button>
-                                                <button class="ai-action-btn apply" data-action="apply-2">Apply</button>
-                                                <button class="ai-action-btn reject" data-action="reject-2">Reject</button>
-                                            </div>
-                                        </div>
+                                        <div class="ai-actions-empty">No proposed changes yet.</div>
                                     </div>
                                     <div id="diff-preview" class="hidden">
                                         <div class="diff-header">
@@ -361,6 +340,7 @@
                             <button id="btn-ai-summarize" type="button" class="ai-foundation-btn" title="Summarize selection or file">Summarize</button>
                             <button id="btn-ai-explain" type="button" class="ai-foundation-btn" title="Explain selection or file">Explain</button>
                             <button id="btn-ai-suggest" type="button" class="ai-foundation-btn" title="Suggest improvements (read-only)">Suggest</button>
+                            <button id="btn-ai-propose" type="button" class="ai-foundation-btn" title="Propose an editable patch">Propose Edit</button>
                         </div>
                     </div>
                     <div id="chat-history"></div>

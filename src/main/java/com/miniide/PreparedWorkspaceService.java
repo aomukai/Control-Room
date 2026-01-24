@@ -62,6 +62,10 @@ public class PreparedWorkspaceService {
         return root;
     }
 
+    public boolean isVirtualPath(String relativePath) {
+        return CanonPath.parse(relativePath) != null;
+    }
+
     public String readFile(String relativePath) throws IOException {
         CanonPath path = CanonPath.parse(relativePath);
         if (path == null) {
