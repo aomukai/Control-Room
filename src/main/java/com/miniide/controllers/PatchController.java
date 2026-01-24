@@ -240,6 +240,7 @@ public class PatchController implements Controller {
                 return;
             }
             awardPatchApplyCredit(outcome.getProposal());
+            markIssueApplied(outcome.getProposal());
             ctx.json(Map.of("ok", true, "patch", outcome.getProposal(), "fileResults", outcome.getFileResults()));
         } catch (Exception e) {
             logger.error("Failed to apply patch: " + e.getMessage(), e);
@@ -479,6 +480,46 @@ public class PatchController implements Controller {
             issueService.addComment(id, author, message, action, null, null);
         } catch (Exception e) {
             logger.warn("Failed to log patch proposal on Issue #" + issueId + ": " + e.getMessage());
+        }
+    }
+
+    private void markIssueApplied(PatchProposal proposal) {
+        if (proposal == null || projectContext == null || projectContext.issueInterest() == null) {
+            return;
+        }
+        String issueId = proposal.getIssueId();
+        if (issueId == null || issueId.isBlank()) {
+            return;
+        }
+        int id;
+        try {
+            id = Integer.parseInt(issueId);
+        } catch (NumberFormatException e) {
+            return;
+        }
+        String agentId = resolveAgentId(proposal);
+        if (agentId == null || agentId.isBlank()) {
+            if (issueService != null) {
+                var issueOpt = issueService.getIssue(id);
+                if (issueOpt.isPresent()) {
+                    var issue = issueOpt.get();
+                    String assigned = issue.getAssignedTo();
+                    String opened = issue.getOpenedBy();
+                    if (assigned != null && !assigned.isBlank()) {
+                        agentId = assigned;
+                    } else if (opened != null && !opened.isBlank()) {
+                        agentId = opened;
+                    }
+                }
+            }
+        }
+        if (agentId == null || agentId.isBlank()) {
+            return;
+        }
+        try {
+            projectContext.issueInterest().recordApplied(agentId, id);
+        } catch (Exception e) {
+            logger.warn("Failed to mark issue applied for patch " + proposal.getId() + ": " + e.getMessage());
         }
     }
 }

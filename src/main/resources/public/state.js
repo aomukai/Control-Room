@@ -38,7 +38,13 @@
             issueId: null,
             isLoading: false,
             error: null,
-            issue: null
+            issue: null,
+            memory: {
+                agentId: null,
+                record: null,
+                isLoading: false,
+                error: null
+            }
         },
         viewMode: {
             current: 'editor' // 'editor' | 'workbench' | 'settings'

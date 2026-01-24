@@ -16,6 +16,7 @@ public class ProjectContext {
     private AgentRegistry agentRegistry;
     private AgentEndpointRegistry agentEndpointRegistry;
     private TieringService tieringService;
+    private IssueInterestService issueInterestService;
     private PatchService patchService;
     private PromptRegistry promptRegistry;
     private ProjectPreparationService preparationService;
@@ -33,6 +34,7 @@ public class ProjectContext {
         this.agentRegistry = new AgentRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.tieringService = new TieringService(workspaceService.getWorkspaceRoot(), objectMapper, agentRegistry);
+        this.issueInterestService = new IssueInterestService(workspaceService.getWorkspaceRoot(), agentRegistry);
         this.preparedWorkspaceService = new PreparedWorkspaceService(workspaceService.getWorkspaceRoot(), objectMapper);
         this.patchService = new PatchService(workspaceService, preparedWorkspaceService);
         this.promptRegistry = new PromptRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
@@ -66,6 +68,10 @@ public class ProjectContext {
 
     public TieringService tiering() {
         return tieringService;
+    }
+
+    public IssueInterestService issueInterest() {
+        return issueInterestService;
     }
 
     public PatchService patches() {

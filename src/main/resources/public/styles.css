@@ -4902,13 +4902,127 @@ html, body {
 }
 
 /* Issue Body */
-.issue-body-section {
-    margin-bottom: 20px;
-}
+  .issue-body-section {
+      margin-bottom: 20px;
+  }
 
-.issue-patches-section {
-    margin-bottom: 20px;
-}
+  .issue-patches-section {
+      margin-bottom: 20px;
+  }
+
+  .issue-memory-panel {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+  }
+
+  .issue-memory-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+  }
+
+  .issue-memory-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-bright);
+  }
+
+  .issue-memory-subtitle {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+  }
+
+  .issue-memory-agent {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 160px;
+  }
+
+  .issue-memory-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+  }
+
+  .issue-memory-level {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+  }
+
+  .issue-memory-dots {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+  }
+
+  .issue-memory-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--bg-lighter);
+      border: 1px solid var(--border-color);
+  }
+
+  .issue-memory-dot.is-active {
+      background: var(--accent-color);
+      border-color: var(--accent-hover);
+      box-shadow: 0 0 0 2px rgba(78, 201, 176, 0.15);
+  }
+
+  .issue-memory-level-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+  }
+
+  .issue-memory-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px 16px;
+  }
+
+  .issue-memory-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+  }
+
+  .issue-memory-label {
+      color: var(--text-secondary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+  }
+
+  .issue-memory-value {
+      color: var(--text-primary);
+      font-size: 12px;
+  }
+
+  .issue-memory-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+  }
+
+  .issue-memory-loading,
+  .issue-memory-error,
+  .issue-memory-empty {
+      color: var(--text-secondary);
+      font-size: 12px;
+  }
 
 .issue-patches {
     display: flex;

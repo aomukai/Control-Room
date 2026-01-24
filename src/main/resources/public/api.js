@@ -113,6 +113,39 @@
         }
     };
 
+    const issueMemoryApi = {
+        async listByAgent(agentId) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}`);
+        },
+        async get(agentId, issueId) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}`);
+        },
+        async access(agentId, issueId) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/access`, {
+                method: 'POST'
+            });
+        },
+        async applied(agentId, issueId) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/applied`, {
+                method: 'POST'
+            });
+        },
+        async irrelevant(agentId, issueId, note) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/irrelevant`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(note ? { note } : {})
+            });
+        },
+        async decay(agentId) {
+            return api('/api/issue-memory/decay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(agentId ? { agentId } : {})
+            });
+        }
+    };
+
     const outlineApi = {
         async get() {
             return api('/api/outline');
@@ -664,6 +697,7 @@
     // Expose all APIs on window for app.js to use
     window.api = api;
     window.issueApi = issueApi;
+    window.issueMemoryApi = issueMemoryApi;
     window.outlineApi = outlineApi;
     window.creditApi = creditApi;
     window.agentApi = agentApi;

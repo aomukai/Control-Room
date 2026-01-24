@@ -62,6 +62,51 @@
         `;
     }
 
+    function getAgentDisplayName(agentId) {
+        if (!agentId) return 'Unknown';
+        const agents = (state && state.agents && state.agents.list) || [];
+        const agent = agents.find(a => a.id === agentId);
+        return agent ? (agent.name || agent.id) : agentId;
+    }
+
+    function buildAgentOptions(selectedId) {
+        const agents = (state && state.agents && state.agents.list) || [];
+        const enabledAgents = agents.filter(a => a && a.enabled !== false);
+        return enabledAgents.map(agent => {
+            const selected = agent.id === selectedId ? ' selected' : '';
+            return `<option value="${escapeHtml(agent.id)}"${selected}>${escapeHtml(agent.name || agent.id)}</option>`;
+        }).join('');
+    }
+
+    function resolveDefaultMemoryAgent(issue) {
+        const agents = (state && state.agents && state.agents.list) || [];
+        if (!agents.length) return null;
+        if (state && state.agents && state.agents.selectedId) {
+            const selected = agents.find(a => a.id === state.agents.selectedId);
+            if (selected) return selected.id;
+        }
+        const resolver = window.resolveAgentIdFromLabel;
+        const assignedId = issue && issue.assignedTo && typeof resolver === 'function'
+            ? resolver(issue.assignedTo)
+            : null;
+        if (assignedId) return assignedId;
+        const openedId = issue && issue.openedBy && typeof resolver === 'function'
+            ? resolver(issue.openedBy)
+            : null;
+        if (openedId) return openedId;
+        const fallback = agents.find(a => a && a.enabled !== false);
+        return fallback ? fallback.id : agents[0].id;
+    }
+
+    function renderInterestDots(level) {
+        const safeLevel = Math.max(1, Math.min(5, Number(level) || 1));
+        let dots = '';
+        for (let i = 1; i <= 5; i++) {
+            dots += `<span class="issue-memory-dot${i <= safeLevel ? ' is-active' : ''}"></span>`;
+        }
+        return dots;
+    }
+
     // Build assignee dropdown options
     function buildAssigneeOptions(currentAssignee) {
         const agents = (state && state.agents && state.agents.list) || [];
@@ -603,6 +648,12 @@
         state.issueModal.isLoading = true;
         state.issueModal.error = null;
         state.issueModal.issue = null;
+        state.issueModal.memory = {
+            agentId: null,
+            record: null,
+            isLoading: false,
+            error: null
+        };
 
         renderIssueModal();
 
@@ -621,6 +672,11 @@
             if (issueActivityAgentId) {
                 setAgentActivityState(issueActivityAgentId, 'reading', `Reviewing Issue #${issue.id}`);
             }
+            const memoryAgent = resolveDefaultMemoryAgent(issue);
+            if (memoryAgent) {
+                state.issueModal.memory.agentId = memoryAgent;
+                await loadIssueMemory(issue.id, memoryAgent);
+            }
             renderIssueModal();
         } catch (err) {
             state.issueModal.isLoading = false;
@@ -635,6 +691,12 @@
         state.issueModal.isLoading = false;
         state.issueModal.error = null;
         state.issueModal.issue = null;
+        state.issueModal.memory = {
+            agentId: null,
+            record: null,
+            isLoading: false,
+            error: null
+        };
 
         if (issueActivityAgentId) {
             setAgentActivityState(issueActivityAgentId, 'idle');
@@ -649,6 +711,25 @@
         // Return focus to notification bell if it exists
         if (elements.notificationBell) {
             elements.notificationBell.focus();
+        }
+    }
+
+    async function loadIssueMemory(issueId, agentId, { recordAccess = true } = {}) {
+        if (!issueId || !agentId || !window.issueMemoryApi) return;
+        state.issueModal.memory.isLoading = true;
+        state.issueModal.memory.error = null;
+        renderIssueModal();
+        try {
+            const record = recordAccess
+                ? await issueMemoryApi.access(agentId, issueId)
+                : await issueMemoryApi.get(agentId, issueId);
+            state.issueModal.memory.record = record;
+            state.issueModal.memory.isLoading = false;
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.memory.error = err.message;
+            state.issueModal.memory.isLoading = false;
+            renderIssueModal();
         }
     }
 
@@ -764,6 +845,78 @@
                 `
                 : '';
 
+            const memoryState = state.issueModal.memory || {};
+            const memoryAgentId = memoryState.agentId || resolveDefaultMemoryAgent(issue);
+            const memoryRecord = memoryState.record;
+            const memoryAgentOptions = memoryAgentId ? buildAgentOptions(memoryAgentId) : '';
+            let memoryBodyHtml = '';
+            if (!window.issueMemoryApi) {
+                memoryBodyHtml = '<div class="issue-memory-empty">Issue memory service unavailable.</div>';
+            } else if (memoryState.isLoading) {
+                memoryBodyHtml = '<div class="issue-memory-loading">Loading memory state...</div>';
+            } else if (memoryState.error) {
+                memoryBodyHtml = `<div class="issue-memory-error">Failed to load memory: ${escapeHtml(memoryState.error)}</div>`;
+            } else if (memoryRecord) {
+                const interestLevel = memoryRecord.interestLevel || 1;
+                const accessCount = memoryRecord.accessCount || 0;
+                const lastAccessed = memoryRecord.lastAccessedAt ? formatTimestamp(memoryRecord.lastAccessedAt) : '—';
+                const lastRefreshed = memoryRecord.lastRefreshedAt ? formatTimestamp(memoryRecord.lastRefreshedAt) : '—';
+                const appliedLabel = memoryRecord.appliedInWork ? 'Applied in work' : 'Not applied yet';
+                memoryBodyHtml = `
+                    <div class="issue-memory-level">
+                        <span class="issue-memory-label">Interest</span>
+                        <div class="issue-memory-dots">${renderInterestDots(interestLevel)}</div>
+                        <span class="issue-memory-level-text">Level ${interestLevel}</span>
+                    </div>
+                    <div class="issue-memory-stats">
+                        <div class="issue-memory-stat">
+                            <span class="issue-memory-label">Accessed</span>
+                            <span class="issue-memory-value">${escapeHtml(lastAccessed)}</span>
+                        </div>
+                        <div class="issue-memory-stat">
+                            <span class="issue-memory-label">Refreshed</span>
+                            <span class="issue-memory-value">${escapeHtml(lastRefreshed)}</span>
+                        </div>
+                        <div class="issue-memory-stat">
+                            <span class="issue-memory-label">Access Count</span>
+                            <span class="issue-memory-value">${accessCount}</span>
+                        </div>
+                        <div class="issue-memory-stat">
+                            <span class="issue-memory-label">Status</span>
+                            <span class="issue-memory-value">${escapeHtml(appliedLabel)}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                memoryBodyHtml = '<div class="issue-memory-empty">No memory data yet.</div>';
+            }
+
+            const memoryControlsDisabled = !memoryAgentId || !window.issueMemoryApi;
+            const memoryPanelHtml = `
+                <div class="issue-memory-panel">
+                    <div class="issue-memory-header">
+                        <div>
+                            <div class="issue-memory-title">Memory</div>
+                            <div class="issue-memory-subtitle">Per-agent interest & usage</div>
+                        </div>
+                        ${memoryAgentId ? `
+                            <div class="issue-memory-agent">
+                                <span class="issue-memory-label">Agent</span>
+                                <select class="modal-select issue-memory-agent-select">${memoryAgentOptions}</select>
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="issue-memory-body">
+                        ${memoryBodyHtml}
+                    </div>
+                    <div class="issue-memory-actions">
+                        <button type="button" class="issue-action-btn issue-memory-applied-btn"${memoryControlsDisabled ? ' disabled' : ''}>Mark Applied</button>
+                        <button type="button" class="issue-action-btn issue-memory-irrelevant-btn"${memoryControlsDisabled ? ' disabled' : ''}>Mark Irrelevant</button>
+                        <button type="button" class="issue-action-btn issue-memory-refresh-btn"${memoryControlsDisabled ? ' disabled' : ''}>Refresh</button>
+                    </div>
+                </div>
+            `;
+
             // Status action button
             const isOpen = issue.status === 'open';
             const isClosed = issue.status === 'closed';
@@ -817,6 +970,8 @@
                             <span class="issue-meta-value">${formatTimestamp(issue.createdAt)}</span>
                         </div>
                     </div>
+
+                    ${memoryPanelHtml}
 
                     <div class="issue-body-section">
                         <h3 class="issue-section-title">Description</h3>
@@ -965,6 +1120,79 @@
                 } finally {
                     roadmapSelect.disabled = false;
                 }
+            });
+        }
+
+        // Memory agent selector
+        const memoryAgentSelect = modal.querySelector('.issue-memory-agent-select');
+        if (memoryAgentSelect) {
+            memoryAgentSelect.addEventListener('change', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+                const nextAgent = memoryAgentSelect.value || null;
+                if (!nextAgent) return;
+                state.issueModal.memory.agentId = nextAgent;
+                await loadIssueMemory(issue.id, nextAgent);
+            });
+        }
+
+        const memoryAppliedBtn = modal.querySelector('.issue-memory-applied-btn');
+        if (memoryAppliedBtn) {
+            memoryAppliedBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                const agentId = state.issueModal.memory.agentId;
+                if (!issue || !agentId || !window.issueMemoryApi) return;
+                memoryAppliedBtn.disabled = true;
+                try {
+                    const record = await issueMemoryApi.applied(agentId, issue.id);
+                    state.issueModal.memory.record = record;
+                    renderIssueModal();
+                } catch (err) {
+                    notificationStore.error(`Failed to mark applied: ${err.message}`, 'workbench');
+                } finally {
+                    memoryAppliedBtn.disabled = false;
+                }
+            });
+        }
+
+        const memoryIrrelevantBtn = modal.querySelector('.issue-memory-irrelevant-btn');
+        if (memoryIrrelevantBtn) {
+            memoryIrrelevantBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                const agentId = state.issueModal.memory.agentId;
+                if (!issue || !agentId || !window.issueMemoryApi) return;
+                const showModal = window.modals && window.modals.showModal;
+                const applyIrrelevant = async (note) => {
+                    memoryIrrelevantBtn.disabled = true;
+                    try {
+                        const record = await issueMemoryApi.irrelevant(agentId, issue.id, note || '');
+                        state.issueModal.memory.record = record;
+                        renderIssueModal();
+                    } catch (err) {
+                        notificationStore.error(`Failed to mark irrelevant: ${err.message}`, 'workbench');
+                    } finally {
+                        memoryIrrelevantBtn.disabled = false;
+                    }
+                };
+                if (typeof showModal === 'function') {
+                    showModal('Mark memory irrelevant', 'Optional note', (note) => {
+                        applyIrrelevant(note);
+                    }, 'Adds a private note for this agent.');
+                } else {
+                    applyIrrelevant('');
+                }
+            });
+        }
+
+        const memoryRefreshBtn = modal.querySelector('.issue-memory-refresh-btn');
+        if (memoryRefreshBtn) {
+            memoryRefreshBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                const agentId = state.issueModal.memory.agentId;
+                if (!issue || !agentId) return;
+                memoryRefreshBtn.disabled = true;
+                await loadIssueMemory(issue.id, agentId, { recordAccess: false });
+                memoryRefreshBtn.disabled = false;
             });
         }
 

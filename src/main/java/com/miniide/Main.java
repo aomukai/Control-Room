@@ -112,6 +112,7 @@ public class Main {
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
                 new IssueController(issueService, projectContext, creditStore, notificationStore, objectMapper),
+                new IssueMemoryController(projectContext, objectMapper),
                 new CreditController(creditStore, objectMapper),
                 memoryController,
                 new TieringController(projectContext, objectMapper),
