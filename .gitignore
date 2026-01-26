@@ -65,3 +65,8 @@ crashlogs/
 tools/piper/
 data/voices/*.onnx
 data/voices/*.onnx.json
+
+# -------------------------
+# Private data
+# -------------------------
+private/
