@@ -29,13 +29,19 @@
 
 ---
 
-## Remaining Work
+## Completed (Session 2)
 
-### Right Panel Polish (Future)
-- [ ] Agent selection: clickable avatar that opens dropdown
-- [ ] Show selected agent's avatar prominently
-- [ ] Convert AI Tools buttons to icon-only with tooltips (Summarize, Explain, Suggest, Propose Edit)
-- [ ] Move Memory controls (Bind, R3, More evidence) below Send button
+### Right Panel Polish ✓
+- [x] Agent selection: clickable avatar that opens dropdown
+- [x] Show selected agent's avatar prominently (with fallback to initials/emoji)
+- [x] Convert AI Tools buttons to icon-only with tooltips (Summarize, Explain, Suggest, Propose Edit)
+- [x] Move Memory controls (Bind, R3, More evidence) below Send button
+- [x] Compact AI tools bar with grouped icon buttons
+- [x] Memory bar uses icon buttons (link, arrow-up-circle)
+
+---
+
+## Remaining Work
 
 ### Bottom Panel (Future)
 - [ ] Fix scrolling issue in Console/AI Actions/Search area

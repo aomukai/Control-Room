@@ -5207,6 +5207,45 @@ async function showWorkspaceSwitcher() {
         if (elements.agentSelect) {
             elements.agentSelect.value = agentId || '';
         }
+        updateAgentAvatarButton(agentId);
+    }
+
+    function updateAgentAvatarButton(agentId) {
+        const avatarBtn = document.getElementById('agent-avatar-btn');
+        if (!avatarBtn) return;
+
+        const agent = (state.agents.list || []).find(a => a.id === agentId);
+        avatarBtn.innerHTML = '';
+
+        if (agent && agent.avatar) {
+            // Agent has an avatar image
+            const img = document.createElement('img');
+            img.src = agent.avatar;
+            img.alt = agent.name || 'Agent';
+            avatarBtn.appendChild(img);
+        } else if (agent && agent.emoji) {
+            // Agent has an emoji
+            const span = document.createElement('span');
+            span.className = 'agent-avatar-emoji';
+            span.textContent = agent.emoji;
+            avatarBtn.appendChild(span);
+        } else if (agent) {
+            // Show initials
+            const span = document.createElement('span');
+            span.className = 'agent-avatar-initials';
+            const name = agent.name || 'Agent';
+            span.textContent = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarBtn.appendChild(span);
+        } else {
+            // No agent selected
+            const span = document.createElement('span');
+            span.className = 'agent-avatar-placeholder';
+            span.textContent = '?';
+            avatarBtn.appendChild(span);
+        }
+
+        // Update tooltip
+        avatarBtn.title = agent ? `${agent.name} (${agent.role})` : 'Select agent';
     }
 
     function renderAgentSelector() {
@@ -5221,6 +5260,7 @@ async function showWorkspaceSwitcher() {
             option.textContent = 'No agents';
             elements.agentSelect.appendChild(option);
             elements.agentSelect.disabled = true;
+            updateAgentAvatarButton(null);
             return;
         }
 
@@ -6836,6 +6876,16 @@ async function showWorkspaceSwitcher() {
         if (elements.agentSelect) {
             elements.agentSelect.addEventListener('change', (e) => {
                 setSelectedAgentId(e.target.value);
+            });
+        }
+
+        // Agent avatar button triggers the select dropdown
+        const agentAvatarBtn = document.getElementById('agent-avatar-btn');
+        if (agentAvatarBtn && elements.agentSelect) {
+            agentAvatarBtn.addEventListener('click', () => {
+                // Programmatically open the select dropdown
+                elements.agentSelect.focus();
+                elements.agentSelect.click();
             });
         }
 

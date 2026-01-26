@@ -272,37 +272,55 @@
                 <!-- Right Chat Panel -->
                 <div id="chat-panel">
                     <div class="chat-header">
-                        <div class="project-context-badge" id="project-context-editor"></div>
-                        <div class="chat-header-actions">
-                            <select id="agent-select" title="Agent" aria-label="Agent">
+                        <div class="chat-header-left">
+                            <div class="project-context-badge" id="project-context-editor"></div>
+                        </div>
+                        <div class="chat-header-agent">
+                            <button id="agent-avatar-btn" class="agent-avatar-btn" type="button" title="Select agent" aria-label="Select agent" aria-haspopup="listbox">
+                                <span class="agent-avatar-placeholder">?</span>
+                            </button>
+                            <select id="agent-select" title="Agent" aria-label="Agent" class="agent-select-hidden">
                                 <option value="">Loading agents...</option>
                             </select>
                         </div>
                     </div>
-                    <div class="chat-meta-bar">
-                        <input id="chat-memory-id" type="text" placeholder="Memory ID (optional)" aria-label="Memory ID">
-                        <button id="chat-memory-set" type="button">Bind</button>
-                        <span id="chat-memory-badge" class="chat-badge hidden" title="Current memory level">R3</span>
-                        <button id="chat-escalate" type="button" class="chat-escalate-btn" title="Fetch more evidence">More evidence</button>
-                    </div>
-                    <div class="ai-foundation-bar">
-                        <div class="ai-foundation-title">AI Tools</div>
-                        <div class="ai-foundation-controls">
-                            <select id="ai-foundation-scope" class="ai-foundation-scope" aria-label="AI tool scope">
-                                <option value="auto">Auto scope</option>
-                                <option value="selection">Selection only</option>
-                                <option value="file">Whole file</option>
-                            </select>
-                            <button id="btn-ai-summarize" type="button" class="ai-foundation-btn" title="Summarize selection or file">Summarize</button>
-                            <button id="btn-ai-explain" type="button" class="ai-foundation-btn" title="Explain selection or file">Explain</button>
-                            <button id="btn-ai-suggest" type="button" class="ai-foundation-btn" title="Suggest improvements (read-only)">Suggest</button>
-                            <button id="btn-ai-propose" type="button" class="ai-foundation-btn" title="Propose an editable patch">Propose Edit</button>
+                    <div class="ai-tools-bar">
+                        <select id="ai-foundation-scope" class="ai-scope-select" aria-label="AI tool scope">
+                            <option value="auto">Auto</option>
+                            <option value="selection">Selection</option>
+                            <option value="file">File</option>
+                        </select>
+                        <div class="ai-tools-group">
+                            <button id="btn-ai-summarize" type="button" class="ai-tool-btn" title="Summarize" aria-label="Summarize selection or file">
+                                <img src="assets/icons/heroicons_outline/document-text.svg" alt="" class="ai-tool-icon">
+                            </button>
+                            <button id="btn-ai-explain" type="button" class="ai-tool-btn" title="Explain" aria-label="Explain selection or file">
+                                <img src="assets/icons/heroicons_outline/light-bulb.svg" alt="" class="ai-tool-icon">
+                            </button>
+                            <button id="btn-ai-suggest" type="button" class="ai-tool-btn" title="Suggest" aria-label="Suggest improvements">
+                                <img src="assets/icons/heroicons_outline/sparkles.svg" alt="" class="ai-tool-icon">
+                            </button>
+                            <button id="btn-ai-propose" type="button" class="ai-tool-btn" title="Propose Edit" aria-label="Propose an editable patch">
+                                <img src="assets/icons/heroicons_outline/pencil-square.svg" alt="" class="ai-tool-icon">
+                            </button>
                         </div>
                     </div>
                     <div id="chat-history"></div>
                     <div class="chat-input-container">
                         <textarea id="chat-input" placeholder="Ask the AI assistant..."></textarea>
-                        <button id="chat-send">Send</button>
+                        <div class="chat-input-actions">
+                            <button id="chat-send">Send</button>
+                        </div>
+                    </div>
+                    <div class="chat-memory-bar">
+                        <input id="chat-memory-id" type="text" placeholder="Memory ID (optional)" aria-label="Memory ID">
+                        <button id="chat-memory-set" type="button" title="Bind memory context">
+                            <img src="assets/icons/heroicons_outline/link.svg" alt="" class="memory-icon">
+                        </button>
+                        <span id="chat-memory-badge" class="chat-badge hidden" title="Current memory level">R3</span>
+                        <button id="chat-escalate" type="button" class="chat-escalate-btn" title="Fetch more evidence">
+                            <img src="assets/icons/heroicons_outline/arrow-up-circle.svg" alt="" class="memory-icon">
+                        </button>
                     </div>
                 </div>
                     </div>
