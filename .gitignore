@@ -1,40 +1,67 @@
-# Gradle
+# -------------------------
+# Build systems
+# -------------------------
 .gradle/
 **/.gradle/
-
-# Build output
 build/
 **/build/
 bin/
 **/bin/
 
-# IDE
+# -------------------------
+# IDEs / Editors
+# -------------------------
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 *.iml
 
-# OS
+# -------------------------
+# OS noise
+# -------------------------
 .DS_Store
 Thumbs.db
+*~
 hs_err_pid*.log
 
+# -------------------------
 # Claude Code
+# -------------------------
 .claude/
 
-nul
+# -------------------------
+# Control Room – local state
+# -------------------------
+
+# Workspace contains user/project data and is always local
+workspace/
 
 # Local agent registry data
 workspace/**/.control-room/agents/*.json
 
-# Local runtime data
-data/*.json
-data/*.wav
-
 # Local workspace UI state
 workspace/**/.controlroom/state/*.json
 
-# Workspace
-workspace/
-
-# log files
+# -------------------------
+# Runtime / generated data
+# -------------------------
+data/*.json
+data/*.wav
+*.wav
+*.tmp
+*.cache
 *.log
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+crashlogs/
+
+# -------------------------
+# External tools / AI assets
+# -------------------------
+tools/piper/
+data/voices/*.onnx
+data/voices/*.onnx.json
