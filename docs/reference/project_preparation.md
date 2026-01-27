@@ -10,7 +10,8 @@ This document defines the intended behavior and boundaries for project preparati
 
 Project Preparation is a one-time ingest step that converts user material into
 canonical internal state so agents can navigate Story and Compendium without
-scanning large external files.
+scanning large external files. Outline ingest is included during preparation to
+establish a single canonical outline before agents begin work.
 
 ---
 
@@ -27,9 +28,12 @@ scanning large external files.
 ## 3. One-Way Ingest Contract (Scope)
 
 During the wizard:
-- User supplies manuscript and/or canon files.
+- User supplies manuscript, outline, and/or canon files.
 - Files are read and converted into canonical state.
 - Immutable evidence excerpts are stored under `.control-room/ingest/`.
+- Outline uploads are merged into a single outline source (separated by `---`)
+  and parsed into `.control-room/story/outline.json`.
+- If no outline is supplied, an initial outline is synthesized from the scene list.
 
 After the wizard:
 - Original files are not copied into the project folder.
@@ -45,9 +49,11 @@ After the wizard:
 The wizard exposes two modes:
 - **Empty**: `POST /api/preparation/empty`
 - **Ingest**: `POST /api/preparation/ingest`
+- **Supplemental ingest (draft only)**: `POST /api/preparation/ingest-supplemental`
 
 ### 4.2 Ingest Behavior
 - Manuscript files become **Story scenes** (one file == one scene).
+- Outline files are merged into a single outline and parsed into `outline.json`.
 - Canon files become **Canon cards** (one file == one card).
 - Card type is inferred from filename/content heuristics (no LLM annotation).
 - Each scene/card stores an `ingestPointers` array linking to evidence excerpts.
@@ -65,6 +71,8 @@ model-based annotation pass in v1.
 - `finalizePreparation` sets `prepStage=prepared`, `prepared=true`, `agentsUnlocked=true`.
 - Ingest sets `canon.manifest.status=draft`; confirm sets it to `prepared`.
 - Empty mode sets canon status to `prepared` immediately.
+- Supplemental ingest is allowed only while `prepStage=draft` and appends scenes/cards;
+  it can also replace the outline when outline uploads are supplied.
 
 ### 4.5 Virtual File System (Prepared Mode)
 Once prepared, the file tree is virtual-only:
@@ -73,6 +81,7 @@ Once prepared, the file tree is virtual-only:
 Story/
   Scenes/
     SCN-<slug>.md
+  SCN-outline.md
 Compendium/
   Characters/
   Locations/
@@ -88,6 +97,7 @@ Compendium/
 
 Virtual reads/writes map to:
 - `Story/Scenes/...` -> `.control-room/story/scenes.json`
+- `Story/SCN-outline.md` -> `.control-room/story/outline.json`
 - `Compendium/...` -> `.control-room/canon/cards/*.json`
 
 ### 4.6 Scene Reindexing (Derived Metadata)
@@ -175,6 +185,7 @@ Key fields used by the implementation:
     manifest.json
     scenes.json
     chapters.json   # empty list in v1
+    outline.json
 ```
 
 ---

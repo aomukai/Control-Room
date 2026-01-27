@@ -199,7 +199,12 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **Issues Scoped per Project** - Issues now stored locally per workspace/project
 - [x] **NO_PROJECT state** - Clean startup without a project; disk-backed registries dormant until marker exists
 - [x] **Prep Explorer Improvements** - Multi-select file move during draft prep; rename modal uses filename-only with invisible canon prefixes
-- [x] **Strip reasoning tags** - Remove <think>/<thinking> and [think]/[thinking] blocks from AI outputs (UI + backend)
+- [x] **Prep Completion Onboarding** - Workbench newsfeed notification opens a welcome issue when clicked
+- [x] **Supplemental Prep Import** - Add “forgot files?” flow for manuscript/outline/background during draft prep
+- [x] **Outline ingest merge** - Merge outline uploads into a single outline and persist `outline.json` during prep
+- [x] **Strip reasoning tags** - Remove <think>/<thinking> and [think]/[thinking] blocks from AI outputs (UI + backend, including orphan closing tags)
+- [x] **Chat timeout extended** - Default chat request timeout raised to 300s for slow local models
+- [x] **Circuit breaker tuning** - Escalation keyword list trimmed and threshold raised; user-facing/narrative roles bypass gates
 - [x] **Issue-linked patches** - Patches can be created from issues and carry `issueId` into notifications/review.
 - [x] **Outline virtual source** - Outline parsing reads from `Story/SCN-outline.md` in prepared (virtual) projects.
 - [x] **Outline Editor UI Polish** - Wider modal (900px), scene cards with number badges, POV chips, collapsible summaries, change indicators (moved/edited) with teal/blue accents.
@@ -243,7 +248,6 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 ### Future
 
 - [ ] **Export Stage** - PDF/EPUB/DOCX manuscript export (refs: docs/reference/cr_editor.md)
-- [ ] **Thinking-model timeout handling** - avoid client disconnects for long-reasoning local LLMs (e.g., GPT-OSS).
 - [ ] **Prompt hardening + validators** - define and test prompts for agent actions; enforce JSON contracts, grounding, and retries (design for small local models first).
 
 ### Completed Milestones (for reference)
