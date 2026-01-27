@@ -16,7 +16,7 @@ public abstract class AbstractChatProvider implements ChatProvider {
 
     protected final ObjectMapper mapper;
     protected final HttpClient httpClient;
-    protected static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 120;
+    protected static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
 
     protected AbstractChatProvider(ObjectMapper mapper, HttpClient httpClient) {
         this.mapper = mapper;
