@@ -198,6 +198,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **Warmth Slider Widget** - Visual polish pass
 - [x] **Issues Scoped per Project** - Issues now stored locally per workspace/project
 - [x] **NO_PROJECT state** - Clean startup without a project; disk-backed registries dormant until marker exists
+- [x] **Prep Explorer Improvements** - Multi-select file move during draft prep; rename modal uses filename-only with invisible canon prefixes
 - [x] **Strip reasoning tags** - Remove <think>/<thinking> and [think]/[thinking] blocks from AI outputs (UI + backend)
 - [x] **Issue-linked patches** - Patches can be created from issues and carry `issueId` into notifications/review.
 - [x] **Outline virtual source** - Outline parsing reads from `Story/SCN-outline.md` in prepared (virtual) projects.

@@ -278,6 +278,15 @@ html, body {
     background: var(--accent-color);
 }
 
+.tree-item.selected-multi {
+    background: var(--accent-glow);
+    box-shadow: inset 2px 0 0 var(--accent-color);
+}
+
+.tree-item.selected.selected-multi {
+    background: var(--accent-color);
+}
+
 .tree-item-virtual .tree-name {
     font-style: italic;
     color: var(--text-secondary);

@@ -1364,6 +1364,26 @@
 
           const actions = [];
           const canRename = window.canRenamePath ? window.canRenamePath(node.path, node.type) : true;
+          const multiSelectEnabled = window.isPrepMultiSelectEnabled ? window.isPrepMultiSelectEnabled() : false;
+
+          if (multiSelectEnabled && node.type === 'file' && window.setTreeSelection && window.getTreeSelection) {
+              const selection = window.getTreeSelection();
+              if (!selection.includes(node.path)) {
+                  window.setTreeSelection([node.path]);
+              }
+          }
+          const selection = window.getTreeSelection ? window.getTreeSelection() : [];
+          const hasMultiSelection = multiSelectEnabled && selection.length > 1;
+          if (hasMultiSelection && window.promptMoveMultiple) {
+              actions.push({
+                  label: `Move ${selection.length} Selected...`,
+                  action: () => window.promptMoveMultiple(selection)
+              });
+              if (window.clearTreeSelection) {
+                  actions.push({ label: 'Clear Selection', action: () => window.clearTreeSelection() });
+              }
+              actions.push({ divider: true });
+          }
 
           // Only show "Open in New Tab" for files, not folders
           if (node.type === 'file') {

@@ -20,11 +20,116 @@
     let explorerScope = 'all';
     let fullFileTree = null;
     const OUTLINE_VIRTUAL_PATH = 'Story/SCN-outline.md';
+    const treeSelection = new Set();
+    let lastTreeSelectionPath = null;
 
     function isOutlinePath(path) {
         const normalized = normalizeWorkspacePath(path || '');
         return normalized.toLowerCase() === OUTLINE_VIRTUAL_PATH.toLowerCase()
             || normalized.toLowerCase().endsWith('/scn-outline.md');
+    }
+
+    function isPrepMultiSelectEnabled() {
+        return state.workspace && state.workspace.prepStage === 'draft';
+    }
+
+    function normalizeTreePath(path) {
+        return normalizeWorkspacePath(path || '');
+    }
+
+    function getVisibleFilePaths() {
+        if (!elements.fileTree) return [];
+        return Array.from(elements.fileTree.querySelectorAll('.tree-item.tree-file:not(.tree-item-virtual)'))
+            .map(item => normalizeTreePath(item.dataset.path || ''))
+            .filter(Boolean);
+    }
+
+    function applyTreeSelection() {
+        if (!elements.fileTree) return;
+        const items = elements.fileTree.querySelectorAll('.tree-item.tree-file');
+        items.forEach(item => {
+            const path = normalizeTreePath(item.dataset.path || '');
+            const selected = treeSelection.has(path);
+            item.classList.toggle('selected-multi', selected);
+        });
+    }
+
+    function clearTreeSelection() {
+        if (!treeSelection.size) return;
+        treeSelection.clear();
+        lastTreeSelectionPath = null;
+        applyTreeSelection();
+    }
+
+    function setTreeSelection(paths = []) {
+        treeSelection.clear();
+        const normalized = paths
+            .map(path => normalizeTreePath(path))
+            .filter(Boolean);
+        normalized.forEach(path => treeSelection.add(path));
+        lastTreeSelectionPath = normalized.length ? normalized[normalized.length - 1] : null;
+        applyTreeSelection();
+    }
+
+    function getTreeSelection() {
+        if (!isPrepMultiSelectEnabled()) return [];
+        return Array.from(treeSelection);
+    }
+
+    function handleTreeSelectionClick(event, node) {
+        if (!isPrepMultiSelectEnabled()) return false;
+        if (!node || node.type !== 'file' || node.virtual) return false;
+
+        const path = normalizeTreePath(node.path);
+        if (!path) return false;
+
+        const isToggle = event.ctrlKey || event.metaKey;
+        const isRange = event.shiftKey;
+
+        if (!isToggle && !isRange) {
+            if (!treeSelection.has(path) || treeSelection.size > 1) {
+                treeSelection.clear();
+                treeSelection.add(path);
+                lastTreeSelectionPath = path;
+                applyTreeSelection();
+            }
+            return false;
+        }
+
+        event.preventDefault();
+
+        if (isRange) {
+            const visible = getVisibleFilePaths();
+            const anchor = lastTreeSelectionPath || path;
+            const startIndex = visible.indexOf(anchor);
+            const endIndex = visible.indexOf(path);
+            if (startIndex !== -1 && endIndex !== -1) {
+                const [start, end] = startIndex < endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+                treeSelection.clear();
+                for (let i = start; i <= end; i += 1) {
+                    treeSelection.add(visible[i]);
+                }
+            } else {
+                treeSelection.clear();
+                treeSelection.add(path);
+            }
+            lastTreeSelectionPath = path;
+            applyTreeSelection();
+            return true;
+        }
+
+        if (isToggle) {
+            if (treeSelection.has(path)) {
+                treeSelection.delete(path);
+            } else {
+                treeSelection.add(path);
+            }
+            lastTreeSelectionPath = path;
+            applyTreeSelection();
+            return true;
+        }
+
+        return false;
     }
 
     function getEditorStateKey() {
@@ -169,6 +274,11 @@
         const scopedTree = getScopedTree(fullFileTree, explorerScope);
         state.fileTree = scopedTree;
         renderFileTree(scopedTree);
+        if (!isPrepMultiSelectEnabled()) {
+            clearTreeSelection();
+        } else {
+            applyTreeSelection();
+        }
     }
 
     function canRenamePath(path, nodeType) {
@@ -513,6 +623,9 @@
         } else {
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (handleTreeSelectionClick(e, node)) {
+                    return;
+                }
                 openFile(node.path);
             });
     
@@ -1510,8 +1623,100 @@
             }
             return;
         }
-        showModal('Rename', oldPath, async (newPath) => {
-            newPath = normalizeWorkspacePath(newPath);
+        const lastSlash = oldPath.lastIndexOf('/');
+        const parentFolder = lastSlash !== -1 ? oldPath.substring(0, lastSlash) : '';
+        const oldName = lastSlash !== -1 ? oldPath.substring(lastSlash + 1) : oldPath;
+        const isFile = nodeType === 'file';
+
+        const inferCompendiumPrefix = (folder) => {
+            const parts = (folder || '').split('/');
+            if (parts.length < 2 || parts[0] !== 'Compendium') {
+                return null;
+            }
+            const bucket = parts[1];
+            switch (bucket) {
+                case 'Characters': return 'CHAR';
+                case 'Locations': return 'LOC';
+                case 'Lore': return 'CONCEPT';
+                case 'Factions': return 'FACTION';
+                case 'Technology': return 'TECH';
+                case 'Culture': return 'CULTURE';
+                case 'Events': return 'EVENT';
+                case 'Themes': return 'THEME';
+                case 'Glossary': return 'GLOSSARY';
+                default: return 'MISC';
+            }
+        };
+
+        const inferStoryPrefix = (folder) => {
+            if ((folder || '').startsWith('Story/Scenes')) {
+                return 'SCN';
+            }
+            return null;
+        };
+
+        const stripPrefixForDisplay = (filename, prefix) => {
+            if (!prefix || !filename) return filename;
+            const lower = filename.toLowerCase();
+            const prefixLower = `${prefix.toLowerCase()}-`;
+            if (lower.startsWith(prefixLower)) {
+                return filename.substring(prefix.length + 1);
+            }
+            return filename;
+        };
+
+        const buildRenamedFile = (inputName) => {
+            const raw = inputName.trim();
+            if (!raw) return null;
+            if (raw.includes('/') || raw.includes('\\')) return null;
+
+            const compPrefix = inferCompendiumPrefix(parentFolder);
+            const storyPrefix = inferStoryPrefix(parentFolder);
+            const expectedPrefix = compPrefix || storyPrefix;
+            const defaultExt = oldName.includes('.') ? oldName.substring(oldName.lastIndexOf('.')) : '';
+
+            let name = raw;
+            if (expectedPrefix) {
+                name = stripPrefixForDisplay(name, expectedPrefix);
+            }
+
+            if (!name.includes('.') && defaultExt) {
+                name = `${name}${defaultExt}`;
+            }
+
+            const ext = name.includes('.') ? name.substring(name.lastIndexOf('.')) : '';
+            const base = ext ? name.substring(0, name.lastIndexOf('.')) : name;
+            const normalizedExt = compPrefix || storyPrefix ? '.md' : ext || defaultExt || '';
+            const finalBase = expectedPrefix ? `${expectedPrefix}-${base}` : base;
+            return `${finalBase}${normalizedExt}`;
+        };
+
+        const displayName = isFile
+            ? stripPrefixForDisplay(oldName, inferCompendiumPrefix(parentFolder) || inferStoryPrefix(parentFolder))
+            : oldName;
+        const title = nodeType === 'folder' ? 'Rename Folder' : 'Rename File';
+        const placeholder = nodeType === 'folder' ? 'folder-name' : 'file-name.md';
+
+        showModal(title, placeholder, async (newName) => {
+            const trimmed = String(newName || '').trim();
+            if (!trimmed) return;
+            if (!isFile && (trimmed.includes('/') || trimmed.includes('\\'))) {
+                const store = getNotificationStore();
+                if (store) {
+                    store.warning('Enter a folder name only (no slashes).', 'editor');
+                }
+                return;
+            }
+            const finalName = isFile ? buildRenamedFile(trimmed) : trimmed;
+            if (!finalName) {
+                const store = getNotificationStore();
+                if (store) {
+                    store.warning('Enter a valid name (no slashes).', 'editor');
+                }
+                return;
+            }
+            const combined = parentFolder ? `${parentFolder}/${finalName}` : finalName;
+            const newPath = normalizeWorkspacePath(combined);
             if (!newPath || newPath === oldPath) return;
     
             try {
@@ -1529,7 +1734,7 @@
             } catch (err) {
                 log(`Rename failed: ${err.message}`, 'error');
             }
-        });
+        }, '', displayName);
     }
     
     function updateOpenTabsAfterRename(oldPath, newPath, nodeType) {
@@ -1822,6 +2027,201 @@
             });
         });
     }
+
+    async function promptMoveMultiple(paths) {
+        const normalized = Array.from(new Set((paths || []).map(path => normalizeTreePath(path)).filter(Boolean)));
+        const files = normalized.filter(path => !isOutlinePath(path));
+        if (!files.length) return;
+
+        const folders = getAllFolderPaths();
+        const initialFolders = files.map(path => {
+            const lastSlash = path.lastIndexOf('/');
+            return lastSlash === -1 ? '' : path.substring(0, lastSlash);
+        });
+        const firstFolder = initialFolders[0] || '';
+        const defaultFolder = initialFolders.every(folder => folder === firstFolder) ? firstFolder : '';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal move-modal';
+
+        const title = document.createElement('div');
+        title.className = 'modal-title';
+        title.textContent = `Move ${files.length} File${files.length === 1 ? '' : 's'}`;
+
+        const folderLabel = document.createElement('label');
+        folderLabel.className = 'move-label';
+        folderLabel.textContent = 'Destination folder:';
+
+        const folderSelect = document.createElement('select');
+        folderSelect.className = 'modal-input move-select';
+        folders.forEach(folder => {
+            const option = document.createElement('option');
+            option.value = folder;
+            option.textContent = folder || '/ (Project root)';
+            if (folder === defaultFolder) {
+                option.selected = true;
+            }
+            folderSelect.appendChild(option);
+        });
+
+        const preview = document.createElement('div');
+        preview.className = 'move-preview';
+
+        const hint = document.createElement('div');
+        hint.className = 'modal-hint';
+        hint.textContent = 'Files keep their current names; only the folder changes.';
+
+        const fileList = document.createElement('div');
+        fileList.className = 'prep-file-list';
+        fileList.style.maxHeight = '160px';
+        files.slice(0, 12).forEach(path => {
+            const card = document.createElement('div');
+            card.className = 'prep-file-card';
+            const icon = document.createElement('span');
+            icon.className = 'prep-file-icon';
+            icon.textContent = '📄';
+            const info = document.createElement('div');
+            info.className = 'prep-file-info';
+            const name = document.createElement('span');
+            name.className = 'prep-file-name';
+            name.title = path;
+            name.textContent = path.split('/').pop();
+            const folder = document.createElement('span');
+            folder.className = 'prep-file-size';
+            folder.textContent = path.substring(0, path.lastIndexOf('/')) || '/';
+            info.appendChild(name);
+            info.appendChild(folder);
+            card.appendChild(icon);
+            card.appendChild(info);
+            fileList.appendChild(card);
+        });
+        if (files.length > 12) {
+            const more = document.createElement('div');
+            more.className = 'prep-summary-empty';
+            more.textContent = `+${files.length - 12} more`;
+            fileList.appendChild(more);
+        }
+
+        function updatePreview() {
+            const folder = folderSelect.value;
+            const label = folder ? folder : '/ (Project root)';
+            preview.textContent = `Move to: ${label}`;
+            preview.classList.remove('invalid');
+        }
+
+        folderSelect.addEventListener('change', updatePreview);
+        updatePreview();
+
+        const buttons = document.createElement('div');
+        buttons.className = 'modal-buttons';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'modal-btn modal-btn-secondary';
+        cancelBtn.textContent = 'Cancel';
+
+        const okBtn = document.createElement('button');
+        okBtn.className = 'modal-btn modal-btn-primary';
+        okBtn.textContent = 'Move';
+
+        buttons.appendChild(cancelBtn);
+        buttons.appendChild(okBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(folderLabel);
+        modal.appendChild(folderSelect);
+        modal.appendChild(preview);
+        modal.appendChild(hint);
+        modal.appendChild(fileList);
+        modal.appendChild(buttons);
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        function closeModal() {
+            overlay.remove();
+        }
+
+        return new Promise(resolve => {
+            cancelBtn.addEventListener('click', () => {
+                closeModal();
+                resolve();
+            });
+
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    closeModal();
+                    resolve();
+                }
+            });
+
+            okBtn.addEventListener('click', async () => {
+                const folder = folderSelect.value;
+                const moves = files.map(path => {
+                    const base = path.split('/').pop();
+                    const combined = folder ? `${folder}/${base}` : base;
+                    return {
+                        from: path,
+                        to: normalizeWorkspacePath(combined)
+                    };
+                }).filter(move => move.to && move.to !== move.from);
+
+                if (!moves.length) {
+                    closeModal();
+                    resolve();
+                    return;
+                }
+
+                okBtn.disabled = true;
+                let movedCount = 0;
+                let failedCount = 0;
+
+                for (const move of moves) {
+                    try {
+                        await api('/api/rename', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ from: move.from, to: move.to })
+                        });
+                        updateOpenTabsAfterRename(move.from, move.to, 'file');
+                        movedCount += 1;
+                    } catch (err) {
+                        failedCount += 1;
+                        log(`Move failed: ${move.from} -> ${move.to}: ${err.message}`, 'error');
+                    }
+                }
+
+                if (movedCount) {
+                    log(`Moved ${movedCount} file(s).`, 'success');
+                }
+                if (failedCount) {
+                    log(`Failed to move ${failedCount} file(s).`, 'error');
+                }
+
+                const store = getNotificationStore();
+                if (store) {
+                    if (failedCount) {
+                        store.warning(`Moved ${movedCount} file(s); ${failedCount} failed.`, 'editor');
+                    } else {
+                        store.success(`Moved ${movedCount} file(s).`, 'editor');
+                    }
+                }
+
+                clearTreeSelection();
+                await loadFileTree();
+                closeModal();
+                resolve();
+            });
+
+            overlay.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    cancelBtn.click();
+                }
+            });
+        });
+    }
     
     async function promptDelete(path, nodeType = 'file') {
         path = normalizeWorkspacePath(path);
@@ -2073,6 +2473,11 @@
     window.setExplorerScope = setExplorerScope;
     window.getExplorerScope = getExplorerScope;
     window.canRenamePath = canRenamePath;
+    window.isPrepMultiSelectEnabled = isPrepMultiSelectEnabled;
+    window.getTreeSelection = getTreeSelection;
+    window.setTreeSelection = setTreeSelection;
+    window.clearTreeSelection = clearTreeSelection;
+    window.promptMoveMultiple = promptMoveMultiple;
     window.restoreEditorState = restoreEditorState;
     window.reloadOpenFile = reloadOpenFile;
     window.reloadAllOpenFiles = reloadAllOpenFiles;

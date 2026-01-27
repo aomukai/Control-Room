@@ -6688,6 +6688,9 @@ async function showWorkspaceSwitcher() {
                     state.workspace.prepStage = 'prepared';
                     state.workspace.agentsUnlocked = true;
                     updateModeControls(state.viewMode.current);
+                    if (window.clearTreeSelection) {
+                        window.clearTreeSelection();
+                    }
                     if (window.updateAgentLockState) {
                         window.updateAgentLockState();
                     }
