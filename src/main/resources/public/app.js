@@ -220,7 +220,11 @@
                     state.workspace.canonStatus = prepStatus.canonStatus || '';
                     state.workspace.canonReviewedAt = prepStatus.canonReviewedAt || '';
                     if (state.workspace.canonStatus === 'draft' && state.workspace.prepStage === 'draft') {
-                        await showCanonReviewModal();
+                        if (typeof showCanonReviewModal === 'function') {
+                            await showCanonReviewModal();
+                        } else {
+                            log('Canon review modal not available yet.', 'info');
+                        }
                     }
                 } catch (err) {
                     log(`Failed to load preparation status: ${err.message}`, 'warning');
@@ -1694,7 +1698,7 @@
         }
     }
 
-    async function showProjectPreparationWizard() {
+    async function showProjectPreparationWizard(options = {}) {
         if (!createModalShell || !preparationApi) {
             log('Preparation wizard unavailable', 'warning');
             return;
@@ -1703,21 +1707,23 @@
             notificationStore.warning('Create a project before preparing it.', 'global');
             return;
         }
+        const supplementalMode = options && options.mode === 'supplemental';
         if (state.workspace.prepStage === 'prepared') {
             notificationStore.info('Project is already prepared.', 'global');
             return;
         }
+        if (supplementalMode && state.workspace.prepStage !== 'draft') {
+            notificationStore.info('Supplemental import is only available during preparation.', 'global');
+            return;
+        }
 
         const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
-            'Project Preparation',
+            supplementalMode ? 'Supplemental Import' : 'Project Preparation',
             'Next',
             'Cancel',
             { closeOnCancel: false, closeOnConfirm: false }
         );
         modal.classList.add('preparation-modal');
-        if (cancelBtn) {
-            cancelBtn.remove();
-        }
 
         overlay.addEventListener('click', (event) => {
             if (event.target === overlay) {
@@ -1732,9 +1738,18 @@
         };
         document.addEventListener('keydown', escapeGuard, true);
 
+        if (cancelBtn && !supplementalMode) {
+            cancelBtn.remove();
+        } else if (cancelBtn && supplementalMode) {
+            cancelBtn.addEventListener('click', () => {
+                close();
+                document.removeEventListener('keydown', escapeGuard, true);
+            });
+        }
+
         const wizardState = {
-            step: 0,
-            mode: null,
+            step: supplementalMode ? 1 : 0,
+            mode: supplementalMode ? 'supplemental' : null,
             manuscripts: [],
             outlines: [],
             canon: [],
@@ -2358,10 +2373,12 @@
                         confirmBtn.disabled = true;
                         try {
                             const formData = new FormData();
-                            const manuscriptFiles = [...wizardState.manuscripts, ...wizardState.outlines];
+                            const manuscriptFiles = [...wizardState.manuscripts];
+                            const outlineFiles = [...wizardState.outlines];
                             manuscriptFiles.forEach(file => formData.append('manuscripts', file));
+                            outlineFiles.forEach(file => formData.append('outlines', file));
                             wizardState.canon.forEach(file => formData.append('canon', file));
-                            if (manuscriptFiles.length === 0 && wizardState.canon.length === 0) {
+                            if (manuscriptFiles.length === 0 && outlineFiles.length === 0 && wizardState.canon.length === 0) {
                                 notificationStore.warning('Add at least one file to ingest.', 'global');
                                 confirmBtn.disabled = false;
                                 return;
@@ -2380,6 +2397,172 @@
                         } catch (err) {
                             confirmBtn.disabled = false;
                             notificationStore.error(`Preparation failed: ${err.message}`, 'global');
+                        }
+                    });
+                    return;
+                }
+            }
+
+            if (wizardState.mode === 'supplemental') {
+                if (wizardState.step === 1) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 1 of 3 - Manuscript';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add missing manuscript files';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop chapters, scenes, or your complete draft here.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Manuscript', wizardState.manuscripts));
+                    setConfirm('Next', () => {
+                        wizardState.step = 2;
+                        renderStep();
+                    });
+                    return;
+                }
+
+                if (wizardState.step === 2) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 2 of 3 - Outline';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add missing outline files';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop structure documents, plot outlines, or beat sheets here.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Outline', wizardState.outlines));
+                    setConfirm('Next', () => {
+                        wizardState.step = 3;
+                        renderStep();
+                    });
+                    return;
+                }
+
+                if (wizardState.step === 3) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Step 3 of 3 - Background';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Add missing background files';
+                    body.appendChild(headline);
+
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = 'Drop character sheets, lore docs, or reference material here.';
+                    body.appendChild(subtext);
+
+                    body.appendChild(buildDropZone('Background', wizardState.canon));
+                    setConfirm('Review', () => {
+                        wizardState.step = 4;
+                        renderStep();
+                    });
+                    return;
+                }
+
+                if (wizardState.step === 4) {
+                    const stepIndicator = document.createElement('div');
+                    stepIndicator.className = 'prep-step-indicator';
+                    stepIndicator.textContent = 'Review supplemental files';
+                    body.appendChild(stepIndicator);
+
+                    const headline = document.createElement('div');
+                    headline.className = 'prep-headline';
+                    headline.textContent = 'Import missing files';
+                    body.appendChild(headline);
+
+                    const totalFiles = wizardState.manuscripts.length + wizardState.outlines.length + wizardState.canon.length;
+                    const subtext = document.createElement('div');
+                    subtext.className = 'prep-subtext';
+                    subtext.textContent = totalFiles > 0
+                        ? `You're adding ${totalFiles} file${totalFiles !== 1 ? 's' : ''} to the prep workspace.`
+                        : 'No files selected. Go back to add files, or Cancel.';
+                    body.appendChild(subtext);
+
+                    const summaryContainer = document.createElement('div');
+                    summaryContainer.className = 'prep-summary';
+
+                    const renderSummaryGroup = (label, files) => {
+                        const group = document.createElement('div');
+                        group.className = 'prep-summary-group';
+                        const groupLabel = document.createElement('div');
+                        groupLabel.className = 'prep-summary-label';
+                        groupLabel.textContent = `${label} (${files.length})`;
+                        group.appendChild(groupLabel);
+
+                        if (files.length === 0) {
+                            const empty = document.createElement('div');
+                            empty.className = 'prep-summary-empty';
+                            empty.textContent = 'None selected';
+                            group.appendChild(empty);
+                        } else {
+                            const fileList = document.createElement('div');
+                            fileList.className = 'prep-file-list';
+                            fileList.style.maxHeight = '120px';
+                            files.forEach(file => {
+                                const card = document.createElement('div');
+                                card.className = 'prep-file-card';
+                                card.innerHTML = `
+                                    ${documentIcon}
+                                    <div class="prep-file-info">
+                                        <span class="prep-file-name" title="${file.name}">${file.name}</span>
+                                        <span class="prep-file-size">${formatFileSize(file.size)}</span>
+                                    </div>
+                                `;
+                                fileList.appendChild(card);
+                            });
+                            group.appendChild(fileList);
+                        }
+                        return group;
+                    };
+
+                    summaryContainer.appendChild(renderSummaryGroup('Manuscript', wizardState.manuscripts));
+                    summaryContainer.appendChild(renderSummaryGroup('Outline', wizardState.outlines));
+                    summaryContainer.appendChild(renderSummaryGroup('Background', wizardState.canon));
+                    body.appendChild(summaryContainer);
+
+                    setConfirm('Import Files', async () => {
+                        confirmBtn.disabled = true;
+                        try {
+                            const formData = new FormData();
+                            const manuscriptFiles = [...wizardState.manuscripts];
+                            const outlineFiles = [...wizardState.outlines];
+                            manuscriptFiles.forEach(file => formData.append('manuscripts', file));
+                            outlineFiles.forEach(file => formData.append('outlines', file));
+                            wizardState.canon.forEach(file => formData.append('canon', file));
+                            if (manuscriptFiles.length === 0 && outlineFiles.length === 0 && wizardState.canon.length === 0) {
+                                notificationStore.warning('Add at least one file to import.', 'global');
+                                confirmBtn.disabled = false;
+                                return;
+                            }
+                            await preparationApi.prepareSupplementalIngest(formData);
+                            await refreshPreparationState();
+                            if (loadFileTree) {
+                                await loadFileTree();
+                            }
+                            notificationStore.success('Supplemental import complete.', 'global');
+                            confirmBtn.disabled = false;
+                            close();
+                            document.removeEventListener('keydown', escapeGuard, true);
+                        } catch (err) {
+                            confirmBtn.disabled = false;
+                            notificationStore.error(`Supplemental import failed: ${err.message}`, 'global');
                         }
                     });
                     return;
@@ -3383,6 +3566,7 @@ async function showWorkspaceSwitcher() {
         const btnSidebarPatchReview = document.getElementById('btn-sidebar-patch-review');
         const btnSidebarPrepareProject = document.getElementById('btn-sidebar-prepare-project');
         const btnSidebarPrepComplete = document.getElementById('btn-sidebar-prep-complete');
+        const btnSidebarPrepSupplemental = document.getElementById('btn-sidebar-prep-supplemental');
 
         if (btnSidebarIssues) btnSidebarIssues.style.display = (isWorkbench && workbenchEnabled) ? 'flex' : 'none';
         if (btnSidebarAssistedMode) btnSidebarAssistedMode.style.display = (isWorkbench && workbenchEnabled) ? 'flex' : 'none';
@@ -3399,6 +3583,10 @@ async function showWorkspaceSwitcher() {
             btnSidebarPrepComplete.style.display = showPrepComplete ? 'flex' : 'none';
             btnSidebarPrepComplete.classList.toggle('prep-button-pulse', showPrepComplete);
             btnSidebarPrepComplete.classList.toggle('prep-button-attention', showPrepComplete);
+        }
+        if (btnSidebarPrepSupplemental) {
+            const showPrepSupplemental = !isSettings && state.workspace.projectSelected && state.workspace.prepStage === 'draft' && !state.workspace.agentsUnlocked;
+            btnSidebarPrepSupplemental.style.display = showPrepSupplemental ? 'flex' : 'none';
         }
 
         // Explorer panel - hidden when NO_PROJECT, only show in editor mode
@@ -6698,6 +6886,20 @@ async function showWorkspaceSwitcher() {
                 } catch (err) {
                     notificationStore.error(`Failed to update preparation status: ${err.message}`, 'global');
                 }
+            });
+        }
+
+        const btnSidebarPrepSupplemental = document.getElementById('btn-sidebar-prep-supplemental');
+        if (btnSidebarPrepSupplemental) {
+            btnSidebarPrepSupplemental.addEventListener('click', async () => {
+                const confirmed = await showConfirmDialog(
+                    'Forgot to import files?',
+                    'You can add missing manuscript, outline, or background files now.',
+                    'Add Files',
+                    'Cancel'
+                );
+                if (!confirmed) return;
+                showProjectPreparationWizard({ mode: 'supplemental' });
             });
         }
 

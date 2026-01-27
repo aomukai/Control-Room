@@ -66,6 +66,7 @@ public class PreparationController implements Controller {
         app.post("/api/preparation/finalize", this::finalizePreparation);
         app.post("/api/preparation/empty", this::prepareEmpty);
         app.post("/api/preparation/ingest", this::prepareIngest);
+        app.post("/api/preparation/ingest-supplemental", this::prepareSupplementalIngest);
     }
 
     private void getStatus(Context ctx) {
@@ -150,6 +151,36 @@ public class PreparationController implements Controller {
         }
     }
 
+    private void prepareSupplementalIngest(Context ctx) {
+        try {
+            if (!isValidProjectSelected()) {
+                ctx.status(400).json(Map.of("error", "No project selected. Create a project first."));
+                return;
+            }
+            PrepareIngestPayload payload = new PrepareIngestPayload();
+            List<UploadedFile> manuscripts = ctx.uploadedFiles("manuscripts");
+            List<UploadedFile> outlines = ctx.uploadedFiles("outlines");
+            List<UploadedFile> canon = ctx.uploadedFiles("canon");
+            if (manuscripts != null) {
+                payload.manuscripts.addAll(manuscripts);
+            }
+            if (outlines != null) {
+                payload.outlines.addAll(outlines);
+            }
+            if (canon != null) {
+                payload.canonFiles.addAll(canon);
+            }
+            PreparationResult result = preparationService().prepareSupplementalIngest(payload);
+            ctx.json(result);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            ctx.status(409).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
     private void prepareEmpty(Context ctx) {
         try {
             if (!isValidProjectSelected()) {
@@ -186,9 +217,13 @@ public class PreparationController implements Controller {
             }
             PrepareIngestPayload payload = new PrepareIngestPayload();
             List<UploadedFile> manuscripts = ctx.uploadedFiles("manuscripts");
+            List<UploadedFile> outlines = ctx.uploadedFiles("outlines");
             List<UploadedFile> canon = ctx.uploadedFiles("canon");
             if (manuscripts != null) {
                 payload.manuscripts.addAll(manuscripts);
+            }
+            if (outlines != null) {
+                payload.outlines.addAll(outlines);
             }
             if (canon != null) {
                 payload.canonFiles.addAll(canon);

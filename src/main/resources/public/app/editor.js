@@ -836,7 +836,8 @@
         const cloneOutline = (outline) => JSON.parse(JSON.stringify(outline || {}));
 
         const setDirty = (dirty) => {
-            confirmBtn.disabled = !dirty;
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = dirty ? 'Accept' : 'Close';
         };
 
         const stripMarkdown = (value) => {
@@ -1259,11 +1260,14 @@
             }
             const diff = buildDiffPayload();
             if (!diff.summaryChanges.length && diff.before.join() === diff.after.join()) {
+                status.textContent = 'No changes to save.';
                 close();
                 return;
             }
             confirmBtn.disabled = true;
             try {
+                status.textContent = 'Saving outline...';
+                log(`Outline save started (scenes=${draft?.scenes?.length || 0})`, 'info');
                 await outlineApi.save(draft);
                 const canCreateIssues = state && state.workspace && state.workspace.agentsUnlocked;
                 if (canCreateIssues) {
@@ -1279,11 +1283,15 @@
                 } else if (store) {
                     store.success('Outline saved.', 'editor');
                 }
+                status.textContent = 'Outline saved.';
+                log('Outline save completed', 'success');
                 close();
             } catch (err) {
+                log(`Outline save failed: ${err.message}`, 'error');
                 if (store) {
                     store.error(`Failed to save outline: ${err.message}`, 'editor');
                 }
+                status.textContent = `Save failed: ${err.message}`;
                 confirmBtn.disabled = false;
             }
         });

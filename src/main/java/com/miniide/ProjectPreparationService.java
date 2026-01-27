@@ -9,10 +9,13 @@ import com.miniide.models.IngestManifest;
 import com.miniide.models.IngestPointer;
 import com.miniide.models.IngestSourceContext;
 import com.miniide.models.IngestStats;
+import com.miniide.models.OutlineDocument;
+import com.miniide.models.OutlineScene;
 import com.miniide.models.StoryManifest;
 import com.miniide.models.StoryRegistry;
 import com.miniide.models.StoryScene;
 import com.miniide.models.WorkspaceMetadata;
+import com.miniide.outline.OutlineParser;
 import io.javalin.http.UploadedFile;
 
 import java.io.IOException;
@@ -154,6 +157,7 @@ public class ProjectPreparationService {
 
         saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards,
             buildEntitiesIndex(cards), buildHooksIndex(cards));
+        writeOutlineDocument(scenes);
         writeEmptyIndices();
         markPrepared("empty", now);
 
@@ -198,6 +202,9 @@ public class ProjectPreparationService {
                     scene.setIngestPointers(List.of(pointerForEvidence(evidence)));
                     scenes.add(scene);
                 }
+            }
+            if (payload.outlines != null && !payload.outlines.isEmpty()) {
+                writeOutlineFromUploads(payload.outlines);
             }
             if (payload.canonFiles != null) {
                 for (UploadedFile file : payload.canonFiles) {
@@ -256,6 +263,9 @@ public class ProjectPreparationService {
 
         saveManifests(ingestManifest, canonManifest, storyManifest, storyRegistry, cards,
             buildEntitiesIndex(cards), buildHooksIndex(cards));
+        if (payload == null || payload.outlines == null || payload.outlines.isEmpty()) {
+            writeOutlineDocument(scenes);
+        }
         writeEmptyIndices();
         markPrepared("ingest", now);
 
@@ -306,6 +316,76 @@ public class ProjectPreparationService {
         }
     }
 
+    private void writeOutlineDocument(List<StoryScene> scenes) throws IOException {
+        OutlineDocument outline = new OutlineDocument();
+        outline.setId(UUID.randomUUID().toString());
+        outline.setTitle("Story Outline");
+        outline.setVersion(1);
+        long now = System.currentTimeMillis();
+        outline.setCreatedAt(now);
+        outline.setUpdatedAt(now);
+
+        List<OutlineScene> outlineScenes = new ArrayList<>();
+        if (scenes != null) {
+            int index = 0;
+            for (StoryScene scene : scenes) {
+                if (scene == null) continue;
+                if ("SCN:outline".equalsIgnoreCase(scene.getDisplayId())) {
+                    continue;
+                }
+                OutlineScene outlineScene = new OutlineScene();
+                outlineScene.setSceneId(scene.getStableId());
+                outlineScene.setTitle(outlineTitleForScene(scene, index));
+                outlineScene.setSummary(outlineSummaryForScene(scene));
+                outlineScenes.add(outlineScene);
+                index += 1;
+            }
+        }
+        outline.setScenes(outlineScenes);
+
+        Path outlinePath = workspaceRoot.resolve(".control-room").resolve("story").resolve("outline.json");
+        mapper.writerWithDefaultPrettyPrinter().writeValue(outlinePath.toFile(), outline);
+    }
+
+    private void writeOutlineFromUploads(List<UploadedFile> outlines) throws IOException {
+        String merged = mergeOutlineUploads(outlines);
+        if (merged.isBlank()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        OutlineDocument base = new OutlineDocument();
+        base.setId(UUID.randomUUID().toString());
+        base.setTitle("Story Outline");
+        base.setVersion(1);
+        base.setCreatedAt(now);
+        base.setUpdatedAt(now);
+
+        OutlineDocument parsed = OutlineParser.parseOutlineFromSourceContent(merged, base);
+        parsed.setUpdatedAt(now);
+
+        Path outlinePath = workspaceRoot.resolve(".control-room").resolve("story").resolve("outline.json");
+        mapper.writerWithDefaultPrettyPrinter().writeValue(outlinePath.toFile(), parsed);
+    }
+
+    private String mergeOutlineUploads(List<UploadedFile> outlines) throws IOException {
+        if (outlines == null || outlines.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (UploadedFile file : outlines) {
+            if (file == null) continue;
+            String content = readUploadedFile(file);
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("\n\n---\n\n");
+            }
+            builder.append(content.trim());
+        }
+        return builder.toString();
+    }
+
     private void markPrepared(String mode, String now) throws IOException {
         WorkspaceMetadata meta = workspaceService.loadMetadata();
         meta.setPrepared(false);
@@ -324,6 +404,147 @@ public class ProjectPreparationService {
         meta.setPrepStage("prepared");
         meta.setAgentsUnlocked(true);
         workspaceService.saveMetadata(meta);
+    }
+
+    public PreparationResult prepareSupplementalIngest(PrepareIngestPayload payload) throws IOException {
+        WorkspaceMetadata meta = workspaceService.loadMetadata();
+        if (meta == null || !"draft".equalsIgnoreCase(meta.getPrepStage())) {
+            throw new IllegalStateException("Supplemental ingest is only allowed during preparation.");
+        }
+        if (payload == null || payload.totalFiles() == 0) {
+            throw new IllegalArgumentException("No files provided for ingest.");
+        }
+        ensurePrepDirectories();
+        String now = nowIso();
+
+        IngestManifest ingestManifest = loadIngestManifest();
+        if (ingestManifest == null) {
+            ingestManifest = new IngestManifest();
+            ingestManifest.setSchemaVersion(SCHEMA_VERSION);
+            ingestManifest.setIngestId(generateIngestId());
+            ingestManifest.setProjectSalt(generateSalt());
+            ingestManifest.setStatus("complete");
+            ingestManifest.setMode("ingest");
+            ingestManifest.setIngestedAt(now);
+            ingestManifest.setStats(new IngestStats());
+        }
+        if (ingestManifest.getIngestId() == null || ingestManifest.getIngestId().isBlank()) {
+            ingestManifest.setIngestId(generateIngestId());
+        }
+        if (ingestManifest.getProjectSalt() == null || ingestManifest.getProjectSalt().isBlank()) {
+            ingestManifest.setProjectSalt(generateSalt());
+        }
+        IngestStats stats = ingestManifest.getStats();
+        if (stats == null) {
+            stats = new IngestStats();
+            ingestManifest.setStats(stats);
+        }
+        String projectSalt = ingestManifest.getProjectSalt();
+        String ingestId = ingestManifest.getIngestId();
+
+        StoryRegistry storyRegistry = loadStoryRegistry();
+        List<StoryScene> scenes = storyRegistry.getScenes() != null
+            ? new ArrayList<>(storyRegistry.getScenes())
+            : new ArrayList<>();
+        int baseOrder = scenes.size();
+        List<StoryScene> newScenes = new ArrayList<>();
+        List<CanonCard> newCards = new ArrayList<>();
+        int excerptsStored = 0;
+
+        if (payload.manuscripts != null) {
+            for (UploadedFile file : payload.manuscripts) {
+                if (file == null) continue;
+                IngestEvidence evidence = storeEvidence(file, now);
+                excerptsStored += 1;
+                StoryScene scene = new StoryScene();
+                scene.setOrigin("ingest");
+                String displayId = "SCN:" + slugify(stripExtension(file.filename()));
+                scene.setStableId(generateIngestStableId(projectSalt, ingestId, evidence.getExcerptHash(), displayId, "SCN"));
+                scene.setDisplayId(displayId);
+                scene.setTitle(prettifyName(file.filename()));
+                scene.setOrder(baseOrder + newScenes.size() + 1);
+                scene.setContent(evidence.getContent());
+                scene.setCreatedAt(now);
+                scene.setUpdatedAt(now);
+                scene.setStatus("active");
+                scene.setIngestPointers(List.of(pointerForEvidence(evidence)));
+                newScenes.add(scene);
+            }
+        }
+
+        if (payload.canonFiles != null) {
+            for (UploadedFile file : payload.canonFiles) {
+                if (file == null) continue;
+                IngestEvidence evidence = storeEvidence(file, now);
+                excerptsStored += 1;
+                CanonCard card = new CanonCard();
+                card.setOrigin("ingest");
+                card.setType(inferCardType(file.filename(), evidence.getContent()));
+                card.setTitle(prettifyName(file.filename()));
+                String cardDisplayId = typePrefix(card.getType()) + ":" + slugify(card.getTitle());
+                card.setDisplayId(cardDisplayId);
+                card.setStableId(generateIngestStableId(projectSalt, ingestId, evidence.getExcerptHash(), cardDisplayId, "CAN"));
+                card.setContent(evidence.getContent());
+                card.setCreatedAt(now);
+                card.setUpdatedAt(now);
+                applyAnnotationDefaults(card, evidence.getContent());
+                card.setAnnotationStatus("complete");
+                card.setStatus("active");
+                card.setIngestPointers(List.of(pointerForEvidence(evidence)));
+                newCards.add(card);
+            }
+        }
+
+        if (payload.outlines != null && !payload.outlines.isEmpty()) {
+            writeOutlineFromUploads(payload.outlines);
+        }
+
+        scenes.addAll(newScenes);
+        storyRegistry.setScenes(scenes);
+        saveStoryRegistry(storyRegistry);
+
+        List<CanonCard> allCards = loadCanonCards();
+        allCards.addAll(newCards);
+        for (CanonCard card : newCards) {
+            saveCanonCard(card);
+        }
+
+        CanonManifest canonManifest = loadCanonManifest();
+        if (canonManifest == null) {
+            canonManifest = new CanonManifest();
+            canonManifest.setSchemaVersion(SCHEMA_VERSION);
+            canonManifest.setPreparedAt(now);
+            canonManifest.setStatus("draft");
+        }
+        canonManifest.setCardCount(allCards.size());
+        saveCanonManifest(canonManifest);
+
+        StoryManifest storyManifest = loadStoryManifest();
+        if (storyManifest == null) {
+            storyManifest = new StoryManifest();
+            storyManifest.setSchemaVersion(SCHEMA_VERSION);
+            storyManifest.setPreparedAt(now);
+            storyManifest.setStatus("prepared");
+        }
+        storyManifest.setSceneCount(scenes.size());
+        saveStoryManifest(storyManifest);
+
+        stats.setFilesProcessed(stats.getFilesProcessed() + payload.totalFiles());
+        stats.setExcerptsStored(stats.getExcerptsStored() + excerptsStored);
+        stats.setScenesCreated(stats.getScenesCreated() + newScenes.size());
+        stats.setCardsCreated(stats.getCardsCreated() + newCards.size());
+        ingestManifest.setIgnoredInputs(payload.ignoredInputs != null ? payload.ignoredInputs : new ArrayList<>());
+        ingestManifest.setIngestedAt(now);
+        saveIngestManifest(ingestManifest);
+
+        java.util.Map<String, java.util.List<String>> entitiesIndex = buildEntitiesIndex(allCards);
+        java.util.Map<String, java.util.List<String>> hooksIndex = buildHooksIndex(allCards);
+        Path entitiesPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("entities.json");
+        Path hooksPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("hooks-index.json");
+        mapper.writerWithDefaultPrettyPrinter().writeValue(entitiesPath.toFile(), entitiesIndex);
+        mapper.writerWithDefaultPrettyPrinter().writeValue(hooksPath.toFile(), hooksIndex);
+
+        return PreparationResult.success("ingest", newCards.size(), newScenes.size());
     }
 
     private String buildProtagonistContent(PrepareEmptyPayload payload) {
@@ -446,6 +667,41 @@ public class ProjectPreparationService {
             builder.append(line).append(' ');
         }
         return builder.toString();
+    }
+
+    private String outlineSummaryForScene(StoryScene scene) {
+        if (scene == null || scene.getContent() == null || scene.getContent().isBlank()) {
+            return "";
+        }
+        String snippet = buildSnippet(scene.getContent(), 240, 4).trim();
+        if (snippet.isBlank()) return "";
+        int sentenceEnd = -1;
+        for (int i = 0; i < snippet.length(); i++) {
+            char ch = snippet.charAt(i);
+            if (ch == '.' || ch == '!' || ch == '?') {
+                sentenceEnd = i + 1;
+                break;
+            }
+        }
+        if (sentenceEnd > 0) {
+            return snippet.substring(0, sentenceEnd).trim();
+        }
+        int newline = snippet.indexOf('\n');
+        if (newline > 0) {
+            return snippet.substring(0, newline).trim();
+        }
+        return snippet;
+    }
+
+    private String outlineTitleForScene(StoryScene scene, int index) {
+        if (scene != null && scene.getTitle() != null && !scene.getTitle().isBlank()) {
+            return scene.getTitle().trim();
+        }
+        if (scene != null && scene.getDisplayId() != null && scene.getDisplayId().contains(":")) {
+            String slug = scene.getDisplayId().substring(scene.getDisplayId().indexOf(':') + 1);
+            return prettifyName(slug);
+        }
+        return "Scene " + (index + 1);
     }
 
     private String cardFileName(CanonCard card) {
@@ -601,8 +857,36 @@ public class ProjectPreparationService {
         return mapper.readValue(manifestPath.toFile(), CanonManifest.class);
     }
 
+    private StoryManifest loadStoryManifest() throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("manifest.json");
+        if (!Files.exists(manifestPath)) {
+            return null;
+        }
+        return mapper.readValue(manifestPath.toFile(), StoryManifest.class);
+    }
+
+    private IngestManifest loadIngestManifest() throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("ingest").resolve("manifest.json");
+        if (!Files.exists(manifestPath)) {
+            return null;
+        }
+        return mapper.readValue(manifestPath.toFile(), IngestManifest.class);
+    }
+
     private void saveCanonManifest(CanonManifest manifest) throws IOException {
         Path manifestPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("manifest.json");
+        Files.createDirectories(manifestPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), manifest);
+    }
+
+    private void saveStoryManifest(StoryManifest manifest) throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("manifest.json");
+        Files.createDirectories(manifestPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), manifest);
+    }
+
+    private void saveIngestManifest(IngestManifest manifest) throws IOException {
+        Path manifestPath = workspaceRoot.resolve(".control-room").resolve("ingest").resolve("manifest.json");
         Files.createDirectories(manifestPath.getParent());
         mapper.writerWithDefaultPrettyPrinter().writeValue(manifestPath.toFile(), manifest);
     }
@@ -623,6 +907,16 @@ public class ProjectPreparationService {
             }
         }
         return cards;
+    }
+
+    private void saveCanonCard(CanonCard card) throws IOException {
+        if (card == null) {
+            return;
+        }
+        Path cardPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("cards")
+            .resolve(cardFileName(card));
+        Files.createDirectories(cardPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(cardPath.toFile(), card);
     }
 
     private String canonCardPath(CanonCard card) {
@@ -655,6 +949,12 @@ public class ProjectPreparationService {
             registry.setScenes(new ArrayList<>());
             return registry;
         }
+    }
+
+    private void saveStoryRegistry(StoryRegistry registry) throws IOException {
+        Path scenesPath = workspaceRoot.resolve(".control-room").resolve("story").resolve("scenes.json");
+        Files.createDirectories(scenesPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(scenesPath.toFile(), registry);
     }
 
     private String bucketFromType(String type) {
@@ -847,11 +1147,14 @@ public class ProjectPreparationService {
 
     public static class PrepareIngestPayload {
         public List<UploadedFile> manuscripts = new ArrayList<>();
+        public List<UploadedFile> outlines = new ArrayList<>();
         public List<UploadedFile> canonFiles = new ArrayList<>();
         public List<IngestIgnoredInput> ignoredInputs = new ArrayList<>();
 
         public int totalFiles() {
-            return (manuscripts != null ? manuscripts.size() : 0) + (canonFiles != null ? canonFiles.size() : 0);
+            return (manuscripts != null ? manuscripts.size() : 0)
+                + (outlines != null ? outlines.size() : 0)
+                + (canonFiles != null ? canonFiles.size() : 0);
         }
     }
 

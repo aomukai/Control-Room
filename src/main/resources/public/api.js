@@ -562,6 +562,12 @@
                 method: 'POST',
                 body: formData
             });
+        },
+        async prepareSupplementalIngest(formData) {
+            return api('/api/preparation/ingest-supplemental', {
+                method: 'POST',
+                body: formData
+            });
         }
     };
 
