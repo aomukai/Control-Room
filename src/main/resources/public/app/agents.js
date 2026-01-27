@@ -3302,10 +3302,9 @@
 
         const lines = [
             `You are ${name}, role: ${role}.`,
-            'Please provide:',
-            '1) A 2-4 sentence self introduction.',
-            '2) 3-5 bullet first impressions of the project.',
-            '3) 2-4 bullet suggested next actions.'
+            '',
+            'Please introduce yourself in 2-4 sentences that reflect your personality and role.',
+            'Respond with only the introduction text. Do not include analysis, reasoning, or bullet lists.'
         ];
 
         if (instructions) {

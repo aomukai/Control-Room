@@ -92,7 +92,21 @@
         cleaned = cleaned.replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '');
         cleaned = cleaned.replace(/\[think\][\s\S]*?\[\/think\]/gi, '');
         cleaned = cleaned.replace(/\[thought\][\s\S]*?\[\/thought\]/gi, '');
+        cleaned = stripOrphanClosingThink(cleaned, '</thinking>');
+        cleaned = stripOrphanClosingThink(cleaned, '</think>');
+        cleaned = stripOrphanClosingThink(cleaned, '[/thinking]');
+        cleaned = stripOrphanClosingThink(cleaned, '[/think]');
+        cleaned = stripOrphanClosingThink(cleaned, '[/thought]');
         return cleaned.trim();
+    }
+
+    function stripOrphanClosingThink(content, closingTag) {
+        if (!content || !closingTag) return content || '';
+        const lower = content.toLowerCase();
+        const tag = closingTag.toLowerCase();
+        const idx = lower.indexOf(tag);
+        if (idx === -1) return content;
+        return content.slice(idx + closingTag.length).trim();
     }
 
     function buildStopHookPreamble(agent) {

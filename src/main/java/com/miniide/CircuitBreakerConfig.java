@@ -11,7 +11,7 @@ public class CircuitBreakerConfig {
     private int maxConsecutiveSameAgentPair = 2;
     private String requireEvidenceForImpactLevel = "structural";
     private List<String> escalationKeywords = defaultEscalationKeywords();
-    private int maxEscalationKeywordsPerComment = 1;
+    private int maxEscalationKeywordsPerComment = 4;
     private int minTurnsBeforeResolution = 3;
     private int frozenIssueCooldownMinutes = 30;
 
@@ -100,16 +100,13 @@ public class CircuitBreakerConfig {
         keywords.add("URGENT");
         keywords.add("CRUCIAL");
         keywords.add("CRITICAL");
-        keywords.add("MUST");
-        keywords.add("NEED TO");
         keywords.add("IMMEDIATELY");
         keywords.add("CATASTROPHIC");
         keywords.add("DISASTER");
         keywords.add("EMERGENCY");
-        keywords.add("VITAL");
-        keywords.add("ESSENTIAL");
-        keywords.add("ABSOLUTELY");
-        keywords.add("DEFINITELY");
+        keywords.add("DOOM");
+        keywords.add("COLLAPSE");
+        keywords.add("FAILURE");
         return keywords;
     }
 }

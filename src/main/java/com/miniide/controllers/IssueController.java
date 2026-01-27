@@ -13,6 +13,7 @@ import com.miniide.models.Comment;
 import com.miniide.models.CreditEvent;
 import com.miniide.models.Issue;
 import com.miniide.models.PatchProposal;
+import com.miniide.models.Agent;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -319,7 +320,7 @@ public class IssueController implements Controller {
             comment.setImpactLevel(impactLevel);
             comment.setEvidence(evidence);
 
-            if (!isUserAuthor(comment)) {
+            if (!isUserAuthor(comment) && !shouldSkipCircuitBreaker(comment, issue)) {
                 CircuitBreakerValidator.ValidationResult validation = circuitBreakerValidator
                     .validateComment(comment, issue, circuitBreakerConfig);
                 if (!validation.isValid()) {
@@ -558,6 +559,61 @@ public class IssueController implements Controller {
     private boolean isUserAuthor(Comment comment) {
         String author = comment != null ? comment.getAuthor() : null;
         return author != null && author.trim().equalsIgnoreCase("user");
+    }
+
+    private boolean shouldSkipCircuitBreaker(Comment comment, Issue issue) {
+        if (comment == null || issue == null) {
+            return false;
+        }
+        if (isSystemAuthor(comment)) {
+            return true;
+        }
+        return isUserFacingIssue(issue)
+            || hasTag(issue, "agent-intro")
+            || hasTag(issue, "onboarding")
+            || hasTag(issue, "welcome")
+            || isNarrativeRoleComment(comment);
+    }
+
+    private boolean isUserFacingIssue(Issue issue) {
+        if (issue == null) {
+            return false;
+        }
+        String openedBy = issue.getOpenedBy();
+        String assignedTo = issue.getAssignedTo();
+        if (openedBy != null && openedBy.trim().equalsIgnoreCase("user")) {
+            return true;
+        }
+        return assignedTo != null && assignedTo.trim().equalsIgnoreCase("user");
+    }
+
+    private boolean hasTag(Issue issue, String tag) {
+        if (issue == null || tag == null || tag.isBlank()) {
+            return false;
+        }
+        for (String existing : issue.getTags()) {
+            if (existing != null && existing.trim().equalsIgnoreCase(tag)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isNarrativeRoleComment(Comment comment) {
+        String author = comment != null ? comment.getAuthor() : null;
+        if (author == null || author.isBlank() || projectContext == null) {
+            return false;
+        }
+        String agentId = resolveAgentId(author);
+        if (agentId == null) {
+            return false;
+        }
+        Agent agent = projectContext.agents().getAgent(agentId);
+        if (agent == null || agent.getRole() == null) {
+            return false;
+        }
+        String role = agent.getRole().trim().toLowerCase();
+        return role.equals("writer") || role.equals("editor") || role.equals("critic");
     }
 
     private boolean isIssueFrozen(Issue issue) {

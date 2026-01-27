@@ -248,7 +248,26 @@ public class ChatController implements Controller {
         cleaned = cleaned.replaceAll("(?is)\\[thinking\\].*?\\[/thinking\\]", "").trim();
         cleaned = cleaned.replaceAll("(?is)\\[think\\].*?\\[/think\\]", "").trim();
         cleaned = cleaned.replaceAll("(?is)\\[thought\\].*?\\[/thought\\]", "").trim();
+        cleaned = stripOrphanClosingThink(cleaned, "</thinking>");
+        cleaned = stripOrphanClosingThink(cleaned, "</think>");
+        cleaned = stripOrphanClosingThink(cleaned, "[/thinking]");
+        cleaned = stripOrphanClosingThink(cleaned, "[/think]");
+        cleaned = stripOrphanClosingThink(cleaned, "[/thought]");
         return cleaned;
+    }
+
+    private String stripOrphanClosingThink(String content, String closingTag) {
+        if (content == null || content.isBlank() || closingTag == null || closingTag.isBlank()) {
+            return content;
+        }
+        String lower = content.toLowerCase();
+        String lowerTag = closingTag.toLowerCase();
+        int idx = lower.indexOf(lowerTag);
+        if (idx == -1) {
+            return content;
+        }
+        String after = content.substring(idx + closingTag.length());
+        return after.trim();
     }
 
     private boolean isStateExcluded(MemoryItem item, boolean includeArchived, boolean includeExpired) {
