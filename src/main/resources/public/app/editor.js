@@ -37,6 +37,58 @@
         return normalizeWorkspacePath(path || '');
     }
 
+    function stripPrefixForDisplay(filename, prefix) {
+        if (!prefix || !filename) return filename;
+        const lower = filename.toLowerCase();
+        const prefixLower = `${prefix.toLowerCase()}-`;
+        if (lower.startsWith(prefixLower)) {
+            return filename.substring(prefix.length + 1);
+        }
+        return filename;
+    }
+
+    function inferCompendiumPrefixFromPath(path) {
+        const normalized = normalizeWorkspacePath(path || '');
+        const parts = normalized.split('/');
+        if (parts.length < 2 || parts[0] !== 'Compendium') {
+            return null;
+        }
+        const bucket = parts[1];
+        switch (bucket) {
+            case 'Characters': return 'CHAR';
+            case 'Locations': return 'LOC';
+            case 'Lore': return 'CONCEPT';
+            case 'Factions': return 'FACTION';
+            case 'Technology': return 'TECH';
+            case 'Culture': return 'CULTURE';
+            case 'Events': return 'EVENT';
+            case 'Themes': return 'THEME';
+            case 'Glossary': return 'GLOSSARY';
+            default: return 'MISC';
+        }
+    }
+
+    function inferStoryPrefixFromPath(path, filename) {
+        const normalized = normalizeWorkspacePath(path || '');
+        if (normalized.startsWith('Story/Scenes/')) {
+            return 'SCN';
+        }
+        if (normalized.startsWith('Story/') && String(filename || '').toUpperCase().startsWith('SCN-')) {
+            return 'SCN';
+        }
+        return null;
+    }
+
+    function getExplorerDisplayName(node) {
+        if (!node || node.type !== 'file') {
+            return node && node.name ? node.name : '';
+        }
+        const path = normalizeWorkspacePath(node.path || '');
+        const filename = node.name || '';
+        const prefix = inferCompendiumPrefixFromPath(path) || inferStoryPrefixFromPath(path, filename);
+        return stripPrefixForDisplay(filename, prefix);
+    }
+
     function getVisibleFilePaths() {
         if (!elements.fileTree) return [];
         return Array.from(elements.fileTree.querySelectorAll('.tree-item.tree-file:not(.tree-item-virtual)'))
@@ -574,7 +626,7 @@
     
         const name = document.createElement('span');
         name.className = 'tree-name';
-        name.textContent = node.name;
+        name.textContent = getExplorerDisplayName(node);
     
         item.appendChild(icon);
         item.appendChild(name);
@@ -1628,50 +1680,13 @@
         const oldName = lastSlash !== -1 ? oldPath.substring(lastSlash + 1) : oldPath;
         const isFile = nodeType === 'file';
 
-        const inferCompendiumPrefix = (folder) => {
-            const parts = (folder || '').split('/');
-            if (parts.length < 2 || parts[0] !== 'Compendium') {
-                return null;
-            }
-            const bucket = parts[1];
-            switch (bucket) {
-                case 'Characters': return 'CHAR';
-                case 'Locations': return 'LOC';
-                case 'Lore': return 'CONCEPT';
-                case 'Factions': return 'FACTION';
-                case 'Technology': return 'TECH';
-                case 'Culture': return 'CULTURE';
-                case 'Events': return 'EVENT';
-                case 'Themes': return 'THEME';
-                case 'Glossary': return 'GLOSSARY';
-                default: return 'MISC';
-            }
-        };
-
-        const inferStoryPrefix = (folder) => {
-            if ((folder || '').startsWith('Story/Scenes')) {
-                return 'SCN';
-            }
-            return null;
-        };
-
-        const stripPrefixForDisplay = (filename, prefix) => {
-            if (!prefix || !filename) return filename;
-            const lower = filename.toLowerCase();
-            const prefixLower = `${prefix.toLowerCase()}-`;
-            if (lower.startsWith(prefixLower)) {
-                return filename.substring(prefix.length + 1);
-            }
-            return filename;
-        };
-
         const buildRenamedFile = (inputName) => {
             const raw = inputName.trim();
             if (!raw) return null;
             if (raw.includes('/') || raw.includes('\\')) return null;
 
-            const compPrefix = inferCompendiumPrefix(parentFolder);
-            const storyPrefix = inferStoryPrefix(parentFolder);
+            const compPrefix = inferCompendiumPrefixFromPath(parentFolder);
+            const storyPrefix = inferStoryPrefixFromPath(parentFolder, oldName);
             const expectedPrefix = compPrefix || storyPrefix;
             const defaultExt = oldName.includes('.') ? oldName.substring(oldName.lastIndexOf('.')) : '';
 
@@ -1692,7 +1707,7 @@
         };
 
         const displayName = isFile
-            ? stripPrefixForDisplay(oldName, inferCompendiumPrefix(parentFolder) || inferStoryPrefix(parentFolder))
+            ? stripPrefixForDisplay(oldName, inferCompendiumPrefixFromPath(parentFolder) || inferStoryPrefixFromPath(parentFolder, oldName))
             : oldName;
         const title = nodeType === 'folder' ? 'Rename Folder' : 'Rename File';
         const placeholder = nodeType === 'folder' ? 'folder-name' : 'file-name.md';
