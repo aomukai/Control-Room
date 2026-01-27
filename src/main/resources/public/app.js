@@ -242,6 +242,56 @@
      * Updates UI elements based on NO_PROJECT state.
      * When no project is selected, locks down all UI except "Create Project" button.
      */
+    function updateEditorPlaceholder() {
+        const placeholder = document.getElementById('editor-placeholder');
+        if (!placeholder) return;
+        const placeholderText = placeholder.querySelector('.placeholder-text');
+        if (!placeholderText) return;
+
+        const noProject = !state.workspace.projectSelected;
+        const inPreparation = state.workspace.prepStage === 'draft';
+        if (noProject) {
+            placeholderText.innerHTML = `
+                <h2>Welcome to Control Room</h2>
+                <p>No project selected</p>
+                <p class="shortcut">Click "Create Project" in the sidebar to get started</p>
+            `;
+            return;
+        }
+
+        if (inPreparation) {
+            const storyIcon = '<span class="prep-icon" title="Story Explorer"><img src="assets/icons/heroicons_outline/pencil-square.svg" alt=""></span>';
+            const compendiumIcon = '<span class="prep-icon" title="Compendium Explorer"><img src="assets/icons/heroicons_outline/rectangle-stack.svg" alt=""></span>';
+            const importIcon = '<span class="prep-icon" title="Import Missing Files"><img src="assets/icons/heroicons_outline/arrow-up-tray.svg" alt=""></span>';
+            placeholderText.innerHTML = `
+                <div class="prep-placeholder">
+                    <h2>Preparation Mode</h2>
+                    <p>Use the ${storyIcon} <span class="prep-icon-label">(Story Explorer)</span> to review, edit, or reorder your manuscript and outline, and the ${compendiumIcon} <span class="prep-icon-label">(Compendium Explorer)</span> to organize your worldbuilding. If you forgot something, add it with ${importIcon} <span class="prep-icon-label">(Import Missing Files)</span>. Take your time here. Once you click "Preparation Completed," any changes to the Compendium become retcons.</p>
+                    <button class="prep-more-toggle" type="button">Tell me more</button>
+                    <div class="prep-more-text">
+                        <p>After preparation, your project lives inside a virtual file system that your agents index as their single source of truth. That keeps them grounded and reduces hallucinations. Changing the Compendium later forces them to re-check everything they've learned -- your manuscript, issues, internal messages, and memory across multiple levels of fidelity. That ripple can break consistency in places you don't expect.</p>
+                        <p>Think of canon like the laws of nature: if gravity suddenly doubles, every system built for 1G struggles. Or imagine life switching from carbon to silicon, or the speed of light dropping to 100 km/h. Things might still work, but the whole world has to adapt -- planes stop making sense, bicycles become exhausting, and even walking feels heavier. A few extra minutes here saves a lot of chaos later.</p>
+                    </div>
+                </div>
+            `;
+            const toggle = placeholderText.querySelector('.prep-more-toggle');
+            const moreText = placeholderText.querySelector('.prep-more-text');
+            if (toggle && moreText) {
+                toggle.addEventListener('click', () => {
+                    const isOpen = moreText.classList.toggle('is-open');
+                    toggle.textContent = isOpen ? 'Tell me less' : 'Tell me more';
+                });
+            }
+            return;
+        }
+
+        placeholderText.innerHTML = `
+            <h2>Welcome to Control Room</h2>
+            <p>Select a file from the sidebar to start editing</p>
+            <p class="shortcut">Ctrl+S to save</p>
+        `;
+    }
+
     function updateNoProjectUI() {
         const noProject = !state.workspace.projectSelected;
 
@@ -263,26 +313,7 @@
             }
         }
 
-        // Update editor placeholder for NO_PROJECT state
-        const placeholder = document.getElementById('editor-placeholder');
-        if (placeholder) {
-            const placeholderText = placeholder.querySelector('.placeholder-text');
-            if (placeholderText) {
-                if (noProject) {
-                    placeholderText.innerHTML = `
-                        <h2>Welcome to Control Room</h2>
-                        <p>No project selected</p>
-                        <p class="shortcut">Click "Create Project" in the sidebar to get started</p>
-                    `;
-                } else {
-                    placeholderText.innerHTML = `
-                        <h2>Welcome to Control Room</h2>
-                        <p>Select a file from the sidebar to start editing</p>
-                        <p class="shortcut">Ctrl+S to save</p>
-                    `;
-                }
-            }
-        }
+        updateEditorPlaceholder();
 
         // Disable workbench access
         if (elements.btnToggleMode) {
@@ -3447,6 +3478,8 @@ async function showWorkspaceSwitcher() {
         notificationStore.markRead(notification.id);
     }
 
+    const prepWelcomeIssueIds = new Map();
+
     function dispatchNotificationAction(notification) {
         const payload = notification.actionPayload;
         if (!payload || typeof payload !== 'object') {
@@ -3500,6 +3533,41 @@ async function showWorkspaceSwitcher() {
                 } else {
                     log('Versioning panel not available', 'warning');
                 }
+                break;
+            case 'prep-welcome':
+                closeNotificationCenter();
+                if (window.openIssueBoardPanel) {
+                    window.openIssueBoardPanel();
+                }
+                (async () => {
+                    try {
+                        const existingIssueId = prepWelcomeIssueIds.get(notification.id);
+                        if (existingIssueId) {
+                            openIssueModal(existingIssueId);
+                            return;
+                        }
+                        const projectName = payload.projectName || state.workspace.displayName || state.workspace.name || 'your project';
+                        const issueTitle = `Welcome to ${projectName}!`;
+                        const issueBody = [
+                            `Welcome to ${projectName}! You finished the preparation phase — wonderful.`,
+                            '',
+                            'That was step 1. Now let’s add your first agent, the Chief of Staff.',
+                            'This agent is needed for various tasks. They keep your entire team running.',
+                            'You can find the agents list on the left side of the Workbench.',
+                        ].join('\n');
+                        const created = await issueApi.create({
+                            title: issueTitle,
+                            body: issueBody,
+                            openedBy: 'system',
+                            tags: ['onboarding', 'prep-complete']
+                        });
+                        prepWelcomeIssueIds.set(notification.id, created.id);
+                        openIssueModal(created.id);
+                    } catch (err) {
+                        log(`Failed to create welcome issue: ${err.message}`, 'error');
+                        notificationStore.error(`Failed to create welcome issue: ${err.message}`, 'workbench');
+                    }
+                })();
                 break;
             default:
                 openNotificationCenter(notification.id);
@@ -3616,6 +3684,8 @@ async function showWorkspaceSwitcher() {
                 ? 'Add Agent'
                 : 'Agents are locked until project preparation is completed.';
         }
+
+        updateEditorPlaceholder();
     }
 
     function setViewMode(mode) {
@@ -6883,6 +6953,18 @@ async function showWorkspaceSwitcher() {
                         window.updateAgentLockState();
                     }
                     notificationStore.success('Preparation completed. Agents unlocked.', 'global');
+                    const projectName = state.workspace.displayName || state.workspace.name || 'your project';
+                    notificationStore.push(
+                        'info',
+                        'workbench',
+                        `Welcome to ${projectName}!`,
+                        'Prep complete — click to open your onboarding issue.',
+                        'attention',
+                        false,
+                        'Open Issue Board',
+                        { kind: 'prep-welcome', projectName },
+                        'workbench'
+                    );
                 } catch (err) {
                     notificationStore.error(`Failed to update preparation status: ${err.message}`, 'global');
                 }

@@ -920,6 +920,60 @@ html, body {
     margin-top: 8px;
 }
 
+.prep-placeholder {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.prep-placeholder p {
+    line-height: 1.55;
+}
+
+.prep-icon {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    margin: 0 4px;
+}
+
+.prep-icon img {
+    width: 16px;
+    height: 16px;
+    opacity: 0.9;
+    filter: invert(1);
+    mix-blend-mode: difference;
+}
+
+.prep-icon-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.prep-more-toggle {
+    margin-top: 6px;
+    background: var(--bg-lighter);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.prep-more-toggle:hover {
+    background: var(--bg-medium);
+}
+
+.prep-more-text {
+    display: none;
+    margin-top: 12px;
+    color: var(--text-secondary);
+}
+
+.prep-more-text.is-open {
+    display: block;
+}
+
 #monaco-editor {
     position: absolute;
     inset: 0;
