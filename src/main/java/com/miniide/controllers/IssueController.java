@@ -95,6 +95,8 @@ public class IssueController implements Controller {
         app.delete("/api/issues/{id}", this::deleteIssue);
         app.post("/api/issues/{id}/comments", this::addComment);
         app.post("/api/issues/{id}/patches", this::createIssuePatch);
+        app.post("/api/issues/{id}/revive", this::reviveIssue);
+        app.post("/api/issues/decay", this::runIssueDecay);
     }
 
     private void createIssuePatch(Context ctx) {
@@ -127,6 +129,8 @@ public class IssueController implements Controller {
             String tag = ctx.queryParam("tag");
             String assignedTo = ctx.queryParam("assignedTo");
             String status = ctx.queryParam("status");
+            String priority = ctx.queryParam("priority");
+            Integer minInterestLevel = parseIntQuery(ctx, "minInterestLevel");
 
             List<Issue> issues;
 
@@ -134,6 +138,8 @@ public class IssueController implements Controller {
                 issues = issueService.listIssuesByTag(tag);
             } else if (assignedTo != null && !assignedTo.isBlank()) {
                 issues = issueService.listIssuesByAssignee(assignedTo);
+            } else if (priority != null && !priority.isBlank()) {
+                issues = issueService.listIssuesByPriority(priority);
             } else {
                 issues = issueService.listIssues();
             }
@@ -142,6 +148,18 @@ public class IssueController implements Controller {
                 List<Issue> filtered = new ArrayList<>();
                 for (Issue issue : issues) {
                     if (status.equalsIgnoreCase(issue.getStatus())) {
+                        filtered.add(issue);
+                    }
+                }
+                issues = filtered;
+            }
+
+            if (minInterestLevel != null) {
+                List<Issue> filtered = new ArrayList<>();
+                for (Issue issue : issues) {
+                    Integer level = issue.getMemoryLevel();
+                    int normalized = level != null ? level : 3;
+                    if (normalized >= minInterestLevel) {
                         filtered.add(issue);
                     }
                 }
@@ -161,6 +179,7 @@ public class IssueController implements Controller {
             Optional<Issue> issue = issueService.getIssue(id);
 
             if (issue.isPresent()) {
+                issueService.recordAccess(id);
                 ctx.json(issue.get());
             } else {
                 ctx.status(404).json(Map.of("error", "Issue not found: #" + id));
@@ -187,6 +206,7 @@ public class IssueController implements Controller {
             String openedBy = json.has("openedBy") ? json.get("openedBy").asText() : "user";
             String assignedTo = json.has("assignedTo") ? json.get("assignedTo").asText() : null;
             String priority = json.has("priority") ? json.get("priority").asText() : "normal";
+            String epistemicStatus = json.has("epistemicStatus") ? json.get("epistemicStatus").asText() : null;
 
             List<String> tags = new ArrayList<>();
             if (json.has("tags") && json.get("tags").isArray()) {
@@ -196,6 +216,10 @@ public class IssueController implements Controller {
             }
 
             Issue issue = issueService.createIssue(title, body, openedBy, assignedTo, tags, priority);
+            if (epistemicStatus != null && !epistemicStatus.isBlank()) {
+                issue.setEpistemicStatus(epistemicStatus);
+                issue = issueService.updateIssue(issue);
+            }
             logger.info("Issue created via API: #" + issue.getId() + " - " + issue.getTitle());
             ctx.status(201).json(issue);
         } catch (Exception e) {
@@ -231,6 +255,14 @@ public class IssueController implements Controller {
             }
             if (json.has("priority")) {
                 issue.setPriority(json.get("priority").asText());
+            }
+            if (json.has("epistemicStatus")) {
+                JsonNode statusNode = json.get("epistemicStatus");
+                if (statusNode == null || statusNode.isNull()) {
+                    issue.setEpistemicStatus(null);
+                } else {
+                    issue.setEpistemicStatus(statusNode.asText());
+                }
             }
             String previousStatus = issue.getStatus();
             if (json.has("status")) {
@@ -276,6 +308,54 @@ public class IssueController implements Controller {
         } catch (Exception e) {
             logger.error("Error deleting issue: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void reviveIssue(Context ctx) {
+        try {
+            int id = Integer.parseInt(ctx.pathParam("id"));
+            Issue revived = issueService.reviveIssue(id);
+            ctx.json(revived);
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(404).json(Controller.errorBody(e));
+        } catch (Exception e) {
+            logger.error("Error reviving issue: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void runIssueDecay(Context ctx) {
+        try {
+            boolean dryRun = false;
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("dryRun")) {
+                    dryRun = json.get("dryRun").asBoolean(false);
+                }
+            }
+            IssueMemoryService.DecayResult result = issueService.runDecay(dryRun);
+            ctx.json(Map.of(
+                "decayed", result.getDecayed(),
+                "updatedIssueIds", result.getUpdatedIssueIds(),
+                "dryRun", dryRun
+            ));
+        } catch (Exception e) {
+            logger.error("Error running issue decay: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private Integer parseIntQuery(Context ctx, String key) {
+        String raw = ctx.queryParam(key);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

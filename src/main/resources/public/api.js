@@ -40,6 +40,7 @@
             if (filters.assignedTo) params.set('assignedTo', filters.assignedTo);
             if (filters.status) params.set('status', filters.status);
             if (filters.priority) params.set('priority', filters.priority);
+            if (filters.minInterestLevel) params.set('minInterestLevel', filters.minInterestLevel);
             const query = params.toString();
             const url = '/api/issues' + (query ? '?' + query : '');
             const response = await fetch(url);
@@ -102,6 +103,20 @@
                 throw new Error(err.error || 'Failed to add comment');
             }
             return response.json();
+        },
+
+        async revive(id) {
+            return api(`/api/issues/${encodeURIComponent(id)}/revive`, {
+                method: 'POST'
+            });
+        },
+
+        async decay(dryRun = false) {
+            return api('/api/issues/decay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dryRun })
+            });
         },
 
         async createPatch(issueId, payload) {

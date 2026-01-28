@@ -5144,6 +5144,16 @@ html, body {
       margin-bottom: 20px;
   }
 
+  .issue-memory-banner {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-dark);
+      border: 1px dashed var(--border-color);
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+  }
+
   .issue-patches-section {
       margin-bottom: 20px;
   }
@@ -5154,6 +5164,43 @@ html, body {
       border-radius: 10px;
       padding: 16px;
       margin-bottom: 20px;
+  }
+
+  .issue-memory-levels {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+  }
+
+  .issue-memory-levels summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-bright);
+      outline: none;
+  }
+
+  .issue-memory-level-entry {
+      padding: 10px 0;
+      border-top: 1px solid var(--border-color);
+  }
+
+  .issue-memory-level-entry:first-of-type {
+      border-top: none;
+  }
+
+  .issue-memory-level-entry-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+  }
+
+  .issue-memory-level-entry-body {
+      font-size: 12px;
+      color: var(--text-primary);
   }
 
   .issue-memory-header {

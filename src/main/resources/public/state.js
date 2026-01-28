@@ -55,7 +55,8 @@
             error: null,
             filters: {
                 status: 'all', // 'all' | 'open' | 'closed' | 'waiting-on-user'
-                priority: 'all' // 'all' | 'urgent' | 'high' | 'normal' | 'low'
+                priority: 'all', // 'all' | 'urgent' | 'high' | 'normal' | 'low'
+                interest: 'active' // 'active' | 'all'
             }
         },
         agents: {

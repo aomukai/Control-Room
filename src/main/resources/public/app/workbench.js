@@ -107,6 +107,20 @@
         return dots;
     }
 
+    function resolveIssueBody(issue, memoryLevel) {
+        if (!issue) return '';
+        if (memoryLevel <= 1) {
+            return issue.semanticTrace || issue.resolutionSummary || issue.compressedSummary || issue.body || '';
+        }
+        if (memoryLevel === 2) {
+            return issue.resolutionSummary || issue.compressedSummary || issue.body || '';
+        }
+        if (memoryLevel === 3) {
+            return issue.compressedSummary || issue.body || '';
+        }
+        return issue.body || '';
+    }
+
     // Build assignee dropdown options
     function buildAssigneeOptions(currentAssignee) {
         const agents = (state && state.agents && state.agents.list) || [];
@@ -135,6 +149,13 @@
         polished: 'Polished'
     };
     const ROADMAP_STATUS_ORDER = ['Idea', 'Plan', 'Draft', 'Polished'];
+    const EPISTEMIC_STATUS_OPTIONS = [
+        { value: '', label: 'Unset' },
+        { value: 'tentative', label: 'Tentative' },
+        { value: 'proposed', label: 'Proposed' },
+        { value: 'agreed', label: 'Agreed' },
+        { value: 'verified', label: 'Verified' }
+    ];
 
     function canonicalizeRoadmapTag(tag) {
         if (!tag) {
@@ -171,6 +192,14 @@
         ];
         return options.map(({ value, label }) => {
             const selected = value === (current || '') ? ' selected' : '';
+            return `<option value="${value}"${selected}>${label}</option>`;
+        }).join('');
+    }
+
+    function buildEpistemicOptions(current) {
+        const currentValue = (current || '').toLowerCase();
+        return EPISTEMIC_STATUS_OPTIONS.map(({ value, label }) => {
+            const selected = value === currentValue ? ' selected' : '';
             return `<option value="${value}"${selected}>${label}</option>`;
         }).join('');
     }
@@ -411,6 +440,13 @@
                             <option value="low">Low</option>
                         </select>
                     </div>
+                    <div class="issue-filter-group">
+                        <label class="issue-filter-label">Memory</label>
+                        <select id="issue-filter-interest" class="issue-filter-select">
+                            <option value="active">Active</option>
+                            <option value="all">All</option>
+                        </select>
+                    </div>
                     <div class="issue-filter-stats" id="issue-filter-stats"></div>
                 </div>
                 <div class="issue-board-content" id="issue-board-list"></div>
@@ -420,8 +456,10 @@
         // Set current filter values
         const statusSelect = document.getElementById('issue-filter-status');
         const prioritySelect = document.getElementById('issue-filter-priority');
+        const interestSelect = document.getElementById('issue-filter-interest');
         if (statusSelect) statusSelect.value = state.issueBoard.filters.status;
         if (prioritySelect) prioritySelect.value = state.issueBoard.filters.priority;
+        if (interestSelect) interestSelect.value = state.issueBoard.filters.interest;
 
         // Wire event listeners
         initIssueBoardListeners();
@@ -457,6 +495,14 @@
         if (prioritySelect) {
             prioritySelect.addEventListener('change', (e) => {
                 state.issueBoard.filters.priority = e.target.value;
+                loadIssues();
+            });
+        }
+
+        const interestSelect = document.getElementById('issue-filter-interest');
+        if (interestSelect) {
+            interestSelect.addEventListener('change', (e) => {
+                state.issueBoard.filters.interest = e.target.value;
                 loadIssues();
             });
         }
@@ -793,6 +839,7 @@
             const { status: roadmapStatus, otherTags } = extractRoadmapStatus(issue.tags);
             const roadmapOptions = buildRoadmapStatusOptions(roadmapStatus);
             const statusOptions = buildStatusOptions(issue.status);
+            const epistemicOptions = buildEpistemicOptions(issue.epistemicStatus);
             const assigneeOptions = buildAssigneeOptions(issue.assignedTo);
 
             // Build tags HTML
@@ -801,11 +848,29 @@
                 : '<span class="issue-no-tags">No tags</span>';
 
             const patchIds = extractPatchIds(issue.comments || []);
+            const memoryLevel = Math.max(1, Math.min(5, Number(issue.memoryLevel) || 3));
+            let memoryBannerHtml = '';
+            if (memoryLevel === 3) {
+                memoryBannerHtml = '<div class="issue-memory-banner">Memory Level 3: Summary view (thread compressed).</div>';
+            } else if (memoryLevel === 2) {
+                memoryBannerHtml = '<div class="issue-memory-banner">Memory Level 2: Resolution summary only.</div>';
+            } else if (memoryLevel <= 1) {
+                memoryBannerHtml = '<div class="issue-memory-banner">Memory Level 1: Semantic trace only.</div>';
+            }
 
             // Build comments HTML with avatars
             let commentsHtml = '';
-            if (issue.comments && issue.comments.length > 0) {
-                commentsHtml = issue.comments.map(comment => {
+            let commentList = Array.isArray(issue.comments) ? issue.comments : [];
+            if (memoryLevel === 3 && commentList.length > 1) {
+                const first = commentList[0];
+                const last = commentList[commentList.length - 1];
+                commentList = first === last ? [first] : [first, last];
+            } else if (memoryLevel <= 2) {
+                commentList = [];
+            }
+
+            if (commentList.length > 0) {
+                commentsHtml = commentList.map(comment => {
                     let actionBadge = '';
                     if (comment.action && comment.action.type) {
                         actionBadge = `
@@ -830,7 +895,9 @@
                     `;
                 }).join('');
             } else {
-                commentsHtml = '<div class="issue-no-comments">No comments yet</div>';
+                commentsHtml = memoryLevel <= 2
+                    ? '<div class="issue-no-comments">Thread compressed at this memory level.</div>'
+                    : '<div class="issue-no-comments">No comments yet</div>';
             }
 
             const patchesHtml = patchIds.length
@@ -844,6 +911,28 @@
                     </div>
                 `
                 : '';
+
+            const memoryLevelsHtml = `
+                <details class="issue-memory-levels">
+                    <summary>Memory Levels (all)</summary>
+                    <div class="issue-memory-level-entry">
+                        <div class="issue-memory-level-entry-title">Level 1 - Semantic Trace</div>
+                        <div class="issue-memory-level-entry-body issue-markdown">${formatIssueBody(issue.semanticTrace || 'Not generated')}</div>
+                    </div>
+                    <div class="issue-memory-level-entry">
+                        <div class="issue-memory-level-entry-title">Level 2 - Resolution Summary</div>
+                        <div class="issue-memory-level-entry-body issue-markdown">${formatIssueBody(issue.resolutionSummary || 'Not generated')}</div>
+                    </div>
+                    <div class="issue-memory-level-entry">
+                        <div class="issue-memory-level-entry-title">Level 3 - Compressed Summary</div>
+                        <div class="issue-memory-level-entry-body issue-markdown">${formatIssueBody(issue.compressedSummary || 'Not generated')}</div>
+                    </div>
+                    <div class="issue-memory-level-entry">
+                        <div class="issue-memory-level-entry-title">Level 4/5 - Full Thread</div>
+                        <div class="issue-memory-level-entry-body issue-markdown">${formatIssueBody(issue.body || 'Not available')}</div>
+                    </div>
+                </details>
+            `;
 
             const memoryState = state.issueModal.memory || {};
             const memoryAgentId = memoryState.agentId || resolveDefaultMemoryAgent(issue);
@@ -958,6 +1047,10 @@
                             <select class="modal-select issue-roadmap-select">${roadmapOptions}</select>
                         </div>
                         <div class="issue-meta-group">
+                            <span class="issue-meta-label">Epistemic</span>
+                            <select class="modal-select issue-epistemic-select">${epistemicOptions}</select>
+                        </div>
+                        <div class="issue-meta-group">
                             <span class="issue-meta-label">Priority</span>
                             <span class="issue-priority-pill ${getPriorityClass(issue.priority)}">${escapeHtml(issue.priority)}</span>
                         </div>
@@ -972,10 +1065,12 @@
                     </div>
 
                     ${memoryPanelHtml}
+                    ${memoryLevelsHtml}
 
                     <div class="issue-body-section">
                         <h3 class="issue-section-title">Description</h3>
-                        <div class="issue-body-content issue-markdown">${formatIssueBody(issue.body || '', 'No description provided.')}</div>
+                        ${memoryBannerHtml}
+                        <div class="issue-body-content issue-markdown">${formatIssueBody(resolveIssueBody(issue, memoryLevel), 'No description provided.')}</div>
                     </div>
 
                     ${patchIds.length ? `
@@ -1003,6 +1098,7 @@
                             ${statusActionBtn}
                         </div>
                         <div class="issue-footer-right">
+                            ${memoryLevel <= 2 ? '<button type="button" class="issue-action-btn issue-action-secondary issue-revive-btn">Revive Thread</button>' : ''}
                             <button type="button" class="issue-modal-btn-close">Close</button>
                         </div>
                     </div>
@@ -1119,6 +1215,30 @@
                     notificationStore.error(`Failed to update roadmap: ${err.message}`, 'workbench');
                 } finally {
                     roadmapSelect.disabled = false;
+                }
+            });
+        }
+
+        const epistemicSelect = modal.querySelector('.issue-epistemic-select');
+        if (epistemicSelect) {
+            epistemicSelect.addEventListener('change', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue) return;
+                const value = epistemicSelect.value || null;
+                epistemicSelect.disabled = true;
+                try {
+                    const payload = value ? { epistemicStatus: value } : { epistemicStatus: null };
+                    const updated = await issueApi.update(issue.id, payload);
+                    state.issueModal.issue = updated;
+                    notificationStore.success(`Issue #${updated.id} epistemic status updated.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to update epistemic status: ${err.message}`, 'workbench');
+                } finally {
+                    epistemicSelect.disabled = false;
                 }
             });
         }
@@ -1286,6 +1406,28 @@
             });
         }
 
+        const reviveBtn = modal.querySelector('.issue-revive-btn');
+        if (reviveBtn) {
+            reviveBtn.addEventListener('click', async () => {
+                const issue = state.issueModal.issue;
+                if (!issue || !window.issueApi || !issueApi.revive) return;
+                reviveBtn.disabled = true;
+                try {
+                    const revived = await issueApi.revive(issue.id);
+                    state.issueModal.issue = revived;
+                    notificationStore.success(`Issue #${revived.id} revived to Level 3.`, 'workbench');
+                    renderIssueModal();
+                    if (state.viewMode && state.viewMode.current === 'workbench') {
+                        await loadIssues();
+                    }
+                } catch (err) {
+                    notificationStore.error(`Failed to revive issue: ${err.message}`, 'workbench');
+                } finally {
+                    reviveBtn.disabled = false;
+                }
+            });
+        }
+
         // Close on overlay click (outside modal)
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
@@ -1354,5 +1496,3 @@
     window.refreshIssueModal = refreshIssueModal;
     window.extractRoadmapStatus = extractRoadmapStatus;
 })();
-
-

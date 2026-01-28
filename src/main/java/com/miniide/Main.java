@@ -28,6 +28,7 @@ public class Main {
     }
     private static AppLogger logger;
     private static MemoryDecayScheduler decayScheduler;
+    private static IssueMemoryDecayScheduler issueDecayScheduler;
     private static DecayConfigStore decayConfigStore;
     private static PatchCleanupScheduler patchCleanupScheduler;
     private static PatchCleanupConfigStore patchCleanupConfigStore;
@@ -88,6 +89,9 @@ public class Main {
             }
             decayScheduler = new MemoryDecayScheduler(memoryService, notificationStore, intervalMs, decaySettings);
             decayScheduler.start();
+            long issueDecayIntervalMs = getIssueDecayIntervalMinutesFromEnv() * 60_000L;
+            issueDecayScheduler = new IssueMemoryDecayScheduler(issueService, issueDecayIntervalMs);
+            issueDecayScheduler.start();
 
             PatchCleanupConfigStore.PatchCleanupConfig defaultPatchCleanupConfig = buildDefaultPatchCleanupConfig();
             PatchCleanupConfigStore.PatchCleanupConfig patchCleanupConfig = patchCleanupConfigStore.loadOrDefault(defaultPatchCleanupConfig);
@@ -118,7 +122,7 @@ public class Main {
                 new TieringController(projectContext, objectMapper),
                 new PatchController(projectContext, issueService, notificationStore, creditStore, objectMapper),
                 new OutlineController(projectContext, objectMapper),
-                new ChatController(projectContext, settingsService, providerChatService, memoryService, objectMapper),
+                new ChatController(projectContext, settingsService, providerChatService, memoryService, issueService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),
                 new TtsController(objectMapper),
                 new VersioningController(objectMapper, config.getWorkspacePath(), issueService, projectContext),
@@ -152,6 +156,7 @@ public class Main {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 logger.info("Shutting down...");
                 decayScheduler.stop();
+                issueDecayScheduler.stop();
                 patchCleanupScheduler.stop();
                 app.stop();
                 logger.close();
@@ -241,6 +246,20 @@ public class Main {
 
     private static long getPatchCleanupIntervalMinutesFromEnv() {
         String env = System.getenv("CR_PATCH_CLEANUP_INTERVAL_MINUTES");
+        if (env != null && !env.isBlank()) {
+            try {
+                long minutes = Long.parseLong(env.trim());
+                if (minutes > 0) {
+                    return minutes;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 24 * 60; // default 24h
+    }
+
+    private static long getIssueDecayIntervalMinutesFromEnv() {
+        String env = System.getenv("CR_ISSUE_DECAY_INTERVAL_MINUTES");
         if (env != null && !env.isBlank()) {
             try {
                 long minutes = Long.parseLong(env.trim());

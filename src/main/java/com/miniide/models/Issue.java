@@ -21,6 +21,13 @@ public class Issue {
     private Long frozenAt;
     private Long frozenUntil;
     private String frozenReason;
+    private Integer memoryLevel;
+    private Long lastAccessedAt;
+    private Long lastCompressedAt;
+    private String compressedSummary;
+    private String resolutionSummary;
+    private String semanticTrace;
+    private String epistemicStatus;
 
     public Issue() {
     }
@@ -171,6 +178,62 @@ public class Issue {
         this.frozenReason = frozenReason;
     }
 
+    public Integer getMemoryLevel() {
+        return memoryLevel;
+    }
+
+    public void setMemoryLevel(Integer memoryLevel) {
+        this.memoryLevel = memoryLevel;
+    }
+
+    public Long getLastAccessedAt() {
+        return lastAccessedAt;
+    }
+
+    public void setLastAccessedAt(Long lastAccessedAt) {
+        this.lastAccessedAt = lastAccessedAt;
+    }
+
+    public Long getLastCompressedAt() {
+        return lastCompressedAt;
+    }
+
+    public void setLastCompressedAt(Long lastCompressedAt) {
+        this.lastCompressedAt = lastCompressedAt;
+    }
+
+    public String getCompressedSummary() {
+        return compressedSummary;
+    }
+
+    public void setCompressedSummary(String compressedSummary) {
+        this.compressedSummary = compressedSummary;
+    }
+
+    public String getResolutionSummary() {
+        return resolutionSummary;
+    }
+
+    public void setResolutionSummary(String resolutionSummary) {
+        this.resolutionSummary = resolutionSummary;
+    }
+
+    public String getSemanticTrace() {
+        return semanticTrace;
+    }
+
+    public void setSemanticTrace(String semanticTrace) {
+        this.semanticTrace = semanticTrace;
+    }
+
+    public String getEpistemicStatus() {
+        return epistemicStatus;
+    }
+
+    public void setEpistemicStatus(String epistemicStatus) {
+        this.epistemicStatus = epistemicStatus;
+    }
+
     @Override
     public String toString() {
         return "Issue{" +
@@ -188,6 +251,10 @@ public class Issue {
             ", frozenAt=" + frozenAt +
             ", frozenUntil=" + frozenUntil +
             ", frozenReason='" + frozenReason + '\'' +
+            ", memoryLevel=" + memoryLevel +
+            ", lastAccessedAt=" + lastAccessedAt +
+            ", lastCompressedAt=" + lastCompressedAt +
+            ", epistemicStatus='" + epistemicStatus + '\'' +
             '}';
     }
 

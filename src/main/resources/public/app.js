@@ -1,4 +1,4 @@
-// Control Room Application
+﻿// Control Room Application
 // State and API are loaded from state.js and api.js (window.state, window.api, etc.)
 (function() {
     'use strict';
@@ -576,7 +576,7 @@
             const moreActions = document.createElement('div');
             moreActions.className = 'patch-more-actions';
             moreActions.innerHTML = `
-                <button class="patch-more-btn" title="More actions">⋮</button>
+                <button class="patch-more-btn" title="More actions">â‹®</button>
                 <div class="patch-more-menu">
                     <button class="patch-more-item" id="btn-delete-patch">Delete Patch</button>
                     <button class="patch-more-item" id="btn-export-audit">Export Audit</button>
@@ -719,7 +719,7 @@
         }
 
         async function openPatchDetail(id) {
-            detail.innerHTML = '<div class="patch-detail-empty">Loading patch…</div>';
+            detail.innerHTML = '<div class="patch-detail-empty">Loading patchâ€¦</div>';
             agentHeaderContainer.innerHTML = '';
             try {
                 const full = await patchApi.get(id);
@@ -743,7 +743,7 @@
             header.innerHTML = `
                 <div>
                     <div class="patch-detail-title">${escapeHtml(patch.title || patch.id)}</div>
-                    <div class="patch-detail-path">${escapeHtml(primaryPath)}${fileCount > 1 ? ` • ${fileCount} files` : ''}</div>
+                    <div class="patch-detail-path">${escapeHtml(primaryPath)}${fileCount > 1 ? ` â€¢ ${fileCount} files` : ''}</div>
                     <div class="patch-detail-status status-${patch.status}">${patch.status}</div>
                 </div>
             `;
@@ -755,7 +755,7 @@
 
             const meta = document.createElement('div');
             meta.className = 'patch-meta patch-diff-only';
-            meta.textContent = `${formatRelativeTime(patch.createdAt)} • ${fileCount || 0} file${fileCount === 1 ? '' : 's'}`;
+            meta.textContent = `${formatRelativeTime(patch.createdAt)} â€¢ ${fileCount || 0} file${fileCount === 1 ? '' : 's'}`;
             detail.appendChild(meta);
 
             if (patch.issueId) {
@@ -1056,7 +1056,7 @@
                         row.className = 'patch-audit-row';
                         const ts = entry.timestamp ? formatRelativeTime(entry.timestamp) : '';
                         row.innerHTML = `
-                            <div class="patch-audit-meta">${escapeHtml(entry.actor || 'user')} • ${escapeHtml(entry.action || '')}</div>
+                            <div class="patch-audit-meta">${escapeHtml(entry.actor || 'user')} â€¢ ${escapeHtml(entry.action || '')}</div>
                             <div class="patch-audit-msg">${escapeHtml(entry.message || '')}</div>
                             <div class="patch-audit-time">${ts}</div>
                         `;
@@ -2112,7 +2112,7 @@
                         Worldbuilding matters for your AI agents
                     </div>
                     <p class="prep-guidance-note">
-                        Your agents read this structure to understand your story's world. They also write audit trails—notes explaining their decisions—so other agents can follow along.
+                        Your agents read this structure to understand your story's world. They also write audit trailsâ€”notes explaining their decisionsâ€”so other agents can follow along.
                         <strong>Once you add agents, any structural changes become "retcons"</strong> that can cause continuity issues. Take a moment now to get things in order.
                     </p>
                 `;
@@ -2956,7 +2956,7 @@ async function showWorkspaceSwitcher() {
         const metaIconInput = document.createElement('input');
         metaIconInput.className = 'modal-input';
         metaIconInput.type = 'text';
-        metaIconInput.placeholder = '🛰️';
+        metaIconInput.placeholder = 'ðŸ›°ï¸';
         metaIconInput.value = state.workspace.icon || '';
         metaIconRow.appendChild(metaIconLabel);
         metaIconRow.appendChild(metaIconInput);
@@ -3367,7 +3367,7 @@ async function showWorkspaceSwitcher() {
         if (provenance.model) parts.push(`Model: ${provenance.model}`);
         if (provenance.source) parts.push(`Source: ${provenance.source}`);
         if (provenance.author) parts.push(`Author: ${provenance.author}`);
-        return parts.join(' • ');
+        return parts.join(' â€¢ ');
     }
 
     function renderNotificationProvenance(payload) {
@@ -3402,7 +3402,7 @@ async function showWorkspaceSwitcher() {
             const meta = document.createElement('div');
             meta.className = 'notification-meta';
             meta.innerHTML = `
-                <span>${notification.level.toUpperCase()} · ${notification.scope}</span>
+                <span>${notification.level.toUpperCase()} Â· ${notification.scope}</span>
                 <span>${formatTimestamp(notification.timestamp)}</span>
             `;
 
@@ -3549,9 +3549,9 @@ async function showWorkspaceSwitcher() {
                         const projectName = payload.projectName || state.workspace.displayName || state.workspace.name || 'your project';
                         const issueTitle = `Welcome to ${projectName}!`;
                         const issueBody = [
-                            `Welcome to ${projectName}! You finished the preparation phase — wonderful.`,
+                            `Welcome to ${projectName}! You finished the preparation phase â€” wonderful.`,
                             '',
-                            'That was step 1. Now let’s add your first agent, the Chief of Staff.',
+                            'That was step 1. Now letâ€™s add your first agent, the Chief of Staff.',
                             'This agent is needed for various tasks. They keep your entire team running.',
                             'You can find the agents list on the left side of the Workbench.',
                         ].join('\n');
@@ -5071,7 +5071,7 @@ async function showWorkspaceSwitcher() {
             const actionLabel = state.workspace.projectSelected ? 'Prepare Project' : 'Create Project';
             container.innerHTML = `
                 <div class="widget-empty-state">
-                    <div class="widget-empty-icon">🔒</div>
+                    <div class="widget-empty-icon">ðŸ”’</div>
                     <h3>Workbench locked</h3>
                     <p>${escapeHtml(hint)}</p>
                     <button class="btn-primary" id="btn-workbench-prepare" type="button">${actionLabel}</button>
@@ -5245,7 +5245,7 @@ async function showWorkspaceSwitcher() {
             `;
 
             if (recentResolved.length === 0) {
-                digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let’s get a win on the board.</div>';
+                digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Letâ€™s get a win on the board.</div>';
                 return;
             }
 
@@ -5256,7 +5256,7 @@ async function showWorkspaceSwitcher() {
 
             digestContainer.innerHTML = `
                 <div class="workbench-briefing-text">
-                    Hello, here’s the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
+                    Hello, hereâ€™s the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
                     ${highlightAgent ? `${escapeHtml(highlightAgent)} was exceptionally successful.` : ''}
                     Check the issues board for the newest items, or start a conference to regroup.
                 </div>
@@ -5421,6 +5421,9 @@ async function showWorkspaceSwitcher() {
             }
             if (state.issueBoard.filters.priority !== 'all') {
                 filters.priority = state.issueBoard.filters.priority;
+            }
+            if (state.issueBoard.filters.interest === 'active') {
+                filters.minInterestLevel = 3;
             }
 
             const issues = await issueApi.list(filters);
@@ -5668,7 +5671,7 @@ async function showWorkspaceSwitcher() {
             if (meta.repLevel) {
                 const level = document.createElement('span');
                 level.className = 'chat-badge';
-                level.textContent = `R${meta.repLevel}${meta.escalated ? ' ↑' : ''}`;
+                level.textContent = `R${meta.repLevel}${meta.escalated ? ' â†‘' : ''}`;
                 metaDiv.appendChild(level);
             } else if (meta.escalated) {
                 const escalated = document.createElement('span');
@@ -5705,7 +5708,7 @@ async function showWorkspaceSwitcher() {
     function updateChatMemoryBadge(meta) {
         if (!elements.chatMemoryBadge) return;
         if (meta && meta.repLevel) {
-            elements.chatMemoryBadge.textContent = `R${meta.repLevel}${meta.escalated ? ' ↑' : ''}`;
+            elements.chatMemoryBadge.textContent = `R${meta.repLevel}${meta.escalated ? ' â†‘' : ''}`;
             elements.chatMemoryBadge.classList.remove('hidden');
         } else {
             elements.chatMemoryBadge.classList.add('hidden');
@@ -6958,7 +6961,7 @@ async function showWorkspaceSwitcher() {
                         'info',
                         'workbench',
                         `Welcome to ${projectName}!`,
-                        'Prep complete — click to open your onboarding issue.',
+                        'Prep complete â€” click to open your onboarding issue.',
                         'attention',
                         false,
                         'Open Issue Board',
@@ -7105,7 +7108,7 @@ async function showWorkspaceSwitcher() {
                 const children = item.nextElementSibling;
                 if (children && children.classList.contains('tree-children')) {
                     children.classList.add('expanded');
-                    item.querySelector('.tree-icon').textContent = '📂';
+                    item.querySelector('.tree-icon').textContent = 'ðŸ“‚';
                 }
             }
         });
@@ -7774,7 +7777,122 @@ async function showWorkspaceSwitcher() {
             return sentences.slice(0, maxSentences).join(' ');
         };
 
-        const makeSemanticTrace = (text, seedText) => {
+        
+        const issueMemorySection = document.createElement('div');
+        issueMemorySection.className = 'dev-tools-section';
+        const issueMemoryTitle = document.createElement('div');
+        issueMemoryTitle.className = 'dev-tools-section-title';
+        issueMemoryTitle.textContent = 'Issue Memory';
+        issueMemorySection.appendChild(issueMemoryTitle);
+
+        const issueMemoryIntro = document.createElement('div');
+        issueMemoryIntro.className = 'dev-tools-item-desc';
+        issueMemoryIntro.textContent = 'Test issue memory decay and revival.';
+        issueMemorySection.appendChild(issueMemoryIntro);
+
+        const issueMemoryRow = document.createElement('div');
+        issueMemoryRow.className = 'dev-tools-row dev-tools-row-stack';
+
+        const issueMemoryControls = document.createElement('div');
+        issueMemoryControls.className = 'dev-tools-controls';
+
+        const issueIdLabel = document.createElement('label');
+        issueIdLabel.className = 'modal-label';
+        issueIdLabel.textContent = 'Issue ID';
+        const issueIdInput = document.createElement('input');
+        issueIdInput.type = 'number';
+        issueIdInput.min = '1';
+        issueIdInput.className = 'modal-input dev-tools-input';
+        issueIdInput.placeholder = '42';
+
+        const issueMemoryActions = document.createElement('div');
+        issueMemoryActions.className = 'dev-tools-controls';
+
+        const issueDecayDryBtn = document.createElement('button');
+        issueDecayDryBtn.type = 'button';
+        issueDecayDryBtn.className = 'modal-btn modal-btn-secondary';
+        issueDecayDryBtn.textContent = 'Decay (dry run)';
+
+        const issueDecayApplyBtn = document.createElement('button');
+        issueDecayApplyBtn.type = 'button';
+        issueDecayApplyBtn.className = 'modal-btn modal-btn-primary';
+        issueDecayApplyBtn.textContent = 'Decay (apply)';
+
+        const issueReviveBtn = document.createElement('button');
+        issueReviveBtn.type = 'button';
+        issueReviveBtn.className = 'modal-btn modal-btn-secondary';
+        issueReviveBtn.textContent = 'Revive Issue';
+
+        const issueMemoryStatus = document.createElement('div');
+        issueMemoryStatus.className = 'dev-tools-status';
+        issueMemoryStatus.textContent = '';
+
+        issueMemoryActions.appendChild(issueDecayDryBtn);
+        issueMemoryActions.appendChild(issueDecayApplyBtn);
+        issueMemoryActions.appendChild(issueReviveBtn);
+
+        issueMemoryControls.appendChild(issueIdLabel);
+        issueMemoryControls.appendChild(issueIdInput);
+        issueMemoryControls.appendChild(issueMemoryActions);
+        issueMemoryControls.appendChild(issueMemoryStatus);
+
+        issueMemoryRow.appendChild(issueMemoryControls);
+        issueMemorySection.appendChild(issueMemoryRow);
+
+        const setIssueMemoryStatus = (text, level = 'info') => {
+            issueMemoryStatus.textContent = text || '';
+            issueMemoryStatus.dataset.level = level;
+        };
+
+        issueDecayDryBtn.addEventListener('click', async () => {
+            issueDecayDryBtn.disabled = true;
+            issueDecayApplyBtn.disabled = true;
+            setIssueMemoryStatus('Running dry-run decay...');
+            try {
+                const result = await issueApi.decay(true);
+                setIssueMemoryStatus(`Dry run: decayed ${result.decayed || 0} issue(s).`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Dry run failed: ${err.message}`, 'error');
+            } finally {
+                issueDecayDryBtn.disabled = false;
+                issueDecayApplyBtn.disabled = false;
+            }
+        });
+
+        issueDecayApplyBtn.addEventListener('click', async () => {
+            issueDecayDryBtn.disabled = true;
+            issueDecayApplyBtn.disabled = true;
+            setIssueMemoryStatus('Running decay...');
+            try {
+                const result = await issueApi.decay(false);
+                setIssueMemoryStatus(`Decay applied: ${result.decayed || 0} issue(s).`, 'success');
+                await loadIssues();
+            } catch (err) {
+                setIssueMemoryStatus(`Decay failed: ${err.message}`, 'error');
+            } finally {
+                issueDecayDryBtn.disabled = false;
+                issueDecayApplyBtn.disabled = false;
+            }
+        });
+
+        issueReviveBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            if (!issueId) {
+                setIssueMemoryStatus('Enter a valid issue ID to revive.', 'warning');
+                return;
+            }
+            issueReviveBtn.disabled = true;
+            setIssueMemoryStatus(`Reviving Issue #${issueId}...`);
+            try {
+                const revived = await issueApi.revive(issueId);
+                setIssueMemoryStatus(`Revived Issue #${revived.id} (level ${revived.memoryLevel || 3}).`, 'success');
+                await loadIssues();
+            } catch (err) {
+                setIssueMemoryStatus(`Revive failed: ${err.message}`, 'error');
+            } finally {
+                issueReviveBtn.disabled = false;
+            }
+        });\n        const makeSemanticTrace = (text, seedText) => {
             const base = text || summarizeFallback(seedText, 1);
             let cleaned = clampSummary(base, 1)
                 .replace(/\[[^\]]+\]/g, '') // strip citation brackets
@@ -8182,7 +8300,7 @@ async function showWorkspaceSwitcher() {
 
         const plannerIntro = document.createElement('div');
         plannerIntro.className = 'modal-text';
-        plannerIntro.textContent = 'Apply a single roadmap status tag (Idea → Plan → Draft → Polished) to an issue.';
+        plannerIntro.textContent = 'Apply a single roadmap status tag (Idea â†’ Plan â†’ Draft â†’ Polished) to an issue.';
         plannerSection.appendChild(plannerIntro);
 
         const plannerRow = document.createElement('div');
@@ -8289,7 +8407,7 @@ async function showWorkspaceSwitcher() {
                 titleEl.textContent = agent.name || agent.id || 'Agent';
                 const descEl = document.createElement('div');
                 descEl.className = 'dev-tools-item-desc';
-                descEl.textContent = `${agent.role || 'role'} · ${modelLabel}`;
+                descEl.textContent = `${agent.role || 'role'} Â· ${modelLabel}`;
                 textWrap.appendChild(titleEl);
                 textWrap.appendChild(descEl);
 
@@ -8421,6 +8539,7 @@ async function showWorkspaceSwitcher() {
 
         body.appendChild(backendSection);
         body.appendChild(memorySection);
+        body.appendChild(issueMemorySection);
         body.appendChild(localSection);
         body.appendChild(assistedSection);
         body.appendChild(plannerSection);
@@ -8670,3 +8789,4 @@ async function showWorkspaceSwitcher() {
     window.setSelectedAgentId = setSelectedAgentId;
 
 })();
+

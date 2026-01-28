@@ -5,8 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.AppLogger;
 import com.miniide.AgentTurnGate;
 import com.miniide.MemoryService;
+import com.miniide.IssueMemoryService;
 import com.miniide.ProjectContext;
 import com.miniide.models.Agent;
+import com.miniide.models.Comment;
+import com.miniide.models.Issue;
 import com.miniide.models.MemoryItem;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.settings.SettingsService;
@@ -14,6 +17,7 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,16 +30,18 @@ public class ChatController implements Controller {
     private final SettingsService settingsService;
     private final ProviderChatService providerChatService;
     private final MemoryService memoryService;
+    private final IssueMemoryService issueService;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
 
     public ChatController(ProjectContext projectContext,
                           SettingsService settingsService, ProviderChatService providerChatService,
-                          MemoryService memoryService, ObjectMapper objectMapper) {
+                          MemoryService memoryService, IssueMemoryService issueService, ObjectMapper objectMapper) {
         this.projectContext = projectContext;
         this.settingsService = settingsService;
         this.providerChatService = providerChatService;
         this.memoryService = memoryService;
+        this.issueService = issueService;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
     }
@@ -122,6 +128,10 @@ public class ChatController implements Controller {
                     if (toolCatalog != null && !toolCatalog.isBlank()) {
                         prompt = toolCatalog + "\n\n" + (prompt != null ? prompt : "");
                     }
+                }
+                String grounding = buildEarlyGroundingHeader();
+                if (grounding != null && !grounding.isBlank()) {
+                    prompt = grounding + "\n\n" + (prompt != null ? prompt : "");
                 }
                 final String finalPrompt = prompt;
                 String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
@@ -280,5 +290,101 @@ public class ChatController implements Controller {
             return !includeArchived;
         }
         return false;
+    }
+
+    private String buildEarlyGroundingHeader() {
+        if (issueService == null) {
+            return "";
+        }
+        List<Issue> agreed = issueService.listIssuesByEpistemicStatus("agreed");
+        if (agreed == null || agreed.isEmpty()) {
+            return "";
+        }
+        int limit = Math.min(agreed.size(), 10);
+        StringBuilder builder = new StringBuilder();
+        builder.append("Early Grounding (R1 + R3, epistemicStatus >= agreed):\n");
+        for (int i = 0; i < limit; i++) {
+            Issue issue = agreed.get(i);
+            if (issue == null) {
+                continue;
+            }
+            String title = safe(issue.getTitle());
+            String trace = issue.getSemanticTrace();
+            if (trace == null || trace.isBlank()) {
+                trace = buildSemanticTrace(issue);
+            }
+            String summary = issue.getCompressedSummary();
+            if (summary == null || summary.isBlank()) {
+                summary = buildCompressedSummary(issue);
+            }
+            builder.append("- #").append(issue.getId());
+            if (!title.isBlank()) {
+                builder.append(" ").append(truncate(title, 120));
+            }
+            builder.append("\n  R1: ").append(truncate(trace, 220));
+            builder.append("\n  R3: ").append(truncate(summary, 240)).append("\n");
+        }
+        return builder.toString().trim();
+    }
+
+    private String buildCompressedSummary(Issue issue) {
+        if (issue == null) {
+            return "";
+        }
+        String title = safe(issue.getTitle());
+        String bodySnippet = truncate(safe(issue.getBody()), 220);
+        StringBuilder summary = new StringBuilder();
+        if (!title.isBlank()) {
+            summary.append(title);
+        }
+        if (!bodySnippet.isBlank()) {
+            if (summary.length() > 0) summary.append(" - ");
+            summary.append(bodySnippet);
+        }
+        List<Comment> comments = issue.getComments();
+        if (comments != null && !comments.isEmpty()) {
+            String first = truncate(safe(comments.get(0).getBody()), 180);
+            String last = truncate(safe(comments.get(comments.size() - 1).getBody()), 180);
+            if (!first.isBlank()) {
+                summary.append(" | First: ").append(first);
+            }
+            if (!last.isBlank() && !last.equals(first)) {
+                summary.append(" | Last: ").append(last);
+            }
+        }
+        return summary.toString().trim();
+    }
+
+    private String buildSemanticTrace(Issue issue) {
+        if (issue == null) {
+            return "";
+        }
+        String title = safe(issue.getTitle());
+        String base = safe(issue.getResolutionSummary());
+        if (base.isBlank()) {
+            base = truncate(safe(issue.getBody()), 200);
+        }
+        if (base.isBlank()) {
+            base = truncate(title, 200);
+        }
+        if (title.isBlank()) {
+            return base;
+        }
+        return (title + ": " + base).trim();
+    }
+
+    private String truncate(String text, int limit) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() <= limit) {
+            return trimmed;
+        }
+        return trimmed.substring(0, Math.max(0, limit - 3)) + "...";
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
     }
 }
