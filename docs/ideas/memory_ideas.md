@@ -1,20 +1,13 @@
 What you can steal directly from Engram
 	Here are the concrete ideas worth importing.
 
-1 Name the pattern: “Conditional Memory”
-	You already do this — but Engram gives you language.
-	Suggestion:
-	In docs and UI, explicitly call the Librarian:
-	Conditional Memory System (CMS)
-	That immediately positions Control Room as aligned with current research.
-
-2 Earlier grounding for agents (small tweak)
+Earlier grounding for agents (small tweak)
 	Engram shows that early factual grounding improves downstream reasoning.
 	You already default to R3, which is good — but you could tighten the rule:
 	If an issue has epistemicStatus >= agreed, inject R1 + R3 header even when not explicitly retrieved.
 	This keeps agents oriented without cost.
 
-3 Cheap “concept packets” as R2 (optional, future)
+Cheap “concept packets” as R2 (optional, future)
 	Engram’s N-gram tables are essentially micro-concept anchors.
 	You intentionally skipped R2 (correctly, for v1), but Engram suggests a future upgrade:
 	R2 as non-prose tokens, e.g.:
