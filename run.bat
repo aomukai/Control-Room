@@ -41,7 +41,10 @@ echo  ------------------------------------------
 echo.
 
 REM Run the application in dev mode (--dev is added by build.gradle)
-call gradlew.bat run %*
+set "EXTRA_ARGS="
+echo %* | findstr /I /C:"--workspace-root" >nul
+if errorlevel 1 set "EXTRA_ARGS=--args=--workspace-root=\"%CD%\\workspace\""
+call gradlew.bat run %EXTRA_ARGS% %*
 set EXIT_CODE=%ERRORLEVEL%
 
 echo.

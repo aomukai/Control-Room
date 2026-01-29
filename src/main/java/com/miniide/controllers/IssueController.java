@@ -264,6 +264,12 @@ public class IssueController implements Controller {
                     issue.setEpistemicStatus(statusNode.asText());
                 }
             }
+            if (json.has("lastAccessedAt")) {
+                JsonNode accessedNode = json.get("lastAccessedAt");
+                if (accessedNode != null && accessedNode.isNumber()) {
+                    issue.setLastAccessedAt(accessedNode.asLong());
+                }
+            }
             String previousStatus = issue.getStatus();
             if (json.has("status")) {
                 issue.setStatus(json.get("status").asText());

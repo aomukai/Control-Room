@@ -2621,8 +2621,12 @@
                 premiseInput.rows = 3;
                 premiseInput.placeholder = 'e.g., Wizards in space discover the ruins of an ancient star civilization.';
                 premiseInput.value = wizardState.premise;
+                const updateCreateDisabled = () => {
+                    confirmBtn.disabled = !wizardState.premise.trim() && !wizardState.storyIdea.trim();
+                };
                 premiseInput.addEventListener('input', () => {
                     wizardState.premise = premiseInput.value;
+                    updateCreateDisabled();
                 });
                 premiseRow.appendChild(premiseInput);
                 body.appendChild(premiseRow);
@@ -2664,6 +2668,7 @@
                     ideaInput.value = wizardState.storyIdea;
                     ideaInput.addEventListener('input', () => {
                         wizardState.storyIdea = ideaInput.value;
+                        updateCreateDisabled();
                     });
                     ideaRow.appendChild(ideaInput);
                     body.appendChild(ideaRow);
@@ -2696,6 +2701,7 @@
                         notificationStore.error(`Preparation failed: ${err.message}`, 'global');
                     }
                 }, !wizardState.premise.trim() && !wizardState.storyIdea.trim());
+                updateCreateDisabled();
                 return;
             }
         };
@@ -7823,12 +7829,19 @@ async function showWorkspaceSwitcher() {
         issueReviveBtn.className = 'modal-btn modal-btn-secondary';
         issueReviveBtn.textContent = 'Revive Issue';
 
+        
+        const issueForceDecayBtn = document.createElement('button');
+        issueForceDecayBtn.type = 'button';
+        issueForceDecayBtn.className = 'modal-btn modal-btn-secondary';
+        issueForceDecayBtn.textContent = 'Force decay Issue';
+
         const issueMemoryStatus = document.createElement('div');
         issueMemoryStatus.className = 'dev-tools-status';
         issueMemoryStatus.textContent = '';
 
         issueMemoryActions.appendChild(issueDecayDryBtn);
         issueMemoryActions.appendChild(issueDecayApplyBtn);
+        issueMemoryActions.appendChild(issueForceDecayBtn);
         issueMemoryActions.appendChild(issueReviveBtn);
 
         issueMemoryControls.appendChild(issueIdLabel);
@@ -7875,6 +7888,31 @@ async function showWorkspaceSwitcher() {
             }
         });
 
+        
+        issueForceDecayBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            if (!issueId) {
+                setIssueMemoryStatus('Enter a valid issue ID to force decay.', 'warning');
+                return;
+            }
+            issueForceDecayBtn.disabled = true;
+            setIssueMemoryStatus(`Force-decaying Issue #${issueId}...`);
+            try {
+                const issue = await issueApi.get(issueId);
+                const updated = await issueApi.update(issueId, {
+                    status: 'closed',
+                    lastAccessedAt: Date.now() - (120 * 24 * 60 * 60 * 1000)
+                });
+                await issueApi.decay(false);
+                setIssueMemoryStatus(`Force decay queued for Issue #${issueId}.`, 'success');
+                await loadIssues();
+            } catch (err) {
+                setIssueMemoryStatus(`Force decay failed: ${err.message}`, 'error');
+            } finally {
+                issueForceDecayBtn.disabled = false;
+            }
+        });
+
         issueReviveBtn.addEventListener('click', async () => {
             const issueId = parseInt(issueIdInput.value, 10);
             if (!issueId) {
@@ -7892,7 +7930,9 @@ async function showWorkspaceSwitcher() {
             } finally {
                 issueReviveBtn.disabled = false;
             }
-        });\n        const makeSemanticTrace = (text, seedText) => {
+        });
+
+        const makeSemanticTrace = (text, seedText) => {
             const base = text || summarizeFallback(seedText, 1);
             let cleaned = clampSummary(base, 1)
                 .replace(/\[[^\]]+\]/g, '') // strip citation brackets
@@ -8789,4 +8829,7 @@ async function showWorkspaceSwitcher() {
     window.setSelectedAgentId = setSelectedAgentId;
 
 })();
+
+
+
 
