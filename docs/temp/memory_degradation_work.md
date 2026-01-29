@@ -39,4 +39,5 @@ Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak + Phase 2 (taggi
 - Memory Degradation spec anchors: `docs/reference/cr_memory.md#memory-interest-levels` and `#memory-compression-logic`.
 - Early grounding idea from Engram paper (conditional memory). R2 concept packets deferred.
 - Compression quality is still rough; Phase 2 should swap in prompt-backed summaries + better semantic trace heuristics.
- - Phase 2 progress: personal tags per agent (saved on issue memory record), issue board filter by personal tags + agent, memory-level badge on issue cards.
+- Phase 2 progress: personal tags per agent (saved on issue memory record), issue board filter by personal tags + agent, memory-level badge on issue cards.
+- Phase 2 progress: seeded "Search Issues" prompt tool (includes personalTags + personalAgent).

@@ -24,6 +24,7 @@ public class PromptRegistry {
         if (hasWorkspaceMarker()) {
             ensureRegistryExists();
             loadFromDisk();
+            ensureDefaultPrompts();
         } else {
             initializeEmptyRegistry();
         }
@@ -201,6 +202,47 @@ public class PromptRegistry {
     private void initializeEmptyRegistry() {
         promptFile = new PromptToolsFile();
         promptFile.setPrompts(new ArrayList<>());
+    }
+
+    private void ensureDefaultPrompts() {
+        if (promptFile == null) {
+            promptFile = new PromptToolsFile();
+            promptFile.setPrompts(new ArrayList<>());
+        }
+        boolean changed = false;
+        if (getPrompt("search-issues") == null) {
+            PromptTool tool = new PromptTool();
+            tool.setId("search-issues");
+            tool.setName("Search Issues");
+            tool.setArchetype("Any");
+            tool.setScope("project");
+            tool.setUsageNotes("Find issues by shared tags, assignment, or personal tags for the active agent.");
+            tool.setGoals("Retrieve relevant issues quickly and avoid re-reading irrelevant threads.");
+            tool.setGuardrails("Do not invent issues. Use only the filters provided.");
+            tool.setPrompt(
+                "search_issues(\\n" +
+                "  tags?: string[],\\n" +
+                "  assignedTo?: string,\\n" +
+                "  status?: \"open\" | \"closed\" | \"all\",\\n" +
+                "  priority?: \"low\" | \"normal\" | \"high\" | \"urgent\",\\n" +
+                "  personalTags?: string[],\\n" +
+                "  personalAgent?: string,\\n" +
+                "  excludePersonalTags?: string[],\\n" +
+                "  minInterestLevel?: number\\n" +
+                ")\\n\\n" +
+                "Notes:\\n" +
+                "- personalTags filters on the agent's personal tags; requires personalAgent (agentId).\\n" +
+                "- excludePersonalTags can hide items marked irrelevant."
+            );
+            long now = System.currentTimeMillis();
+            tool.setCreatedAt(now);
+            tool.setUpdatedAt(now);
+            promptFile.getPrompts().add(tool);
+            changed = true;
+        }
+        if (changed && hasWorkspaceMarker()) {
+            saveToDisk();
+        }
     }
 
     private String generateUniqueId(String baseId) {

@@ -246,7 +246,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [ ] **Memory Degradation (Phase 2)** - improve compression quality (summaries/semantic trace), add prompt-backed compression, and tune decay thresholds.
   - Note: revisit memory compression prompts (reduce L2/L3 rephrase overlap, enforce entity carryover).
 - [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
-- [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
+- [x] **Search Issues Prompt Tool** - Seeded prompt tool for issue search with personal tags + agent filter.
 
 ### Future
 
