@@ -132,21 +132,48 @@ public class IssueCompressionService {
 
     private String buildPrompt(Issue issue) {
         StringBuilder builder = new StringBuilder();
-        builder.append("You are compressing an issue thread into memory levels.\n");
-        builder.append("Return ONLY JSON with keys: level1, level2, level3.\n");
-        builder.append("level1 = semantic trace (single sentence).\n");
-        builder.append("level2 = resolution summary (1-2 sentences).\n");
-        builder.append("level3 = compressed summary (short paragraph, include key details).\n");
-        builder.append("No markdown. No extra keys.\n\n");
-        builder.append("Issue #").append(issue.getId()).append("\n");
+        builder.append("You are compressing an issue thread into long-term memory representations.\n\n");
+        builder.append("This is a LOSSY compression task.\n");
+        builder.append("Each lower level must REMOVE information, not rephrase it.\n\n");
+        builder.append("Return ONLY valid JSON with exactly these keys:\n");
+        builder.append("- level1\n");
+        builder.append("- level2\n");
+        builder.append("- level3\n\n");
+        builder.append("No markdown. No extra keys. No commentary.\n\n");
+        builder.append("Rules by level:\n\n");
+        builder.append("LEVEL 1 -- Semantic Trace\n");
+        builder.append("- ONE sentence only.\n");
+        builder.append("- Capture the core fact or decision that must remain true.\n");
+        builder.append("- Omit motivations, tone, personality, and explanations.\n\n");
+        builder.append("LEVEL 2 -- Resolution Summary\n");
+        builder.append("- 1-2 sentences.\n");
+        builder.append("- State WHAT happened and the final outcome.\n");
+        builder.append("- Include concrete entities (agent names, tools, models) if they matter.\n");
+        builder.append("- Do not generalize.\n\n");
+        builder.append("LEVEL 3 -- Compressed Summary\n");
+        builder.append("- Short paragraph (2-4 sentences max).\n");
+        builder.append("- This is the LAST memory before full evidence.\n");
+        builder.append("- Preserve ALL concrete entities needed to reconstruct the event later\n");
+        builder.append("  (names, providers, models, wiring/config facts).\n");
+        builder.append("- Do NOT replace specifics with vague phrases like\n");
+        builder.append("  \"relevant system\", \"set up\", or \"providing assistance\".\n");
+        builder.append("- Exclude personality, marketing language, and generic assistant descriptions.\n\n");
+        builder.append("Hard constraints:\n");
+        builder.append("- Do NOT invent facts.\n");
+        builder.append("- Do NOT paraphrase the same sentence across levels.\n");
+        builder.append("- Prefer specific nouns over generic abstractions.\n\n");
+        builder.append("Issue:\n");
+        builder.append("ID: ").append(issue.getId()).append("\n");
         builder.append("Title: ").append(safe(issue.getTitle())).append("\n");
+        builder.append("Tags: ");
         if (issue.getTags() != null && !issue.getTags().isEmpty()) {
-            builder.append("Tags: ").append(String.join(", ", issue.getTags())).append("\n");
+            builder.append(String.join(", ", issue.getTags()));
         }
-        builder.append("Body: ").append(safe(issue.getBody())).append("\n");
+        builder.append("\n\n");
+        builder.append("Body:\n").append(safe(issue.getBody())).append("\n\n");
+        builder.append("Comments:\n");
         List<Comment> comments = issue.getComments() != null ? issue.getComments() : new ArrayList<>();
         if (!comments.isEmpty()) {
-            builder.append("Comments:\n");
             int limit = Math.min(comments.size(), 12);
             for (int i = 0; i < limit; i++) {
                 Comment comment = comments.get(i);
