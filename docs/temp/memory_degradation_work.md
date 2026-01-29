@@ -1,7 +1,7 @@
 ﻿# Memory Degradation - Work Plan (Temp)
 
 Date: 2026-01-28
-Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak
+Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak + Phase 2 (tagging + UI)
 
 ## Goals (Today)
 - Add interest-level metadata to Issues and default/migration behavior.
@@ -39,3 +39,4 @@ Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak
 - Memory Degradation spec anchors: `docs/reference/cr_memory.md#memory-interest-levels` and `#memory-compression-logic`.
 - Early grounding idea from Engram paper (conditional memory). R2 concept packets deferred.
 - Compression quality is still rough; Phase 2 should swap in prompt-backed summaries + better semantic trace heuristics.
+ - Phase 2 progress: personal tags per agent (saved on issue memory record), issue board filter by personal tags + agent, memory-level badge on issue cards.

@@ -245,7 +245,8 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Memory Degradation (Phase 1)** - 5-level interest gradient for issue memory: issue-level fields, decay/compression routines, search filters, revive flow, and UI views. (refs: docs/reference/cr_memory.md#memory-interest-levels)
 - [ ] **Memory Degradation (Phase 2)** - improve compression quality (summaries/semantic trace), add prompt-backed compression, and tune decay thresholds.
   - Note: revisit memory compression prompts (reduce L2/L3 rephrase overlap, enforce entity carryover).
-- [ ] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
+- [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
+- [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
 
 ### Future
 

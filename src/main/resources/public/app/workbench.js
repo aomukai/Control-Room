@@ -78,6 +78,20 @@
         }).join('');
     }
 
+    function buildPersonalAgentOptions(selectedValue) {
+        const agents = (state && state.agents && state.agents.list) || [];
+        const enabledAgents = agents.filter(a => a && a.enabled !== false);
+        const currentId = state && state.agents ? state.agents.selectedId : null;
+        const currentLabel = currentId ? `Current (${getAgentDisplayName(currentId)})` : 'Current';
+        let html = `<option value="current"${selectedValue === 'current' ? ' selected' : ''}>${escapeHtml(currentLabel)}</option>`;
+        html += `<option value=""${selectedValue === '' ? ' selected' : ''}>All</option>`;
+        enabledAgents.forEach(agent => {
+            const selected = agent.id === selectedValue ? ' selected' : '';
+            html += `<option value="${escapeHtml(agent.id)}"${selected}>${escapeHtml(agent.name || agent.id)}</option>`;
+        });
+        return html;
+    }
+
     function resolveDefaultMemoryAgent(issue) {
         const agents = (state && state.agents && state.agents.list) || [];
         if (!agents.length) return null;
@@ -447,6 +461,20 @@
                             <option value="all">All</option>
                         </select>
                     </div>
+                    <div class="issue-filter-group">
+                        <label class="issue-filter-label">Personal</label>
+                        <select id="issue-filter-personal-tag" class="issue-filter-select">
+                            <option value="all">All</option>
+                            <option value="interesting">Interesting</option>
+                            <option value="follow-up">Follow-up</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="filtered-out">Irrelevant</option>
+                        </select>
+                    </div>
+                    <div class="issue-filter-group">
+                        <label class="issue-filter-label">Agent</label>
+                        <select id="issue-filter-personal-agent" class="issue-filter-select"></select>
+                    </div>
                     <div class="issue-filter-stats" id="issue-filter-stats"></div>
                 </div>
                 <div class="issue-board-content" id="issue-board-list"></div>
@@ -457,9 +485,15 @@
         const statusSelect = document.getElementById('issue-filter-status');
         const prioritySelect = document.getElementById('issue-filter-priority');
         const interestSelect = document.getElementById('issue-filter-interest');
+        const personalTagSelect = document.getElementById('issue-filter-personal-tag');
+        const personalAgentSelect = document.getElementById('issue-filter-personal-agent');
         if (statusSelect) statusSelect.value = state.issueBoard.filters.status;
         if (prioritySelect) prioritySelect.value = state.issueBoard.filters.priority;
         if (interestSelect) interestSelect.value = state.issueBoard.filters.interest;
+        if (personalTagSelect) personalTagSelect.value = state.issueBoard.filters.personalTag;
+        if (personalAgentSelect) {
+            personalAgentSelect.innerHTML = buildPersonalAgentOptions(state.issueBoard.filters.personalAgent || 'current');
+        }
 
         // Wire event listeners
         initIssueBoardListeners();
@@ -503,6 +537,22 @@
         if (interestSelect) {
             interestSelect.addEventListener('change', (e) => {
                 state.issueBoard.filters.interest = e.target.value;
+                loadIssues();
+            });
+        }
+
+        const personalTagSelect = document.getElementById('issue-filter-personal-tag');
+        if (personalTagSelect) {
+            personalTagSelect.addEventListener('change', (e) => {
+                state.issueBoard.filters.personalTag = e.target.value;
+                loadIssues();
+            });
+        }
+
+        const personalAgentSelect = document.getElementById('issue-filter-personal-agent');
+        if (personalAgentSelect) {
+            personalAgentSelect.addEventListener('change', (e) => {
+                state.issueBoard.filters.personalAgent = e.target.value || 'current';
                 loadIssues();
             });
         }
@@ -585,6 +635,8 @@
         const isClosed = issue.status === 'closed';
         const actionLabel = isClosed ? 'Reopen' : 'Close';
         const actionClass = isClosed ? 'issue-action-reopen' : 'issue-action-close';
+        const memoryLevel = Math.max(1, Math.min(5, Number(issue.memoryLevel) || 3));
+        const memoryBadge = `<span class="issue-card-memory" title="Memory level ${memoryLevel}">L${memoryLevel}</span>`;
 
         // Tags (show first 2)
         const tagsHtml = otherTags.length > 0
@@ -599,6 +651,7 @@
                 <div class="issue-card-header-left">
                     <span class="issue-card-id">#${issue.id}</span>
                     ${roadmapStatus ? `<span class="issue-card-roadmap">${escapeHtml(roadmapStatus)}</span>` : ''}
+                    ${memoryBadge}
                 </div>
                 <span class="issue-card-status ${statusClass}">${formatStatus(issue.status)}</span>
             </div>
@@ -981,6 +1034,24 @@
             }
 
             const memoryControlsDisabled = !memoryAgentId || !window.issueMemoryApi;
+            const personalTagsValue = memoryRecord && Array.isArray(memoryRecord.personalTags)
+                ? memoryRecord.personalTags.join(', ')
+                : '';
+            const personalNoteValue = memoryRecord && memoryRecord.note ? memoryRecord.note : '';
+            const personalTagsHtml = `
+                <div class="issue-personal-tags">
+                    <div class="issue-memory-label">Personal tags</div>
+                    <input type="text" class="modal-input issue-personal-tags-input" placeholder="interesting, follow-up" autocomplete="off" autocapitalize="off" spellcheck="false" ${memoryControlsDisabled ? 'disabled' : ''}>
+                    <textarea class="modal-input issue-personal-note-input" rows="2" placeholder="Optional private note" autocomplete="off" autocapitalize="off" spellcheck="false" ${memoryControlsDisabled ? 'disabled' : ''}></textarea>
+                    <div class="issue-personal-tags-actions">
+                        <button type="button" class="issue-action-btn issue-personal-tag-quick" data-tag="interesting"${memoryControlsDisabled ? ' disabled' : ''}>Interesting</button>
+                        <button type="button" class="issue-action-btn issue-personal-tag-quick" data-tag="follow-up"${memoryControlsDisabled ? ' disabled' : ''}>Follow-up</button>
+                        <button type="button" class="issue-action-btn issue-personal-tag-quick" data-tag="resolved"${memoryControlsDisabled ? ' disabled' : ''}>Resolved</button>
+                        <button type="button" class="issue-action-btn issue-personal-tags-save"${memoryControlsDisabled ? ' disabled' : ''}>Save</button>
+                        <button type="button" class="issue-action-btn issue-personal-tags-clear"${memoryControlsDisabled ? ' disabled' : ''}>Clear</button>
+                    </div>
+                </div>
+            `;
             const memoryPanelHtml = `
                 <div class="issue-memory-panel">
                     <div class="issue-memory-header">
@@ -998,6 +1069,7 @@
                     <div class="issue-memory-body">
                         ${memoryBodyHtml}
                     </div>
+                    ${personalTagsHtml}
                     <div class="issue-memory-actions">
                         <button type="button" class="issue-action-btn issue-memory-applied-btn"${memoryControlsDisabled ? ' disabled' : ''}>Mark Applied</button>
                         <button type="button" class="issue-action-btn issue-memory-irrelevant-btn"${memoryControlsDisabled ? ' disabled' : ''}>Mark Irrelevant</button>
@@ -1256,6 +1328,20 @@
             });
         }
 
+        const personalTagsInput = modal.querySelector('.issue-personal-tags-input');
+        if (personalTagsInput) {
+            const record = state.issueModal.memory ? state.issueModal.memory.record : null;
+            personalTagsInput.value = record && Array.isArray(record.personalTags)
+                ? record.personalTags.join(', ')
+                : '';
+        }
+
+        const personalNoteInput = modal.querySelector('.issue-personal-note-input');
+        if (personalNoteInput) {
+            const record = state.issueModal.memory ? state.issueModal.memory.record : null;
+            personalNoteInput.value = record && record.note ? record.note : '';
+        }
+
         const memoryAppliedBtn = modal.querySelector('.issue-memory-applied-btn');
         if (memoryAppliedBtn) {
             memoryAppliedBtn.addEventListener('click', async () => {
@@ -1303,6 +1389,67 @@
                 }
             });
         }
+
+        const parsePersonalTagsInput = (value) => {
+            if (!value) return [];
+            return value
+                .split(',')
+                .map(tag => tag.trim())
+                .filter(Boolean);
+        };
+
+        const savePersonalTags = async () => {
+            const issue = state.issueModal.issue;
+            const agentId = state.issueModal.memory.agentId;
+            if (!issue || !agentId || !window.issueMemoryApi) return;
+            const tagsInput = personalTagsInput ? personalTagsInput.value : '';
+            const noteInput = personalNoteInput ? personalNoteInput.value : '';
+            const tags = parsePersonalTagsInput(tagsInput);
+            try {
+                const record = await issueMemoryApi.updateTags(agentId, issue.id, tags, noteInput);
+                state.issueModal.memory.record = record;
+                renderIssueModal();
+            } catch (err) {
+                notificationStore.error(`Failed to save personal tags: ${err.message}`, 'workbench');
+            }
+        };
+
+        const personalSaveBtn = modal.querySelector('.issue-personal-tags-save');
+        if (personalSaveBtn) {
+            personalSaveBtn.addEventListener('click', async () => {
+                personalSaveBtn.disabled = true;
+                await savePersonalTags();
+                personalSaveBtn.disabled = false;
+            });
+        }
+
+        const personalClearBtn = modal.querySelector('.issue-personal-tags-clear');
+        if (personalClearBtn) {
+            personalClearBtn.addEventListener('click', async () => {
+                if (personalTagsInput) personalTagsInput.value = '';
+                if (personalNoteInput) personalNoteInput.value = '';
+                personalClearBtn.disabled = true;
+                await savePersonalTags();
+                personalClearBtn.disabled = false;
+            });
+        }
+
+        modal.querySelectorAll('.issue-personal-tag-quick').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const tag = e.currentTarget?.dataset?.tag;
+                if (!tag || !personalTagsInput) return;
+                const current = parsePersonalTagsInput(personalTagsInput.value);
+                const lower = current.map(t => t.toLowerCase());
+                const index = lower.indexOf(tag.toLowerCase());
+                if (index >= 0) {
+                    current.splice(index, 1);
+                } else {
+                    current.push(tag);
+                }
+                personalTagsInput.value = current.join(', ');
+                await savePersonalTags();
+            });
+        });
 
         const memoryRefreshBtn = modal.querySelector('.issue-memory-refresh-btn');
         if (memoryRefreshBtn) {

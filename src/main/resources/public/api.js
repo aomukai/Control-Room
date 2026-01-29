@@ -41,6 +41,10 @@
             if (filters.status) params.set('status', filters.status);
             if (filters.priority) params.set('priority', filters.priority);
             if (filters.minInterestLevel) params.set('minInterestLevel', filters.minInterestLevel);
+            if (filters.personalAgent) params.set('personalAgent', filters.personalAgent);
+            if (filters.personalTag) params.set('personalTag', filters.personalTag);
+            if (filters.personalTags) params.set('personalTags', filters.personalTags);
+            if (filters.excludePersonalTags) params.set('excludePersonalTags', filters.excludePersonalTags);
             const query = params.toString();
             const url = '/api/issues' + (query ? '?' + query : '');
             const response = await fetch(url);
@@ -158,6 +162,20 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(note ? { note } : {})
+            });
+        },
+        async updateTags(agentId, issueId, tags, note) {
+            const payload = {};
+            if (Array.isArray(tags)) {
+                payload.tags = tags;
+            }
+            if (note !== undefined) {
+                payload.note = note;
+            }
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
         },
         async decay(agentId) {

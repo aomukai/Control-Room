@@ -8,6 +8,7 @@ import com.miniide.CircuitBreakerValidator;
 import com.miniide.CreditStore;
 import com.miniide.IssueCompressionService;
 import com.miniide.IssueMemoryService;
+import com.miniide.IssueInterestService;
 import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
 import com.miniide.models.Comment;
@@ -134,6 +135,10 @@ public class IssueController implements Controller {
             String assignedTo = ctx.queryParam("assignedTo");
             String status = ctx.queryParam("status");
             String priority = ctx.queryParam("priority");
+            String personalAgent = ctx.queryParam("personalAgent");
+            String personalTag = ctx.queryParam("personalTag");
+            String personalTags = ctx.queryParam("personalTags");
+            String excludePersonalTags = ctx.queryParam("excludePersonalTags");
             Integer minInterestLevel = parseIntQuery(ctx, "minInterestLevel");
 
             List<Issue> issues;
@@ -168,6 +173,26 @@ public class IssueController implements Controller {
                     }
                 }
                 issues = filtered;
+            }
+
+            List<String> includeTags = parseCsvList(personalTags, personalTag);
+            List<String> excludeTags = parseCsvList(excludePersonalTags, null);
+            if ((includeTags != null && !includeTags.isEmpty()) || (excludeTags != null && !excludeTags.isEmpty())) {
+                IssueInterestService interestService = projectContext != null ? projectContext.issueInterest() : null;
+                if (interestService != null && personalAgent != null && !personalAgent.isBlank()) {
+                    List<Integer> allowed = interestService.listIssueIdsForAgentWithTags(personalAgent, includeTags, excludeTags);
+                    if (!allowed.isEmpty()) {
+                        List<Issue> filtered = new ArrayList<>();
+                        for (Issue issue : issues) {
+                            if (allowed.contains(issue.getId())) {
+                                filtered.add(issue);
+                            }
+                        }
+                        issues = filtered;
+                    } else {
+                        issues = new ArrayList<>();
+                    }
+                }
             }
 
             ctx.json(issues);
@@ -402,6 +427,24 @@ public class IssueController implements Controller {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private List<String> parseCsvList(String csv, String single) {
+        List<String> results = new ArrayList<>();
+        if (single != null && !single.isBlank()) {
+            results.add(single.trim());
+        }
+        if (csv != null && !csv.isBlank()) {
+            String[] parts = csv.split(",");
+            for (String part : parts) {
+                if (part == null) continue;
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty() && !results.contains(trimmed)) {
+                    results.add(trimmed);
+                }
+            }
+        }
+        return results;
     }
 
     private void addComment(Context ctx) {

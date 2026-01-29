@@ -5431,6 +5431,16 @@ async function showWorkspaceSwitcher() {
             if (state.issueBoard.filters.interest === 'active') {
                 filters.minInterestLevel = 3;
             }
+            if (state.issueBoard.filters.personalTag && state.issueBoard.filters.personalTag !== 'all') {
+                filters.personalTag = state.issueBoard.filters.personalTag;
+                let agentId = state.issueBoard.filters.personalAgent || '';
+                if (agentId === 'current') {
+                    agentId = state.agents.selectedId || '';
+                }
+                if (agentId) {
+                    filters.personalAgent = agentId;
+                }
+            }
 
             const issues = await issueApi.list(filters);
             state.issueBoard.issues = issues;

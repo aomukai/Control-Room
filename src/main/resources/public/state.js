@@ -56,7 +56,9 @@
             filters: {
                 status: 'all', // 'all' | 'open' | 'closed' | 'waiting-on-user'
                 priority: 'all', // 'all' | 'urgent' | 'high' | 'normal' | 'low'
-                interest: 'active' // 'active' | 'all'
+                interest: 'active', // 'active' | 'all'
+                personalTag: 'all', // 'all' | 'interesting' | 'follow-up' | 'resolved' | 'filtered-out'
+                personalAgent: 'current' // 'current' | agentId
             }
         },
         agents: {

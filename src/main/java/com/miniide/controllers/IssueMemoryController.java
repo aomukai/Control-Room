@@ -8,6 +8,7 @@ import com.miniide.models.IssueMemoryRecord;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.util.List;
 import java.util.Map;
 
 public class IssueMemoryController implements Controller {
@@ -26,6 +27,7 @@ public class IssueMemoryController implements Controller {
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/access", this::recordAccess);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/applied", this::recordApplied);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/irrelevant", this::markIrrelevant);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/tags", this::updatePersonalTags);
         app.post("/api/issue-memory/decay", this::runDecay);
     }
 
@@ -123,6 +125,44 @@ public class IssueMemoryController implements Controller {
         }
         try {
             IssueMemoryRecord record = service.markIrrelevant(agentId, issueId, note);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void updatePersonalTags(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        String note = null;
+        List<String> tags = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("note")) {
+                    note = json.get("note").asText();
+                }
+                if (json.has("tags") && json.get("tags").isArray()) {
+                    tags = new java.util.ArrayList<>();
+                    for (JsonNode tagNode : json.get("tags")) {
+                        if (tagNode != null && !tagNode.isNull()) {
+                            tags.add(tagNode.asText());
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            IssueMemoryRecord record = service.updatePersonalTags(agentId, issueId, tags, note);
             ctx.json(record);
         } catch (IllegalArgumentException e) {
             ctx.status(400).json(Controller.errorBody(e));

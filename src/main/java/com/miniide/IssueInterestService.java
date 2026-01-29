@@ -94,14 +94,68 @@ public class IssueInterestService {
         record.setInterestLevel(1);
         record.setLastRefreshedAt(now);
         record.setNote(note);
-        if (!record.getPersonalTags().contains("filtered-out")) {
-            List<String> tags = new ArrayList<>(record.getPersonalTags());
+        List<String> tags = new ArrayList<>(record.getPersonalTags());
+        if (!tags.contains("filtered-out")) {
             tags.add("filtered-out");
-            record.setPersonalTags(tags);
         }
+        record.setPersonalTags(normalizePersonalTags(tags));
         touch(record, now);
         saveAll();
         return record;
+    }
+
+    public IssueMemoryRecord updatePersonalTags(String agentId, int issueId, List<String> tags, String note) {
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        long now = System.currentTimeMillis();
+        record.setPersonalTags(normalizePersonalTags(tags));
+        if (note != null) {
+            record.setNote(note);
+        }
+        record.setLastRefreshedAt(now);
+        touch(record, now);
+        saveAll();
+        return record;
+    }
+
+    public List<Integer> listIssueIdsForAgentWithTags(String agentId, List<String> includeTags, List<String> excludeTags) {
+        if (agentId == null || agentId.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<String> include = normalizePersonalTags(includeTags);
+        List<String> exclude = normalizePersonalTags(excludeTags);
+        List<Integer> results = new ArrayList<>();
+        for (IssueMemoryRecord record : listForAgent(agentId)) {
+            if (record == null) {
+                continue;
+            }
+            List<String> tags = normalizePersonalTags(record.getPersonalTags());
+            if (!include.isEmpty()) {
+                boolean hasAny = false;
+                for (String tag : include) {
+                    if (tags.contains(tag)) {
+                        hasAny = true;
+                        break;
+                    }
+                }
+                if (!hasAny) {
+                    continue;
+                }
+            }
+            if (!exclude.isEmpty()) {
+                boolean blocked = false;
+                for (String tag : exclude) {
+                    if (tags.contains(tag)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (blocked) {
+                    continue;
+                }
+            }
+            results.add(record.getIssueId());
+        }
+        return results;
     }
 
     public int decayAll() {
@@ -214,6 +268,26 @@ public class IssueInterestService {
         if (record.getCreatedAt() == null) {
             record.setCreatedAt(timestamp);
         }
+    }
+
+    private List<String> normalizePersonalTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            String trimmed = tag.trim().toLowerCase();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (!normalized.contains(trimmed)) {
+                normalized.add(trimmed);
+            }
+        }
+        return normalized;
     }
 
     private String key(String agentId, int issueId) {
