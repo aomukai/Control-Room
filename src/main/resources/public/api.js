@@ -125,6 +125,14 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload || {})
             });
+        },
+
+        async compress(id, agentId) {
+            return api(`/api/issues/${encodeURIComponent(id)}/compress`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(agentId ? { agentId } : {})
+            });
         }
     };
 

@@ -7834,6 +7834,10 @@ async function showWorkspaceSwitcher() {
         issueForceDecayBtn.type = 'button';
         issueForceDecayBtn.className = 'modal-btn modal-btn-secondary';
         issueForceDecayBtn.textContent = 'Force decay Issue';
+        const issueCompressBtn = document.createElement('button');
+        issueCompressBtn.type = 'button';
+        issueCompressBtn.className = 'modal-btn modal-btn-secondary';
+        issueCompressBtn.textContent = 'AI compress';
 
         const issueMemoryStatus = document.createElement('div');
         issueMemoryStatus.className = 'dev-tools-status';
@@ -7842,6 +7846,7 @@ async function showWorkspaceSwitcher() {
         issueMemoryActions.appendChild(issueDecayDryBtn);
         issueMemoryActions.appendChild(issueDecayApplyBtn);
         issueMemoryActions.appendChild(issueForceDecayBtn);
+        issueMemoryActions.appendChild(issueCompressBtn);
         issueMemoryActions.appendChild(issueReviveBtn);
 
         issueMemoryControls.appendChild(issueIdLabel);
@@ -7889,6 +7894,30 @@ async function showWorkspaceSwitcher() {
         });
 
         
+        
+        issueCompressBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            if (!issueId) {
+                setIssueMemoryStatus('Enter a valid issue ID to compress.', 'warning');
+                return;
+            }
+            issueCompressBtn.disabled = true;
+            setIssueMemoryStatus(`Running AI compression for Issue #${issueId}...`);
+            try {
+                const res = await issueApi.compress(issueId);
+                if (res && res.issue) {
+                    setIssueMemoryStatus(`AI compression complete for Issue #${issueId}.`, 'success');
+                } else {
+                    setIssueMemoryStatus(`AI compression completed.`, 'success');
+                }
+                await loadIssues();
+            } catch (err) {
+                setIssueMemoryStatus(`AI compression failed: ${err.message}`, 'error');
+            } finally {
+                issueCompressBtn.disabled = false;
+            }
+        });
+
         issueForceDecayBtn.addEventListener('click', async () => {
             const issueId = parseInt(issueIdInput.value, 10);
             if (!issueId) {
@@ -8829,6 +8858,9 @@ async function showWorkspaceSwitcher() {
     window.setSelectedAgentId = setSelectedAgentId;
 
 })();
+
+
+
 
 
 

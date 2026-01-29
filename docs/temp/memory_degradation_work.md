@@ -29,6 +29,7 @@ Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak
 - [x] Add Epistemic status control in Issue modal.
 - [x] Add memory-levels readout (L1–L5) in Issue modal.
 - [x] Add Dev Tools controls for issue decay + revive.
+- [x] Add Dev Tools AI compression button for issue summaries.
 
 ### Prompt Grounding (Early)
 - [x] Inject R1+R3 header for issues with epistemicStatus >= agreed.
@@ -37,3 +38,4 @@ Scope: Memory Degradation (Phase 1 MVP) + Early Grounding tweak
 ## Notes
 - Memory Degradation spec anchors: `docs/reference/cr_memory.md#memory-interest-levels` and `#memory-compression-logic`.
 - Early grounding idea from Engram paper (conditional memory). R2 concept packets deferred.
+- Compression quality is still rough; Phase 2 should swap in prompt-backed summaries + better semantic trace heuristics.

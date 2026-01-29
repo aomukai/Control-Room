@@ -242,7 +242,8 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Agentic Editing** - AI-proposed patches with approval workflow (refs: docs/reference/cr_editor.md, docs/reference/cr_agents.md)
 - [x] **Outline Editor (Story Root)** - modal editor with scene cards, summaries, and ordered moves (refs: docs/reference/outline_editor.md)
 - [x] **Tiering System** - Unbounded capability tiers with caps, promotion/demotion, and safety valves (refs: docs/reference/tiers.md)
-- [ ] **Memory Degradation** - 5-level interest gradient for issue memory (groundwork done; remaining: search filters + compression behaviors) (refs: docs/reference/cr_memory.md#memory-interest-levels)
+- [x] **Memory Degradation (Phase 1)** - 5-level interest gradient for issue memory: issue-level fields, decay/compression routines, search filters, revive flow, and UI views. (refs: docs/reference/cr_memory.md#memory-interest-levels)
+- [ ] **Memory Degradation (Phase 2)** - improve compression quality (summaries/semantic trace), add prompt-backed compression, and tune decay thresholds.
 - [ ] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
 
 ### Future

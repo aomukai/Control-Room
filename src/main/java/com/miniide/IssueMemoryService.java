@@ -152,12 +152,37 @@ public class IssueMemoryService {
         existing.setFrozenUntil(updated.getFrozenUntil());
         existing.setFrozenReason(updated.getFrozenReason());
         existing.setEpistemicStatus(updated.getEpistemicStatus());
+        existing.setMemoryLevel(updated.getMemoryLevel());
+        existing.setLastAccessedAt(updated.getLastAccessedAt());
+        existing.setLastCompressedAt(updated.getLastCompressedAt());
+        existing.setCompressedSummary(updated.getCompressedSummary());
+        existing.setResolutionSummary(updated.getResolutionSummary());
+        existing.setSemanticTrace(updated.getSemanticTrace());
         existing.setUpdatedAt(System.currentTimeMillis());
         touchAccess(existing);
         applyMemoryDefaults(existing);
 
         saveAll();
         return existing;
+    }
+
+    public Issue updateIssueCompressionFields(int issueId, String level1, String level2, String level3) {
+        Issue issue = issues.get(issueId);
+        if (issue == null) {
+            throw new IllegalArgumentException("Issue not found: #" + issueId);
+        }
+        if (level1 != null) {
+            issue.setSemanticTrace(level1);
+        }
+        if (level2 != null) {
+            issue.setResolutionSummary(level2);
+        }
+        if (level3 != null) {
+            issue.setCompressedSummary(level3);
+        }
+        issue.setLastCompressedAt(System.currentTimeMillis());
+        saveAll();
+        return issue;
     }
 
     public Comment addComment(int issueId, String author, String body, Comment.CommentAction action,

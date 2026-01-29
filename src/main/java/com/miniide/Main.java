@@ -107,6 +107,7 @@ public class Main {
 
             // Create and register controllers
             MemoryController memoryController = new MemoryController(memoryService, projectContext, decayScheduler, decayConfigStore, objectMapper);
+            IssueCompressionService issueCompressionService = new IssueCompressionService(projectContext, settingsService, providerChatService, objectMapper);
             List<Controller> controllers = List.of(
                 new FileController(projectContext, objectMapper),
                 new WorkspaceController(projectContext, creditStore, issueService, notificationStore, objectMapper, config.isDevMode()),
@@ -115,7 +116,7 @@ public class Main {
                 new PromptController(projectContext, objectMapper),
                 new SettingsController(settingsService, providerModelsService, objectMapper),
                 new NotificationController(notificationStore, objectMapper),
-                new IssueController(issueService, projectContext, creditStore, notificationStore, objectMapper),
+                new IssueController(issueService, issueCompressionService, projectContext, creditStore, notificationStore, objectMapper),
                 new IssueMemoryController(projectContext, objectMapper),
                 new CreditController(creditStore, objectMapper),
                 memoryController,

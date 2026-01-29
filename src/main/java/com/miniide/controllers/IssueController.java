@@ -6,6 +6,7 @@ import com.miniide.AppLogger;
 import com.miniide.CircuitBreakerConfig;
 import com.miniide.CircuitBreakerValidator;
 import com.miniide.CreditStore;
+import com.miniide.IssueCompressionService;
 import com.miniide.IssueMemoryService;
 import com.miniide.NotificationStore;
 import com.miniide.ProjectContext;
@@ -30,6 +31,7 @@ import java.util.Set;
 public class IssueController implements Controller {
 
     private final IssueMemoryService issueService;
+    private final IssueCompressionService compressionService;
     private final ProjectContext projectContext;
     private final CreditStore creditStore;
     private final NotificationStore notificationStore;
@@ -74,9 +76,10 @@ public class IssueController implements Controller {
         "clean-unfreeze"
     );
 
-    public IssueController(IssueMemoryService issueService, ProjectContext projectContext,
+    public IssueController(IssueMemoryService issueService, IssueCompressionService compressionService, ProjectContext projectContext,
                            CreditStore creditStore, NotificationStore notificationStore, ObjectMapper objectMapper) {
         this.issueService = issueService;
+        this.compressionService = compressionService;
         this.projectContext = projectContext;
         this.creditStore = creditStore;
         this.notificationStore = notificationStore;
@@ -97,6 +100,7 @@ public class IssueController implements Controller {
         app.post("/api/issues/{id}/patches", this::createIssuePatch);
         app.post("/api/issues/{id}/revive", this::reviveIssue);
         app.post("/api/issues/decay", this::runIssueDecay);
+        app.post("/api/issues/{id}/compress", this::compressIssue);
     }
 
     private void createIssuePatch(Context ctx) {
@@ -349,6 +353,41 @@ public class IssueController implements Controller {
             ));
         } catch (Exception e) {
             logger.error("Error running issue decay: " + e.getMessage());
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void compressIssue(Context ctx) {
+        try {
+            int id = Integer.parseInt(ctx.pathParam("id"));
+            Optional<Issue> existing = issueService.getIssue(id);
+            if (existing.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Issue not found: #" + id));
+                return;
+            }
+            if (compressionService == null) {
+                ctx.status(501).json(Map.of("error", "Compression service unavailable"));
+                return;
+            }
+            String agentId = null;
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("agentId")) {
+                    agentId = json.get("agentId").asText(null);
+                }
+            }
+            IssueCompressionService.CompressionResult result = compressionService.compressIssue(existing.get(), agentId);
+            Issue updated = issueService.updateIssueCompressionFields(id, result.level1, result.level2, result.level3);
+            ctx.json(Map.of(
+                "ok", true,
+                "issue", updated
+            ));
+        } catch (NumberFormatException e) {
+            ctx.status(400).json(Map.of("error", "Invalid issue ID format"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(404).json(Controller.errorBody(e));
+        } catch (Exception e) {
+            logger.error("Error compressing issue: " + e.getMessage());
             ctx.status(500).json(Controller.errorBody(e));
         }
     }
