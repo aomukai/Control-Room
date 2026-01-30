@@ -345,6 +345,20 @@ notificationStore.issueCommentAdded(id, author)
 | POST | `/api/memory/decay` (dryRun) | Get detailed report (archived/expired/locked, items list) |
 | (env) | `CR_DECAY_DRY_RUN`, `CR_DECAY_PRUNE_R5`, `CR_DECAY_REPORT`, `CR_DECAY_INTERVAL_MINUTES`, `CR_DECAY_ARCHIVE_DAYS`, `CR_DECAY_EXPIRE_DAYS` | Scheduler defaults |
 
+### Issue Memory (Per-Agent)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/issue-memory/agents/{agentId}` | List issue memory records for agent |
+| GET | `/api/issue-memory/agents/{agentId}/issues/{issueId}` | Get issue memory record |
+| POST | `/api/issue-memory/agents/{agentId}/issues/{issueId}/access` | Record access (auto-escalate to L3) |
+| POST | `/api/issue-memory/agents/{agentId}/issues/{issueId}/applied` | Mark applied (boost interest) |
+| POST | `/api/issue-memory/agents/{agentId}/issues/{issueId}/irrelevant` | Mark irrelevant (demote to L1) |
+| POST | `/api/issue-memory/agents/{agentId}/issues/{issueId}/tags` | Update personal tags |
+| POST | `/api/issue-memory/agents/{agentId}/activate` | Increment activation counter |
+| GET | `/api/issue-memory/agents/{agentId}/activation` | Get activation counter |
+| POST | `/api/issue-memory/decay` | Run access-based decay (agent or all) |
+| POST | `/api/issue-memory/epoch` | Apply one-time epoch bump by tags |
+
 ### Role Settings
 | Method | Endpoint | Description |
 |--------|----------|-------------|

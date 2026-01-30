@@ -196,6 +196,10 @@ state.issueBoard = {
 | `renderWorkbenchNewsfeed()` | Populate newsfeed from notifications |
 | `openIssueModal(id)` | Open shared issue modal |
 
+Issue memory access hooks:
+- Opening the issue modal records access for the selected memory agent.
+- Switching the memory agent, refreshing memory, or posting a comment also records access.
+
 ---
 
 <a id="workbench-todo"></a>
@@ -233,4 +237,3 @@ Key styling classes for Workbench components:
 - `.newsfeed-item` - Individual notification entry
 - `.issue-modal-overlay` - Modal backdrop
 - `.issue-modal` - Modal container
-
