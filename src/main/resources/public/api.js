@@ -227,6 +227,16 @@
     const telemetryApi = {
         async getSummary() {
             return api('/api/telemetry/summary');
+        },
+        async getConfig() {
+            return api('/api/telemetry/config');
+        },
+        async saveConfig(payload) {
+            return api('/api/telemetry/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
         }
     };
 

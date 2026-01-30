@@ -163,7 +163,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **Add Key Form** - Inline form with labeled fields for provider key management (refs: docs/reference/cr_workbench.md, docs/reference/cr_agents.md#agent-provider-keys)
 - [x] **Responsive Design** - Adapts to smaller viewports with stacked layout (refs: docs/reference/cr_workbench.md)
 - [x] **Prompt Tools Editor** - Registry-backed prompt tools with catalog injection for all agent calls (refs: docs/reference/cr_exocortex_roles_skills_tiers.md#exocortex-prompt-tools)
-- [ ] **Telemetry Settings** - Add telemetry logging toggle + retention limits (max sessions, max age days; 0 = never delete). (refs: docs/reference/cr_workbench.md)
+- [x] **Telemetry Settings** - Telemetry logging toggle + retention limits (max sessions, max age days, size cap; 0 = never delete). (refs: docs/reference/cr_workbench.md)
 
 #### Project System (formerly Workspace)
 - [x] Project folder layout under `workspace/<projectName>` (refs: docs/reference/cr_editor.md)
@@ -388,6 +388,8 @@ notificationStore.issueCommentAdded(id, author)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/telemetry/summary` | Get session + lifetime telemetry totals |
+| GET | `/api/telemetry/config` | Get telemetry logging config |
+| PUT | `/api/telemetry/config` | Update telemetry logging config |
 
 ### Notifications
 | Method | Endpoint | Description |

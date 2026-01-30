@@ -3894,6 +3894,10 @@ async function showWorkspaceSwitcher() {
                             <span class="nav-icon"><img src="assets/icons/heroicons_outline/command-line.svg" alt=""></span>
                             Shortcuts
                         </div>
+                        <div class="settings-nav-item" data-section="telemetry">
+                            <span class="nav-icon"><img src="assets/icons/heroicons_outline/queue-list.svg" alt=""></span>
+                            Telemetry
+                        </div>
                         <div class="settings-nav-item" data-section="tts">
                             <span class="nav-icon"><img src="assets/icons/heroicons_outline/speaker-wave.svg" alt=""></span>
                             Text-to-Speech
@@ -4393,6 +4397,64 @@ async function showWorkspaceSwitcher() {
                             </div>
                         </section>
 
+                        <!-- Telemetry Section -->
+                        <section class="settings-section" id="settings-telemetry">
+                            <div class="settings-section-header">
+                                <h3>
+                                    <img src="assets/icons/heroicons_outline/queue-list.svg" alt="">
+                                    Telemetry
+                                </h3>
+                                <p>Control telemetry logging and retention. Totals are always preserved.</p>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Logging</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Telemetry Logging</span>
+                                            <span class="settings-label-desc">Track activations, tokens, and issue access (recommended).</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="settings-telemetry-enabled">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <div class="settings-group-title">Retention</div>
+                                <div class="settings-card">
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Max Session Logs</span>
+                                            <span class="settings-label-desc">0 = never delete sessions.</span>
+                                        </div>
+                                        <input class="settings-control" type="number" min="0" id="settings-telemetry-max-sessions">
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Max Age (days)</span>
+                                            <span class="settings-label-desc">0 = never delete by age.</span>
+                                        </div>
+                                        <input class="settings-control" type="number" min="0" id="settings-telemetry-max-age">
+                                    </div>
+                                    <div class="settings-row">
+                                        <div class="settings-label">
+                                            <span class="settings-label-text">Max Total Size (MB)</span>
+                                            <span class="settings-label-desc">0 = no size cap.</span>
+                                        </div>
+                                        <input class="settings-control" type="number" min="0" id="settings-telemetry-max-mb">
+                                    </div>
+                                    <div class="settings-actions">
+                                        <button id="settings-telemetry-save" type="button" class="primary">Save Telemetry Settings</button>
+                                    </div>
+                                    <div id="settings-telemetry-status" class="settings-feedback" aria-live="polite"></div>
+                                </div>
+                            </div>
+                        </section>
+
                         <!-- TTS Section -->
                         <section class="settings-section" id="settings-tts">
                             <div class="settings-section-header">
@@ -4517,7 +4579,64 @@ async function showWorkspaceSwitcher() {
 
         initSettingsWiring();
         initPromptToolsControls();
+        initTelemetrySettingsWiring();
         initTtsSettingsWiring();
+    }
+
+    async function initTelemetrySettingsWiring() {
+        if (!window.telemetryApi) {
+            return;
+        }
+        const enabledToggle = document.getElementById('settings-telemetry-enabled');
+        const maxSessionsInput = document.getElementById('settings-telemetry-max-sessions');
+        const maxAgeInput = document.getElementById('settings-telemetry-max-age');
+        const maxMbInput = document.getElementById('settings-telemetry-max-mb');
+        const saveBtn = document.getElementById('settings-telemetry-save');
+        const statusEl = document.getElementById('settings-telemetry-status');
+
+        if (!enabledToggle || !maxSessionsInput || !maxAgeInput || !maxMbInput || !saveBtn) {
+            return;
+        }
+
+        const setStatus = (text, level = 'info') => {
+            if (!statusEl) return;
+            statusEl.textContent = text || '';
+            statusEl.dataset.level = level;
+        };
+
+        const loadTelemetryConfig = async () => {
+            try {
+                const config = await telemetryApi.getConfig();
+                enabledToggle.checked = Boolean(config.enabled);
+                maxSessionsInput.value = config.maxSessions ?? 200;
+                maxAgeInput.value = config.maxAgeDays ?? 90;
+                maxMbInput.value = config.maxTotalMb ?? 50;
+            } catch (err) {
+                setStatus(`Failed to load telemetry settings: ${err.message}`, 'error');
+            }
+        };
+
+        const saveTelemetryConfig = async () => {
+            saveBtn.disabled = true;
+            setStatus('Saving telemetry settings...');
+            const payload = {
+                enabled: Boolean(enabledToggle.checked),
+                maxSessions: Math.max(0, parseInt(maxSessionsInput.value, 10) || 0),
+                maxAgeDays: Math.max(0, parseInt(maxAgeInput.value, 10) || 0),
+                maxTotalMb: Math.max(0, parseInt(maxMbInput.value, 10) || 0)
+            };
+            try {
+                await telemetryApi.saveConfig(payload);
+                setStatus('Telemetry settings saved.', 'success');
+            } catch (err) {
+                setStatus(`Failed to save telemetry settings: ${err.message}`, 'error');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        };
+
+        saveBtn.addEventListener('click', saveTelemetryConfig);
+        await loadTelemetryConfig();
     }
 
     async function initSettingsWiring() {
@@ -9074,6 +9193,3 @@ async function showWorkspaceSwitcher() {
     window.setSelectedAgentId = setSelectedAgentId;
 
 })();
-
-
-

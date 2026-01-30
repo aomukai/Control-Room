@@ -61,6 +61,15 @@ public class TelemetryStore {
         return currentSession;
     }
 
+    public synchronized void updateConfig(TelemetryConfig config) {
+        if (config == null) {
+            return;
+        }
+        this.config = config;
+        saveAll();
+        pruneIfNeeded();
+    }
+
     public synchronized void recordActivation(String agentId, int count) {
         if (!isEnabled() || agentId == null || agentId.isBlank()) {
             return;
