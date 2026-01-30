@@ -4628,8 +4628,14 @@ async function showWorkspaceSwitcher() {
             try {
                 await telemetryApi.saveConfig(payload);
                 setStatus('Telemetry settings saved.', 'success');
+                if (typeof notificationStore !== 'undefined') {
+                    notificationStore.success('Telemetry settings saved.', 'global');
+                }
             } catch (err) {
                 setStatus(`Failed to save telemetry settings: ${err.message}`, 'error');
+                if (typeof notificationStore !== 'undefined') {
+                    notificationStore.error(`Telemetry settings save failed: ${err.message}`, 'global');
+                }
             } finally {
                 saveBtn.disabled = false;
             }
