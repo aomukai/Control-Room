@@ -111,6 +111,8 @@ On access:
   if interestLevel < 3 and leech:
      require Chief approval for escalation
 
+Access is recorded whenever the issue modal opens, when the memory agent selector changes, when the user refreshes memory, and when a comment is posted.
+
 On epoch/milestone:
   for issues tagged with milestone scope:
     apply one-time artificial age (max multiplier wins)

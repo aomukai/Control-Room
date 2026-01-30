@@ -1458,7 +1458,7 @@
                 const agentId = state.issueModal.memory.agentId;
                 if (!issue || !agentId) return;
                 memoryRefreshBtn.disabled = true;
-                await loadIssueMemory(issue.id, agentId, { recordAccess: false });
+                await loadIssueMemory(issue.id, agentId, { recordAccess: true });
                 memoryRefreshBtn.disabled = false;
             });
         }
@@ -1480,6 +1480,15 @@
                 commentInput.disabled = true;
                 try {
                     await issueApi.addComment(issue.id, { body, author: 'User' });
+                    if (window.issueMemoryApi && state.issueModal.memory && state.issueModal.memory.agentId) {
+                        try {
+                            const agentId = state.issueModal.memory.agentId;
+                            const record = await issueMemoryApi.access(agentId, issue.id);
+                            state.issueModal.memory.record = record;
+                        } catch (err) {
+                            notificationStore.warning(`Issue memory access failed: ${err.message}`, 'workbench');
+                        }
+                    }
                     commentInput.value = '';
                     notificationStore.success('Comment added.', 'workbench');
                     // Refresh the issue to show the new comment
