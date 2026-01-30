@@ -15,7 +15,8 @@ Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
 - Prompt hardening + validators for agent actions (focus on local models).
-- Memory Degradation (Phase 2): access demotion model + conservative leech/Wiedervorlage MVP; compression quality and prompt tuning (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
+- Memory Degradation (Phase 2): access demotion model in place; next is conservative leech/Wiedervorlage MVP and compression quality/prompt tuning (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
+- Telemetry: settings + Team Activity widget are live; next is to verify retention behavior and confirm log paths under `.control-room/telemetry/` (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
 Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.
