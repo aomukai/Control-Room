@@ -8,6 +8,7 @@ public class IssueMemoryRecord {
     private int issueId;
     private int interestLevel;
     private Long lastAccessedAt;
+    private Long lastAccessedAtActivation;
     private Long lastRefreshedAt;
     private int accessCount;
     private Boolean appliedInWork;
@@ -47,6 +48,14 @@ public class IssueMemoryRecord {
 
     public void setLastAccessedAt(Long lastAccessedAt) {
         this.lastAccessedAt = lastAccessedAt;
+    }
+
+    public Long getLastAccessedAtActivation() {
+        return lastAccessedAtActivation;
+    }
+
+    public void setLastAccessedAtActivation(Long lastAccessedAtActivation) {
+        this.lastAccessedAtActivation = lastAccessedAtActivation;
     }
 
     public Long getLastRefreshedAt() {

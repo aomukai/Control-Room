@@ -28,7 +28,10 @@ public class IssueMemoryController implements Controller {
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/applied", this::recordApplied);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/irrelevant", this::markIrrelevant);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/tags", this::updatePersonalTags);
+        app.post("/api/issue-memory/agents/{agentId}/activate", this::recordActivation);
+        app.get("/api/issue-memory/agents/{agentId}/activation", this::getActivationCount);
         app.post("/api/issue-memory/decay", this::runDecay);
+        app.post("/api/issue-memory/epoch", this::triggerEpoch);
     }
 
     private IssueInterestService service() {
@@ -189,6 +192,67 @@ public class IssueMemoryController implements Controller {
             ? service.decayAgent(agentId)
             : service.decayAll();
         ctx.json(Map.of("decayed", decayed));
+    }
+
+    private void recordActivation(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int count = 1;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("count")) {
+                    count = Math.max(1, json.get("count").asInt(1));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        int activationCount = service.recordAgentActivations(agentId, count);
+        ctx.json(Map.of("agentId", agentId, "activationCount", activationCount, "incrementedBy", count));
+    }
+
+    private void getActivationCount(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int activationCount = service.getAgentActivationCount(agentId);
+        ctx.json(Map.of("agentId", agentId, "activationCount", activationCount));
+    }
+
+    private void triggerEpoch(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String epochType = null;
+        List<String> tags = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("epochType")) {
+                    epochType = json.get("epochType").asText(null);
+                }
+                if (json.has("tags") && json.get("tags").isArray()) {
+                    tags = new java.util.ArrayList<>();
+                    for (JsonNode tagNode : json.get("tags")) {
+                        if (tagNode != null && !tagNode.isNull()) {
+                            tags.add(tagNode.asText());
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        int demoted = service.triggerEpoch(epochType, tags);
+        ctx.json(Map.of("demoted", demoted));
     }
 
     private int parseIssueId(Context ctx) {

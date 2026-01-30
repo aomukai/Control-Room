@@ -115,6 +115,9 @@ public class ChatController implements Controller {
                 }
 
                 memoryService.recordAgentActivation(agentId);
+                if (projectContext != null && projectContext.issueInterest() != null) {
+                    projectContext.issueInterest().recordAgentActivation(agentId);
+                }
                 final String providerName = provider;
                 final String keyRef = apiKey;
                 final var agentEndpoint = endpoint;

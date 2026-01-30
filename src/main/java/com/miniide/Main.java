@@ -57,6 +57,9 @@ public class Main {
             String projectName = projectContext.workspace().getWorkspaceRoot().getFileName().toString();
             notificationStore.setCurrentProjectId(projectName);
             IssueMemoryService issueService = new IssueMemoryService(config.getWorkspacePath());
+            if (projectContext.issueInterest() != null) {
+                projectContext.issueInterest().setIssueMemoryService(issueService);
+            }
             CreditStore creditStore = new CreditStore(config.getWorkspacePath());
             MemoryService memoryService = new MemoryService();
             logger.info("Notification and Issue services initialized");

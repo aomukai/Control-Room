@@ -205,17 +205,16 @@ Compression hammer should eventually include **expiry/archival** for memories no
 **States:**
 - `active`: included in default retrieval
 - `archived`: excluded by default but searchable and eligible for escalation
-- `expired`: hidden unless explicitly requested; may be pruned (R5) if unpinned
+- `expired`: hidden unless explicitly requested; never pruned or deleted
 
 **Archival triggers (examples):**
 - not accessed in N days **and** projectEpoch advanced
 - superseded by a newer decision memory tagged `DECISION/SUPERSEDES`
 - explicit user action: Archive
 
-**Pruning safeguards:**
-- never prune if pinned
-- never prune if referenced by an active memory (dependency link)
-- always retain at least R1/R3 for provenance unless user deletes
+**Retention policy:**
+- never prune or delete any memory representations
+- pins only affect retrieval minimums, not retention
 
 ---
 
@@ -325,4 +324,3 @@ Then escalation can fetch **only the relevant slices** instead of dumping full l
 4) Implement escalation ladder R3→R4→R5
 5) Add moderator UI: History + Promote/Rollback + Pin
 6) (Optional) Add witness pointers for slice-based escalation
-

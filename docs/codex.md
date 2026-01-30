@@ -15,7 +15,7 @@ Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
 - Prompt hardening + validators for agent actions (focus on local models).
-- Memory Degradation (Phase 2): compression quality and prompt tuning (docs/reference/cr_memory.md#memory-interest-levels).
+- Memory Degradation (Phase 2): access demotion model + conservative leech/Wiedervorlage MVP; compression quality and prompt tuning (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 
 Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.

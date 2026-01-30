@@ -49,7 +49,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] Chat reroll button bumps context (auto -> next level) and surfaces `repLevel/escalated` badges (refs: docs/reference/cr_librarian_extension.md)
 - [x] Witness chips + evidence fetch with toasts for success/failure (refs: docs/reference/cr_librarian_extension.md)
 - [x] Moderator controls in Settings: promote/active-lock, pin min level, archive state with toast feedback (refs: docs/reference/cr_librarian_extension.md, docs/reference/cr_prefrontal_exocortex.md)
-- [x] Manual decay/archival trigger with archive/expire thresholds and optional R5 prune (honors pins and active locks) (refs: docs/reference/cr_librarian_extension.md)
+- [x] Manual decay/archival trigger with archive/expire thresholds (no pruning; honors pins and active locks) (refs: docs/reference/cr_librarian_extension.md)
 - [x] Background decay scheduler (6h cadence, respects pins and active locks) (refs: docs/reference/cr_librarian_extension.md)
 - [x] Decay config persistence (scheduler settings saved to `data/decay-config.json` so UI changes survive restarts) (refs: docs/reference/cr_librarian_extension.md)
 - [x] Decay filters: exclude topic keys/agent IDs (manual + scheduled) to avoid archiving active threads; persisted with scheduler config (refs: docs/reference/cr_librarian_extension.md)
@@ -227,7 +227,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 
 ### Now (Active)
 
-- [x] **Memory Decay Lifecycle** - Active/archived/expired states with retention rules and compression hammer loop (refs: docs/reference/cr_librarian_extension.md, docs/reference/cr_memory.md)
+- [x] **Memory Decay Lifecycle** - Active/archived/expired states with retention rules (no pruning) and compression hammer loop (refs: docs/reference/cr_librarian_extension.md, docs/reference/cr_memory.md)
 - [x] **Circuit Breakers + Model-Locked Eval** - runtime safety gates
 - [x] **Single-Active Agent Turns** - enforce serialized agent turns (one active agent at a time) for local LLM viability (refs: docs/reference/cr_agents.md#agent-workflow)
 - [x] **Verify agent turn queue indicator** - test alongside conference chat wiring (currently 1:1 chat only).
@@ -243,7 +243,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Outline Editor (Story Root)** - modal editor with scene cards, summaries, and ordered moves (refs: docs/reference/outline_editor.md)
 - [x] **Tiering System** - Unbounded capability tiers with caps, promotion/demotion, and safety valves (refs: docs/reference/tiers.md)
 - [x] **Memory Degradation (Phase 1)** - 5-level interest gradient for issue memory: issue-level fields, decay/compression routines, search filters, revive flow, and UI views. (refs: docs/reference/cr_memory.md#memory-interest-levels)
-- [ ] **Memory Degradation (Phase 2)** - improve compression quality (summaries/semantic trace), add prompt-backed compression, and tune decay thresholds.
+- [ ] **Memory Degradation (Phase 2)** - implement access demotion model (activations, floors, epoch one-time bumps) and conservative leech/Wiedervorlage MVP; improve compression quality and prompt-backed summaries. (refs: docs/reference/memory_part2.md, docs/reference/memory_part2_1.md, docs/reference/cr_memory.md)
   - Note: revisit memory compression prompts (reduce L2/L3 rephrase overlap, enforce entity carryover).
 - [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
 - [x] **Search Issues Prompt Tool** - Seeded prompt tool for issue search with personal tags + agent filter.
@@ -339,10 +339,10 @@ notificationStore.issueCommentAdded(id, author)
 | PUT | `/api/memory/{id}/active/{versionId}` | Promote/rollback with temporary lock |
 | PUT | `/api/memory/{id}/pin` | Set pinned minimum level |
 | PUT | `/api/memory/{id}/state` | Update lifecycle state (active/archived/expired) |
-| POST | `/api/memory/decay` | Run decay/compression pass (archive/expire/prune) |
+| POST | `/api/memory/decay` | Run decay/compression pass (archive/expire; no pruning) |
 | GET | `/api/memory/decay/status` | Get scheduler interval, last run, and last results |
 | PUT | `/api/memory/decay/config` | Update scheduler interval/thresholds/prune toggle |
-| POST | `/api/memory/decay` (dryRun) | Get detailed report (archived/expired/prunable/locked, items list) |
+| POST | `/api/memory/decay` (dryRun) | Get detailed report (archived/expired/locked, items list) |
 | (env) | `CR_DECAY_DRY_RUN`, `CR_DECAY_PRUNE_R5`, `CR_DECAY_REPORT`, `CR_DECAY_INTERVAL_MINUTES`, `CR_DECAY_ARCHIVE_DAYS`, `CR_DECAY_EXPIRE_DAYS` | Scheduler defaults |
 
 ### Role Settings

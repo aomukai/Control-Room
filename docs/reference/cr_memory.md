@@ -627,7 +627,7 @@ This system uses existing IssueMemory interest levels without changing schemas:
 - Per-agent access determines which global level is injected into context.
 - IssueMemoryService persists the per-agent access metadata.
 - Epoch triggers (scene/chapter/act/draft) can scale decay pressure.
-- Wall-clock fallback only handles abandoned projects and archives, not deletions.
+- Wall-clock fallback only handles abandoned projects and archives (visibility only), not deletions or pruning.
 		 
 ##Dynamic Interest Management
 
@@ -923,44 +923,17 @@ function handleLeech(leech: LeechDetection) {
   });
 }```
 
-##Smart Pruning Rules
+##No Pruning or Deletion
 
-When to Prune vs Compress
+We never prune or delete memories. All representations (L1–L5) are conserved.
+Interest levels only control which representation is shown by default.
 ```
-function shouldPrune(issue: Issue, agentMemories: IssueMemory[]): boolean {
-  // Never prune open issues
-  if (issue.status === "open") return false;
-  
-  // Check if ANY agent still cares
-  const anyHighInterest = agentMemories.some(m => m.interestLevel >= 3);
-  if (anyHighInterest) return false;
-  
-  // Prune if:
-  // - Closed for >6 months
-  // - All agents at interest level 1
-  // - Never applied in any agent's work
-  
-  const oldEnough = issue.closedAt && (Date.now() - issue.closedAt > SIX_MONTHS);
-  const allLowInterest = agentMemories.every(m => m.interestLevel === 1);
-  const neverUseful = agentMemories.every(m => !m.appliedInWork);
-  
-  return oldEnough && allLowInterest && neverUseful;
+function shouldPrune(issue: Issue): boolean {
+  return false;
 }
 
 function pruneIssue(issueId: number) {
-  // Don't delete — archive as semantic trace only
-  const issue = getIssue(issueId);
-  
-  archiveIssue({
-    id: issue.id,
-    title: issue.title,
-    tags: issue.tags,
-    semanticTrace: generateSemanticTrace(issue),
-    archivedAt: Date.now()
-  });
-  
-  // Remove from active board, keep in archive index
-  moveToArchive(issueId);
+  // No-op by policy: never delete or prune memories.
 }```
 
 <a id="memory-semantic-trace"></a>
@@ -1112,7 +1085,7 @@ Search filtering by interest level
 ##Phase 2:
 
 Leech detection
-Auto-pruning of Level 1 after 12+ months
+No pruning or deletion at any level
 Semantic trace generation
 Revival mechanism
 

@@ -31,6 +31,12 @@ It summarizes key concepts and links into stable anchors in the source docs.
 - Primary refs: [Interest levels](cr_memory.md#memory-interest-levels), [Design alignment](cr_memory.md#design-alignment-global-representations-vs-per-agent-access), [Compression logic](cr_memory.md#memory-compression-logic)
 - Related refs: [Leech detection](cr_memory.md#memory-leech-detection), [Semantic trace](cr_memory.md#memory-semantic-trace), [Memory sanity checks](cr_prefrontal_exocortex.md#exocortex-memory-sanity)
 
+### Memory Decay Model (Part 2 + 2.1)
+- Doc type: Spec
+- Purpose: Define access demotion rules, epoch behavior, floors, and conservative leech/Wiedervorlage.
+- Triggers/Interfaces: Agent activations, epoch triggers, Chief of Staff gating.
+- Primary refs: [Memory Decay Model Part 2](reference/memory_part2.md#memory-part-2), [Memory Decay Model Part 2.1](reference/memory_part2_1.md#memory-part-2-1)
+
 ### Librarian Compression Hammer (R5/R3/R1 with witnesses)
 - Doc type: Spec
 - Purpose: Maintain multiple memory representations and preserve evidence trails.

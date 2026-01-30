@@ -2567,11 +2567,14 @@ html, body {
 
 .dev-tools-modal {
     min-width: 320px;
-    width: min(720px, 90vw);
-    max-width: 90vw;
-    max-height: 80vh;
+    min-height: 320px;
+    width: min(960px, 96vw);
+    max-width: 96vw;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
+    resize: both;
+    overflow: hidden;
 }
 
 .dev-tools-modal .modal-body {

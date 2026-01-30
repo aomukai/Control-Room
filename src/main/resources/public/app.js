@@ -7812,6 +7812,12 @@ async function showWorkspaceSwitcher() {
         const issueMemoryControls = document.createElement('div');
         issueMemoryControls.className = 'dev-tools-controls';
 
+        const issueAgentLabel = document.createElement('label');
+        issueAgentLabel.className = 'modal-label';
+        issueAgentLabel.textContent = 'Agent';
+        const issueAgentSelect = document.createElement('select');
+        issueAgentSelect.className = 'modal-select dev-tools-select';
+
         const issueIdLabel = document.createElement('label');
         issueIdLabel.className = 'modal-label';
         issueIdLabel.textContent = 'Issue ID';
@@ -7821,18 +7827,47 @@ async function showWorkspaceSwitcher() {
         issueIdInput.className = 'modal-input dev-tools-input';
         issueIdInput.placeholder = '42';
 
+        const activationCountLabel = document.createElement('label');
+        activationCountLabel.className = 'modal-label';
+        activationCountLabel.textContent = 'Activation count';
+        const activationCountInput = document.createElement('input');
+        activationCountInput.type = 'number';
+        activationCountInput.min = '1';
+        activationCountInput.value = '1';
+        activationCountInput.className = 'modal-input dev-tools-input';
+
+        const epochLabel = document.createElement('label');
+        epochLabel.className = 'modal-label';
+        epochLabel.textContent = 'Epoch type';
+        const epochSelect = document.createElement('select');
+        epochSelect.className = 'modal-select dev-tools-select';
+        ['chapter_complete', 'act_complete', 'draft_complete', 'character_arc_resolved', 'worldbuilding_locked'].forEach((value) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value.replace(/_/g, ' ');
+            epochSelect.appendChild(option);
+        });
+
+        const epochTagsLabel = document.createElement('label');
+        epochTagsLabel.className = 'modal-label';
+        epochTagsLabel.textContent = 'Epoch tags (comma or newline)';
+        const epochTagsInput = document.createElement('textarea');
+        epochTagsInput.className = 'modal-input dev-tools-input';
+        epochTagsInput.rows = 2;
+        epochTagsInput.placeholder = 'chapter-6, act-2';
+
         const issueMemoryActions = document.createElement('div');
         issueMemoryActions.className = 'dev-tools-controls';
 
         const issueDecayDryBtn = document.createElement('button');
         issueDecayDryBtn.type = 'button';
         issueDecayDryBtn.className = 'modal-btn modal-btn-secondary';
-        issueDecayDryBtn.textContent = 'Decay (dry run)';
+        issueDecayDryBtn.textContent = 'Decay (agent)';
 
         const issueDecayApplyBtn = document.createElement('button');
         issueDecayApplyBtn.type = 'button';
         issueDecayApplyBtn.className = 'modal-btn modal-btn-primary';
-        issueDecayApplyBtn.textContent = 'Decay (apply)';
+        issueDecayApplyBtn.textContent = 'Decay (all)';
 
         const issueReviveBtn = document.createElement('button');
         issueReviveBtn.type = 'button';
@@ -7849,6 +7884,31 @@ async function showWorkspaceSwitcher() {
         issueCompressBtn.className = 'modal-btn modal-btn-secondary';
         issueCompressBtn.textContent = 'AI compress';
 
+        const issueAccessBtn = document.createElement('button');
+        issueAccessBtn.type = 'button';
+        issueAccessBtn.className = 'modal-btn modal-btn-secondary';
+        issueAccessBtn.textContent = 'Record access (L3)';
+
+        const issueActivationBtn = document.createElement('button');
+        issueActivationBtn.type = 'button';
+        issueActivationBtn.className = 'modal-btn modal-btn-secondary';
+        issueActivationBtn.textContent = 'Add activations';
+
+        const issueEpochBtn = document.createElement('button');
+        issueEpochBtn.type = 'button';
+        issueEpochBtn.className = 'modal-btn modal-btn-secondary';
+        issueEpochBtn.textContent = 'Trigger epoch';
+
+        const issueInspectBtn = document.createElement('button');
+        issueInspectBtn.type = 'button';
+        issueInspectBtn.className = 'modal-btn modal-btn-secondary';
+        issueInspectBtn.textContent = 'Show record';
+
+        const issueActivationInfoBtn = document.createElement('button');
+        issueActivationInfoBtn.type = 'button';
+        issueActivationInfoBtn.className = 'modal-btn modal-btn-secondary';
+        issueActivationInfoBtn.textContent = 'Show activations';
+
         const issueMemoryStatus = document.createElement('div');
         issueMemoryStatus.className = 'dev-tools-status';
         issueMemoryStatus.textContent = '';
@@ -7857,10 +7917,23 @@ async function showWorkspaceSwitcher() {
         issueMemoryActions.appendChild(issueDecayApplyBtn);
         issueMemoryActions.appendChild(issueForceDecayBtn);
         issueMemoryActions.appendChild(issueCompressBtn);
+        issueMemoryActions.appendChild(issueAccessBtn);
+        issueMemoryActions.appendChild(issueActivationBtn);
+        issueMemoryActions.appendChild(issueEpochBtn);
+        issueMemoryActions.appendChild(issueInspectBtn);
+        issueMemoryActions.appendChild(issueActivationInfoBtn);
         issueMemoryActions.appendChild(issueReviveBtn);
 
+        issueMemoryControls.appendChild(issueAgentLabel);
+        issueMemoryControls.appendChild(issueAgentSelect);
         issueMemoryControls.appendChild(issueIdLabel);
         issueMemoryControls.appendChild(issueIdInput);
+        issueMemoryControls.appendChild(activationCountLabel);
+        issueMemoryControls.appendChild(activationCountInput);
+        issueMemoryControls.appendChild(epochLabel);
+        issueMemoryControls.appendChild(epochSelect);
+        issueMemoryControls.appendChild(epochTagsLabel);
+        issueMemoryControls.appendChild(epochTagsInput);
         issueMemoryControls.appendChild(issueMemoryActions);
         issueMemoryControls.appendChild(issueMemoryStatus);
 
@@ -7872,15 +7945,38 @@ async function showWorkspaceSwitcher() {
             issueMemoryStatus.dataset.level = level;
         };
 
+        const loadIssueMemoryAgents = async () => {
+            if (!state.agents.list || state.agents.list.length === 0) {
+                await window.loadAgents();
+            }
+            issueAgentSelect.innerHTML = '';
+            const agents = state.agents.list || [];
+            agents.forEach((agent) => {
+                const option = document.createElement('option');
+                option.value = agent.id;
+                option.textContent = agent.name ? `${agent.name} (${agent.role || 'role'})` : agent.id;
+                issueAgentSelect.appendChild(option);
+            });
+        };
+
+        loadIssueMemoryAgents();
+
         issueDecayDryBtn.addEventListener('click', async () => {
             issueDecayDryBtn.disabled = true;
             issueDecayApplyBtn.disabled = true;
-            setIssueMemoryStatus('Running dry-run decay...');
+            const agentId = issueAgentSelect.value;
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                issueDecayDryBtn.disabled = false;
+                issueDecayApplyBtn.disabled = false;
+                return;
+            }
+            setIssueMemoryStatus(`Running decay for ${agentId}...`);
             try {
-                const result = await issueApi.decay(true);
-                setIssueMemoryStatus(`Dry run: decayed ${result.decayed || 0} issue(s).`, 'success');
+                const result = await issueMemoryApi.decay(agentId);
+                setIssueMemoryStatus(`Decay complete: demoted ${result.decayed || 0} record(s).`, 'success');
             } catch (err) {
-                setIssueMemoryStatus(`Dry run failed: ${err.message}`, 'error');
+                setIssueMemoryStatus(`Decay failed: ${err.message}`, 'error');
             } finally {
                 issueDecayDryBtn.disabled = false;
                 issueDecayApplyBtn.disabled = false;
@@ -7890,11 +7986,10 @@ async function showWorkspaceSwitcher() {
         issueDecayApplyBtn.addEventListener('click', async () => {
             issueDecayDryBtn.disabled = true;
             issueDecayApplyBtn.disabled = true;
-            setIssueMemoryStatus('Running decay...');
+            setIssueMemoryStatus('Running decay for all agents...');
             try {
-                const result = await issueApi.decay(false);
-                setIssueMemoryStatus(`Decay applied: ${result.decayed || 0} issue(s).`, 'success');
-                await loadIssues();
+                const result = await issueMemoryApi.decay();
+                setIssueMemoryStatus(`Decay complete: demoted ${result.decayed || 0} record(s).`, 'success');
             } catch (err) {
                 setIssueMemoryStatus(`Decay failed: ${err.message}`, 'error');
             } finally {
@@ -7968,6 +8063,117 @@ async function showWorkspaceSwitcher() {
                 setIssueMemoryStatus(`Revive failed: ${err.message}`, 'error');
             } finally {
                 issueReviveBtn.disabled = false;
+            }
+        });
+
+        issueAccessBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                return;
+            }
+            if (!issueId) {
+                setIssueMemoryStatus('Enter a valid issue ID to access.', 'warning');
+                return;
+            }
+            issueAccessBtn.disabled = true;
+            setIssueMemoryStatus(`Recording access for ${agentId} on Issue #${issueId}...`);
+            try {
+                await issueMemoryApi.access(agentId, issueId);
+                setIssueMemoryStatus(`Access recorded: ${agentId} → Issue #${issueId}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Record access failed: ${err.message}`, 'error');
+            } finally {
+                issueAccessBtn.disabled = false;
+            }
+        });
+
+        issueActivationBtn.addEventListener('click', async () => {
+            const agentId = issueAgentSelect.value;
+            const count = parseInt(activationCountInput.value, 10);
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                return;
+            }
+            if (!count || count < 1) {
+                setIssueMemoryStatus('Enter a valid activation count.', 'warning');
+                return;
+            }
+            issueActivationBtn.disabled = true;
+            setIssueMemoryStatus(`Adding ${count} activation(s) for ${agentId}...`);
+            try {
+                const res = await issueMemoryApi.activate(agentId, count);
+                setIssueMemoryStatus(`Activation count: ${res.activationCount || count}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Activation update failed: ${err.message}`, 'error');
+            } finally {
+                issueActivationBtn.disabled = false;
+            }
+        });
+
+        issueEpochBtn.addEventListener('click', async () => {
+            const epochType = epochSelect.value;
+            const tags = parseListInput(epochTagsInput);
+            if (!epochType) {
+                setIssueMemoryStatus('Select an epoch type.', 'warning');
+                return;
+            }
+            if (!tags || tags.length === 0) {
+                setIssueMemoryStatus('Provide at least one epoch tag.', 'warning');
+                return;
+            }
+            issueEpochBtn.disabled = true;
+            setIssueMemoryStatus(`Triggering ${epochType} for tags: ${tags.join(', ')}...`);
+            try {
+                const res = await issueMemoryApi.epoch(epochType, tags);
+                setIssueMemoryStatus(`Epoch applied: demoted ${res.demoted || 0} record(s).`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Epoch trigger failed: ${err.message}`, 'error');
+            } finally {
+                issueEpochBtn.disabled = false;
+            }
+        });
+
+        issueInspectBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                return;
+            }
+            if (!issueId) {
+                setIssueMemoryStatus('Enter a valid issue ID.', 'warning');
+                return;
+            }
+            issueInspectBtn.disabled = true;
+            setIssueMemoryStatus(`Loading record for ${agentId} + Issue #${issueId}...`);
+            try {
+                const record = await issueMemoryApi.get(agentId, issueId);
+                const summary = `Level ${record.interestLevel}, accessCount ${record.accessCount}, lastAccessedAtActivation ${record.lastAccessedAtActivation ?? 'n/a'}`;
+                setIssueMemoryStatus(summary, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Fetch record failed: ${err.message}`, 'error');
+            } finally {
+                issueInspectBtn.disabled = false;
+            }
+        });
+
+        issueActivationInfoBtn.addEventListener('click', async () => {
+            const agentId = issueAgentSelect.value;
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                return;
+            }
+            issueActivationInfoBtn.disabled = true;
+            setIssueMemoryStatus(`Fetching activation count for ${agentId}...`);
+            try {
+                const res = await issueMemoryApi.activation(agentId);
+                setIssueMemoryStatus(`Activation count: ${res.activationCount ?? 0}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Fetch activation count failed: ${err.message}`, 'error');
+            } finally {
+                issueActivationInfoBtn.disabled = false;
             }
         });
 
@@ -8868,10 +9074,6 @@ async function showWorkspaceSwitcher() {
     window.setSelectedAgentId = setSelectedAgentId;
 
 })();
-
-
-
-
 
 
 

@@ -178,11 +178,35 @@
                 body: JSON.stringify(payload)
             });
         },
+        async activate(agentId, count) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/activate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(count ? { count } : {})
+            });
+        },
+        async activation(agentId) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/activation`);
+        },
         async decay(agentId) {
             return api('/api/issue-memory/decay', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(agentId ? { agentId } : {})
+            });
+        },
+        async epoch(epochType, tags) {
+            const payload = {};
+            if (epochType) {
+                payload.epochType = epochType;
+            }
+            if (Array.isArray(tags)) {
+                payload.tags = tags;
+            }
+            return api('/api/issue-memory/epoch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
         }
     };
