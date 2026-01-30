@@ -224,6 +224,12 @@
         }
     };
 
+    const telemetryApi = {
+        async getSummary() {
+            return api('/api/telemetry/summary');
+        }
+    };
+
     // Credit API
     const creditApi = {
         async listProfiles() {
@@ -770,6 +776,7 @@
     window.issueApi = issueApi;
     window.issueMemoryApi = issueMemoryApi;
     window.outlineApi = outlineApi;
+    window.telemetryApi = telemetryApi;
     window.creditApi = creditApi;
     window.agentApi = agentApi;
     window.agentEndpointsApi = agentEndpointsApi;

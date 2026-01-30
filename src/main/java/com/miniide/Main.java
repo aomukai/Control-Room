@@ -125,6 +125,7 @@ public class Main {
                 memoryController,
                 new TieringController(projectContext, objectMapper),
                 new PatchController(projectContext, issueService, notificationStore, creditStore, objectMapper),
+                new TelemetryController(projectContext),
                 new OutlineController(projectContext, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, issueService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),

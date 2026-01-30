@@ -39,6 +39,7 @@ public class IssueInterestService {
     private final Map<String, Integer> agentActivationCounts = new ConcurrentHashMap<>();
     private final AgentRegistry agentRegistry;
     private IssueMemoryService issueMemoryService;
+    private TelemetryStore telemetryStore;
     private Path storagePath;
     private Path activationPath;
 
@@ -49,6 +50,10 @@ public class IssueInterestService {
 
     public void setIssueMemoryService(IssueMemoryService issueMemoryService) {
         this.issueMemoryService = issueMemoryService;
+    }
+
+    public void setTelemetryStore(TelemetryStore telemetryStore) {
+        this.telemetryStore = telemetryStore;
     }
 
     public synchronized void switchWorkspace(Path workspaceRoot) {
@@ -95,6 +100,9 @@ public class IssueInterestService {
         int floor = calculateFloor(agentId, issueId);
         int desired = Math.max(3, floor);
         record.setInterestLevel(Math.max(floor, capInterest(agentId, desired)));
+        if (telemetryStore != null) {
+            telemetryStore.recordIssueAccess(agentId);
+        }
         touch(record, now);
         saveAll();
         return record;
@@ -111,6 +119,9 @@ public class IssueInterestService {
         int floor = calculateFloor(agentId, issueId);
         int boosted = record.getInterestLevel() + 2;
         record.setInterestLevel(Math.max(floor, capInterest(agentId, Math.max(floor, boosted))));
+        if (telemetryStore != null) {
+            telemetryStore.recordIssueAccess(agentId);
+        }
         touch(record, now);
         saveAll();
         return record;
@@ -229,6 +240,9 @@ public class IssueInterestService {
         }
         int safeCount = Math.max(1, count);
         int next = agentActivationCounts.merge(agentId.toLowerCase(), safeCount, Integer::sum);
+        if (telemetryStore != null) {
+            telemetryStore.recordActivation(agentId, safeCount);
+        }
         saveAll();
         decayAgent(agentId);
         return next;
@@ -327,6 +341,9 @@ public class IssueInterestService {
         if (nextLevel != level) {
             record.setInterestLevel(nextLevel);
             touch(record, System.currentTimeMillis());
+            if (telemetryStore != null) {
+                telemetryStore.recordIssueDemotion(record.getAgentId());
+            }
             return true;
         }
         return false;
@@ -485,6 +502,9 @@ public class IssueInterestService {
         if (nextLevel != level) {
             record.setInterestLevel(nextLevel);
             touch(record, System.currentTimeMillis());
+            if (telemetryStore != null) {
+                telemetryStore.recordIssueDemotion(record.getAgentId());
+            }
             return true;
         }
         return false;

@@ -7782,6 +7782,87 @@ textarea.settings-control.settings-control-wide {
     display: block;
 }
 
+.widget-team-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.team-activity-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+}
+
+.team-activity-total {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+}
+
+.team-activity-total strong {
+    font-size: 16px;
+    color: var(--text-bright);
+}
+
+.team-activity-legend {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.team-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.team-activity-row {
+    display: grid;
+    grid-template-columns: 1.2fr repeat(3, minmax(60px, 1fr));
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 12px;
+}
+
+.team-activity-name {
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.team-activity-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.team-activity-metric span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+
+.team-activity-metric strong {
+    font-size: 13px;
+    color: var(--text-bright);
+}
+
+.team-activity-metric em {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
 .workbench-briefing-header {
     display: flex;
     gap: 12px;

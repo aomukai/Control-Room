@@ -2,6 +2,7 @@ package com.miniide;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.FileService;
+import com.miniide.models.TelemetryConfig;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -17,6 +18,8 @@ public class ProjectContext {
     private AgentEndpointRegistry agentEndpointRegistry;
     private TieringService tieringService;
     private IssueInterestService issueInterestService;
+    private TelemetryStore telemetryStore;
+    private TelemetryConfigStore telemetryConfigStore;
     private PatchService patchService;
     private PromptRegistry promptRegistry;
     private ProjectPreparationService preparationService;
@@ -35,6 +38,11 @@ public class ProjectContext {
         this.agentEndpointRegistry = new AgentEndpointRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
         this.tieringService = new TieringService(workspaceService.getWorkspaceRoot(), objectMapper, agentRegistry);
         this.issueInterestService = new IssueInterestService(workspaceService.getWorkspaceRoot(), agentRegistry);
+        this.telemetryConfigStore = new TelemetryConfigStore(workspaceService.getWorkspaceRoot(), objectMapper);
+        TelemetryConfig defaultTelemetryConfig = new TelemetryConfig();
+        TelemetryConfig telemetryConfig = telemetryConfigStore.loadOrDefault(defaultTelemetryConfig);
+        this.telemetryStore = new TelemetryStore(workspaceService.getWorkspaceRoot(), objectMapper, telemetryConfig);
+        this.issueInterestService.setTelemetryStore(telemetryStore);
         this.preparedWorkspaceService = new PreparedWorkspaceService(workspaceService.getWorkspaceRoot(), objectMapper);
         this.patchService = new PatchService(workspaceService, preparedWorkspaceService);
         this.promptRegistry = new PromptRegistry(workspaceService.getWorkspaceRoot(), objectMapper);
@@ -72,6 +80,14 @@ public class ProjectContext {
 
     public IssueInterestService issueInterest() {
         return issueInterestService;
+    }
+
+    public TelemetryStore telemetry() {
+        return telemetryStore;
+    }
+
+    public TelemetryConfigStore telemetryConfigStore() {
+        return telemetryConfigStore;
     }
 
     public PatchService patches() {

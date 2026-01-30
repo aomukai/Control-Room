@@ -592,11 +592,94 @@
 
             this.container.innerHTML = `
                 <div class="widget-team-activity">
-                    <div class="workbench-card-subtitle">Last 24 hours.</div>
-                    <div class="workbench-placeholder">Telemetry and token usage are coming soon.</div>
-                    <div class="workbench-card-detail">Token usage, active sessions, and throughput will appear here.</div>
+                    <div class="workbench-card-subtitle">Session telemetry.</div>
+                    <div class="workbench-placeholder">Loading telemetry…</div>
                 </div>
             `;
+
+            if (!window.telemetryApi) {
+                return;
+            }
+
+            try {
+                const summary = await telemetryApi.getSummary();
+                const session = summary?.session || {};
+                const totals = summary?.totals || {};
+                const sessionTotals = session.totals || {};
+                const sessionAgents = session.agents || {};
+                const totalAgents = totals.agents || {};
+                const agents = (state && state.agents && state.agents.list) || [];
+
+                const formatCount = (value) => {
+                    const num = Number(value) || 0;
+                    return num.toLocaleString();
+                };
+
+                const renderAgentRow = (agentId) => {
+                    const agent = agents.find(a => a.id === agentId);
+                    const label = agent ? (agent.name || agent.id) : agentId;
+                    const sessionStats = sessionAgents[agentId] || {};
+                    const totalStats = totalAgents[agentId] || {};
+                    return `
+                        <div class="team-activity-row">
+                            <div class="team-activity-name">${escapeHtml(label)}</div>
+                            <div class="team-activity-metric">
+                                <span>Act</span>
+                                <strong>${formatCount(sessionStats.activations)}</strong>
+                                <em>${formatCount(totalStats.activations)}</em>
+                            </div>
+                            <div class="team-activity-metric">
+                                <span>In</span>
+                                <strong>${formatCount(sessionStats.tokensIn)}</strong>
+                                <em>${formatCount(totalStats.tokensIn)}</em>
+                            </div>
+                            <div class="team-activity-metric">
+                                <span>Out</span>
+                                <strong>${formatCount(sessionStats.tokensOut)}</strong>
+                                <em>${formatCount(totalStats.tokensOut)}</em>
+                            </div>
+                        </div>
+                    `;
+                };
+
+                const agentIds = Array.from(new Set([
+                    ...Object.keys(sessionAgents),
+                    ...Object.keys(totalAgents)
+                ]));
+
+                const sessionStart = session.startedAt ? new Date(session.startedAt).toLocaleString() : 'Unknown';
+
+                this.container.innerHTML = `
+                    <div class="widget-team-activity">
+                        <div class="workbench-card-subtitle">Session started ${escapeHtml(sessionStart)}</div>
+                        <div class="team-activity-totals">
+                            <div class="team-activity-total">
+                                <span>Session activations</span>
+                                <strong>${formatCount(sessionTotals.activations)}</strong>
+                            </div>
+                            <div class="team-activity-total">
+                                <span>Session tokens in</span>
+                                <strong>${formatCount(sessionTotals.tokensIn)}</strong>
+                            </div>
+                            <div class="team-activity-total">
+                                <span>Session tokens out</span>
+                                <strong>${formatCount(sessionTotals.tokensOut)}</strong>
+                            </div>
+                        </div>
+                        <div class="team-activity-legend">Per agent (session / lifetime)</div>
+                        <div class="team-activity-list">
+                            ${agentIds.length ? agentIds.map(renderAgentRow).join('') : '<div class="workbench-placeholder">No telemetry yet.</div>'}
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                this.container.innerHTML = `
+                    <div class="widget-team-activity">
+                        <div class="workbench-card-subtitle">Session telemetry.</div>
+                        <div class="workbench-placeholder">Telemetry unavailable.</div>
+                    </div>
+                `;
+            }
         }
     }
 

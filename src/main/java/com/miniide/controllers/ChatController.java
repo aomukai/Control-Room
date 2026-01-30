@@ -7,6 +7,7 @@ import com.miniide.AgentTurnGate;
 import com.miniide.MemoryService;
 import com.miniide.IssueMemoryService;
 import com.miniide.ProjectContext;
+import com.miniide.TelemetryStore;
 import com.miniide.models.Agent;
 import com.miniide.models.Comment;
 import com.miniide.models.Issue;
@@ -139,6 +140,11 @@ public class ChatController implements Controller {
                 final String finalPrompt = prompt;
                 String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
                 response = stripThinkingTags(response);
+                if (projectContext != null && projectContext.telemetry() != null) {
+                    long tokensIn = TelemetryStore.estimateTokens(finalPrompt);
+                    long tokensOut = TelemetryStore.estimateTokens(response);
+                    projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut);
+                }
                 ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
                 return;
             }
@@ -147,6 +153,15 @@ public class ChatController implements Controller {
 
             ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
         } catch (Exception e) {
+            if (projectContext != null && projectContext.telemetry() != null) {
+                String agentId = null;
+                try {
+                    JsonNode json = objectMapper.readTree(ctx.body());
+                    agentId = json.has("agentId") ? json.get("agentId").asText(null) : null;
+                } catch (Exception ignored) {
+                }
+                projectContext.telemetry().recordError(agentId);
+            }
             ctx.status(500).json(Controller.errorBody(e));
         }
     }
