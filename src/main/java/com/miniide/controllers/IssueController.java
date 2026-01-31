@@ -517,6 +517,13 @@ public class IssueController implements Controller {
 
             Comment stored = issueService.addComment(issueId, author, body, action, impactLevel, evidence);
             logger.info("Comment added to Issue #" + issueId + " by " + author);
+            IssueInterestService interestService = projectContext != null ? projectContext.issueInterest() : null;
+            if (interestService != null) {
+                String agentId = resolveAgentId(author);
+                if (agentId != null) {
+                    interestService.recordAccess(agentId, issueId);
+                }
+            }
             awardCommentCredit(stored, issueId);
             ctx.status(201).json(stored);
         } catch (NumberFormatException e) {

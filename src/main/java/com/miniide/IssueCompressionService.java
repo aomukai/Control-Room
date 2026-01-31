@@ -50,6 +50,7 @@ public class IssueCompressionService {
         if (parsed == null || parsed.isEmpty()) {
             throw new IllegalStateException("Compression response did not contain valid JSON");
         }
+        validateCompression(parsed);
         return parsed;
     }
 
@@ -144,12 +145,14 @@ public class IssueCompressionService {
         builder.append("LEVEL 1 -- Semantic Trace\n");
         builder.append("- ONE sentence only.\n");
         builder.append("- Capture the core fact or decision that must remain true.\n");
-        builder.append("- Omit motivations, tone, personality, and explanations.\n\n");
+        builder.append("- Omit motivations, tone, personality, and explanations.\n");
+        builder.append("- Must be materially shorter than Level 2.\n\n");
         builder.append("LEVEL 2 -- Resolution Summary\n");
         builder.append("- 1-2 sentences.\n");
         builder.append("- State WHAT happened and the final outcome.\n");
         builder.append("- Include concrete entities (agent names, tools, models) if they matter.\n");
-        builder.append("- Do not generalize.\n\n");
+        builder.append("- Do not generalize.\n");
+        builder.append("- Do NOT reuse Level 3 wording or sentences.\n\n");
         builder.append("LEVEL 3 -- Compressed Summary\n");
         builder.append("- Short paragraph (2-4 sentences max).\n");
         builder.append("- This is the LAST memory before full evidence.\n");
@@ -161,6 +164,7 @@ public class IssueCompressionService {
         builder.append("Hard constraints:\n");
         builder.append("- Do NOT invent facts.\n");
         builder.append("- Do NOT paraphrase the same sentence across levels.\n");
+        builder.append("- Each level must introduce fewer facts than the level above it.\n");
         builder.append("- Prefer specific nouns over generic abstractions.\n\n");
         builder.append("Issue:\n");
         builder.append("ID: ").append(issue.getId()).append("\n");
@@ -211,6 +215,21 @@ public class IssueCompressionService {
         }
     }
 
+    private void validateCompression(CompressionResult result) {
+        if (result == null) {
+            throw new IllegalStateException("Compression response missing levels");
+        }
+        if (isBlank(result.level1) || isBlank(result.level2) || isBlank(result.level3)) {
+            throw new IllegalStateException("Compression response missing one or more levels");
+        }
+        String n1 = normalizeForCompare(result.level1);
+        String n2 = normalizeForCompare(result.level2);
+        String n3 = normalizeForCompare(result.level3);
+        if (n1.equals(n2) || n2.equals(n3)) {
+            throw new IllegalStateException("Compression levels overlap too closely");
+        }
+    }
+
     private String pick(JsonNode node, String... keys) {
         if (node == null) return null;
         for (String key : keys) {
@@ -228,6 +247,16 @@ public class IssueCompressionService {
             return null;
         }
         return text.substring(start, end + 1).trim();
+    }
+
+    private String normalizeForCompare(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9 ]", "")
+            .replaceAll("\\s+", " ")
+            .trim();
     }
 
     private String stripThinkingTags(String content) {

@@ -23,6 +23,9 @@ public class TelemetryController implements Controller {
     @Override
     public void registerRoutes(Javalin app) {
         app.get("/api/telemetry/summary", this::getSummary);
+        app.get("/api/telemetry/status", this::getStatus);
+        app.post("/api/telemetry/test", this::runTest);
+        app.post("/api/telemetry/prune", this::pruneNow);
         app.get("/api/telemetry/config", this::getConfig);
         app.put("/api/telemetry/config", this::updateConfig);
     }
@@ -43,6 +46,59 @@ public class TelemetryController implements Controller {
             "totals", totals,
             "session", session
         ));
+    }
+
+    private void getStatus(Context ctx) {
+        TelemetryStore store = store();
+        if (store == null) {
+            ctx.status(500).json(Map.of("error", "Telemetry store unavailable"));
+            return;
+        }
+        ctx.json(store.getStatusSnapshot());
+    }
+
+    private void runTest(Context ctx) {
+        TelemetryStore store = store();
+        if (store == null) {
+            ctx.status(500).json(Map.of("error", "Telemetry store unavailable"));
+            return;
+        }
+        String agentId = null;
+        long tokensIn = 120;
+        long tokensOut = 80;
+        int activations = 1;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                com.fasterxml.jackson.databind.JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("agentId")) {
+                    agentId = json.get("agentId").asText(null);
+                }
+                if (json.has("tokensIn")) {
+                    tokensIn = Math.max(0, json.get("tokensIn").asLong(tokensIn));
+                }
+                if (json.has("tokensOut")) {
+                    tokensOut = Math.max(0, json.get("tokensOut").asLong(tokensOut));
+                }
+                if (json.has("activations")) {
+                    activations = Math.max(1, json.get("activations").asInt(activations));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        store.recordActivation(agentId != null ? agentId : "system", activations);
+        store.recordIssueAccess(agentId != null ? agentId : "system");
+        store.recordTokens(agentId != null ? agentId : "system", tokensIn, tokensOut);
+        ctx.json(store.getStatusSnapshot());
+    }
+
+    private void pruneNow(Context ctx) {
+        TelemetryStore store = store();
+        if (store == null) {
+            ctx.status(500).json(Map.of("error", "Telemetry store unavailable"));
+            return;
+        }
+        int deleted = store.pruneNow();
+        ctx.json(Map.of("deleted", deleted));
     }
 
     private void getConfig(Context ctx) {

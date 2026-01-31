@@ -16,6 +16,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -68,6 +69,31 @@ public class TelemetryStore {
         this.config = config;
         saveAll();
         pruneIfNeeded();
+    }
+
+    public synchronized Map<String, Object> getStatusSnapshot() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("enabled", isEnabled());
+        status.put("telemetryRoot", telemetryRoot != null ? telemetryRoot.toString() : null);
+        status.put("sessionsDir", sessionsDir != null ? sessionsDir.toString() : null);
+        status.put("totalsPath", totalsPath != null ? totalsPath.toString() : null);
+        status.put("indexPath", indexPath != null ? indexPath.toString() : null);
+        status.put("currentSessionId", currentSessionId);
+        status.put("sessionCount", index != null && index.getSessions() != null ? index.getSessions().size() : 0);
+        status.put("totalSizeBytes", totalSessionSizeBytes());
+        status.put("maxSessions", config != null ? config.getMaxSessions() : null);
+        status.put("maxAgeDays", config != null ? config.getMaxAgeDays() : null);
+        status.put("maxTotalMb", config != null ? config.getMaxTotalMb() : null);
+        RetentionPreview preview = buildRetentionPreview();
+        status.put("wouldDeleteCount", preview.toDeleteCount);
+        status.put("wouldDeleteIds", preview.toDeleteIds);
+        status.put("oldestSessionStartedAt", preview.oldestStartedAt);
+        status.put("newestSessionStartedAt", preview.newestStartedAt);
+        return status;
+    }
+
+    public synchronized int pruneNow() {
+        return prune(true).deletedCount;
     }
 
     public synchronized void recordActivation(String agentId, int count) {
@@ -250,12 +276,20 @@ public class TelemetryStore {
     }
 
     private void pruneIfNeeded() {
-        if (!isEnabled()) {
-            return;
+        prune(false);
+    }
+
+    private RetentionResult prune(boolean force) {
+        RetentionResult result = new RetentionResult();
+        if (!force && !isEnabled()) {
+            return result;
+        }
+        if (index == null || index.getSessions() == null) {
+            return result;
         }
         List<TelemetrySessionInfo> sessions = new ArrayList<>(index.getSessions());
         if (sessions.isEmpty()) {
-            return;
+            return result;
         }
         sessions.sort(Comparator.comparingLong(TelemetrySessionInfo::getStartedAt).reversed());
         int maxSessions = config != null ? config.getMaxSessions() : 200;
@@ -271,6 +305,8 @@ public class TelemetryStore {
             }
             if (maxSessions > 0 && keep.size() >= maxSessions) {
                 deleteSession(info);
+                result.deletedCount++;
+                result.deletedIds.add(info.getId());
                 continue;
             }
             if (maxAgeDays > 0) {
@@ -278,6 +314,8 @@ public class TelemetryStore {
                 long maxAgeMs = maxAgeDays * 24L * 60 * 60 * 1000;
                 if (ageMs > maxAgeMs) {
                     deleteSession(info);
+                    result.deletedCount++;
+                    result.deletedIds.add(info.getId());
                     continue;
                 }
             }
@@ -298,6 +336,8 @@ public class TelemetryStore {
                 long size = sessionSize(info);
                 deleteSession(info);
                 keep.remove(info);
+                result.deletedCount++;
+                result.deletedIds.add(info.getId());
                 totalSize = Math.max(0L, totalSize - size);
                 idx++;
             }
@@ -307,6 +347,86 @@ public class TelemetryStore {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(indexPath.toFile(), index);
         } catch (Exception ignored) {
         }
+        return result;
+    }
+
+    private long totalSessionSizeBytes() {
+        if (index == null || index.getSessions() == null) {
+            return 0L;
+        }
+        return index.getSessions().stream().mapToLong(this::sessionSize).sum();
+    }
+
+    private RetentionPreview buildRetentionPreview() {
+        RetentionPreview preview = new RetentionPreview();
+        if (index == null || index.getSessions() == null) {
+            return preview;
+        }
+        List<TelemetrySessionInfo> sessions = new ArrayList<>(index.getSessions());
+        if (sessions.isEmpty()) {
+            return preview;
+        }
+        sessions.sort(Comparator.comparingLong(TelemetrySessionInfo::getStartedAt).reversed());
+        preview.newestStartedAt = sessions.get(0).getStartedAt();
+        preview.oldestStartedAt = sessions.get(sessions.size() - 1).getStartedAt();
+
+        int maxSessions = config != null ? config.getMaxSessions() : 200;
+        int maxAgeDays = config != null ? config.getMaxAgeDays() : 90;
+        int maxTotalMb = config != null ? config.getMaxTotalMb() : 50;
+
+        List<TelemetrySessionInfo> keep = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        for (TelemetrySessionInfo info : sessions) {
+            if (info.getId() != null && info.getId().equals(currentSessionId)) {
+                keep.add(info);
+                continue;
+            }
+            if (maxSessions > 0 && keep.size() >= maxSessions) {
+                preview.toDeleteIds.add(info.getId());
+                continue;
+            }
+            if (maxAgeDays > 0) {
+                long ageMs = now - info.getStartedAt();
+                long maxAgeMs = maxAgeDays * 24L * 60 * 60 * 1000;
+                if (ageMs > maxAgeMs) {
+                    preview.toDeleteIds.add(info.getId());
+                    continue;
+                }
+            }
+            keep.add(info);
+        }
+        if (maxTotalMb > 0) {
+            long limit = maxTotalMb * MB;
+            List<TelemetrySessionInfo> sizeSorted = new ArrayList<>(keep);
+            sizeSorted.sort(Comparator.comparingLong(TelemetrySessionInfo::getStartedAt));
+            long totalSize = sizeSorted.stream().mapToLong(this::sessionSize).sum();
+            int idx = 0;
+            while (totalSize > limit && idx < sizeSorted.size()) {
+                TelemetrySessionInfo info = sizeSorted.get(idx);
+                if (info.getId().equals(currentSessionId)) {
+                    idx++;
+                    continue;
+                }
+                long size = sessionSize(info);
+                preview.toDeleteIds.add(info.getId());
+                totalSize = Math.max(0L, totalSize - size);
+                idx++;
+            }
+        }
+        preview.toDeleteCount = preview.toDeleteIds.size();
+        return preview;
+    }
+
+    private static class RetentionPreview {
+        private int toDeleteCount = 0;
+        private List<String> toDeleteIds = new ArrayList<>();
+        private Long oldestStartedAt;
+        private Long newestStartedAt;
+    }
+
+    private static class RetentionResult {
+        private int deletedCount = 0;
+        private List<String> deletedIds = new ArrayList<>();
     }
 
     private void deleteSession(TelemetrySessionInfo info) {

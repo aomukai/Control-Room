@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IssueInterestService {
     private static final int DEFAULT_INTEREST_LEVEL = 3;
     private static final int EPOCH_BASE_AGE = 50;
+    private static final int LEECH_ACCESS_THRESHOLD = 3;
+    private static final int LEECH_ACCESS_WINDOW = 20;
     private static final Map<Integer, Integer> DECAY_THRESHOLDS = Map.of(
         5, 30,
         4, 60,
@@ -40,6 +42,7 @@ public class IssueInterestService {
     private final AgentRegistry agentRegistry;
     private IssueMemoryService issueMemoryService;
     private TelemetryStore telemetryStore;
+    private NotificationStore notificationStore;
     private Path storagePath;
     private Path activationPath;
 
@@ -54,6 +57,10 @@ public class IssueInterestService {
 
     public void setTelemetryStore(TelemetryStore telemetryStore) {
         this.telemetryStore = telemetryStore;
+    }
+
+    public void setNotificationStore(NotificationStore notificationStore) {
+        this.notificationStore = notificationStore;
     }
 
     public synchronized void switchWorkspace(Path workspaceRoot) {
@@ -97,9 +104,15 @@ public class IssueInterestService {
         record.setAccessCount(record.getAccessCount() + 1);
         long activationCount = getAgentActivationCount(agentId);
         record.setLastAccessedAtActivation(activationCount);
+        updateAccessWindow(record, activationCount);
         int floor = calculateFloor(agentId, issueId);
         int desired = Math.max(3, floor);
-        record.setInterestLevel(Math.max(floor, capInterest(agentId, desired)));
+        if (isLeechLocked(record) || isDeferred(record)) {
+            record.setInterestLevel(1);
+        } else {
+            record.setInterestLevel(Math.max(floor, capInterest(agentId, desired)));
+        }
+        evaluateLeechCandidate(record);
         if (telemetryStore != null) {
             telemetryStore.recordIssueAccess(agentId);
         }
@@ -118,7 +131,12 @@ public class IssueInterestService {
         record.setLastAccessedAtActivation(activationCount);
         int floor = calculateFloor(agentId, issueId);
         int boosted = record.getInterestLevel() + 2;
-        record.setInterestLevel(Math.max(floor, capInterest(agentId, Math.max(floor, boosted))));
+        if (isLeechLocked(record) || isDeferred(record)) {
+            record.setInterestLevel(1);
+        } else {
+            record.setInterestLevel(Math.max(floor, capInterest(agentId, Math.max(floor, boosted))));
+        }
+        evaluateLeechCandidate(record);
         if (telemetryStore != null) {
             telemetryStore.recordIssueAccess(agentId);
         }
@@ -135,6 +153,8 @@ public class IssueInterestService {
         record.setInterestLevel(1);
         record.setLastRefreshedAt(now);
         record.setNote(note);
+        clearDeferral(record);
+        clearLeechReview(record, now, note);
         List<String> tags = new ArrayList<>(record.getPersonalTags());
         if (!tags.contains("filtered-out")) {
             tags.add("filtered-out");
@@ -256,10 +276,18 @@ public class IssueInterestService {
     }
 
     public int triggerEpoch(String epochType, List<String> affectedTags) {
-        if (epochType == null || epochType.isBlank()) {
+        List<String> epochTypes = new ArrayList<>();
+        if (epochType != null && !epochType.isBlank()) {
+            epochTypes.add(epochType);
+        }
+        return triggerEpoch(epochTypes, affectedTags);
+    }
+
+    public int triggerEpoch(List<String> epochTypes, List<String> affectedTags) {
+        if (epochTypes == null || epochTypes.isEmpty()) {
             return 0;
         }
-        double multiplier = EPOCH_MULTIPLIERS.getOrDefault(epochType.trim().toLowerCase(), 1.0);
+        double multiplier = resolveEpochMultiplier(epochTypes);
         if (multiplier <= 0) {
             return 0;
         }
@@ -287,6 +315,157 @@ public class IssueInterestService {
         return demoted;
     }
 
+    public List<IssueMemoryRecord> listLeechCandidates(String agentId) {
+        List<IssueMemoryRecord> results = new ArrayList<>();
+        for (IssueMemoryRecord record : records.values()) {
+            if (record == null) {
+                continue;
+            }
+            if (agentId != null && !agentId.isBlank() && !agentId.equalsIgnoreCase(record.getAgentId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(record.getLeechReviewPending())) {
+                results.add(record);
+            }
+        }
+        results.sort(Comparator.comparingInt(IssueMemoryRecord::getIssueId));
+        return results;
+    }
+
+    public IssueMemoryRecord recordContradictionSignal(String agentId, int issueId, int contradictionIssueId, String note) {
+        if (contradictionIssueId <= 0) {
+            throw new IllegalArgumentException("contradictionIssueId is required");
+        }
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        List<Integer> contradictionIds = new ArrayList<>(record.getLeechContradictionIssueIds());
+        if (!contradictionIds.contains(contradictionIssueId)) {
+            contradictionIds.add(contradictionIssueId);
+        }
+        record.setLeechContradictionIssueIds(contradictionIds);
+        if (note != null && !note.isBlank()) {
+            record.setLeechNote(note);
+        }
+        long now = System.currentTimeMillis();
+        long activationCount = getAgentActivationCount(agentId);
+        evaluateLeechCandidate(record);
+        touch(record, now);
+        saveAll();
+        return record;
+    }
+
+    public IssueMemoryRecord confirmLeech(String agentId, int issueId, String confirmedBy, String note) {
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        long now = System.currentTimeMillis();
+        record.setLeechMarked(true);
+        record.setLeechReviewPending(false);
+        record.setLeechConfirmedAt(now);
+        if (confirmedBy != null && !confirmedBy.isBlank()) {
+            record.setLeechConfirmedBy(confirmedBy);
+        }
+        if (note != null && !note.isBlank()) {
+            record.setLeechNote(note);
+        }
+        record.setInterestLevel(1);
+        clearDeferral(record);
+        touch(record, now);
+        saveAll();
+        return record;
+    }
+
+    public IssueMemoryRecord dismissLeech(String agentId, int issueId, String note) {
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        long now = System.currentTimeMillis();
+        record.setLeechReviewPending(false);
+        record.setLeechDismissedAt(now);
+        if (note != null && !note.isBlank()) {
+            record.setLeechNote(note);
+        }
+        touch(record, now);
+        saveAll();
+        return record;
+    }
+
+    public IssueMemoryRecord deferAccess(String agentId, int issueId, String triggerType, String triggerValue,
+                                         Integer escalateTo, Boolean notify, String message, String reason, String deferredBy) {
+        if (triggerType == null || triggerType.isBlank()) {
+            throw new IllegalArgumentException("triggerType is required");
+        }
+        if (triggerValue == null || triggerValue.isBlank()) {
+            throw new IllegalArgumentException("triggerValue is required");
+        }
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        long now = System.currentTimeMillis();
+        record.setDeferredAccess(true);
+        record.setDeferredTriggerType(triggerType.trim().toLowerCase());
+        record.setDeferredTriggerValue(triggerValue.trim());
+        record.setDeferredEscalateTo(escalateTo != null ? normalizeLevel(escalateTo) : 3);
+        record.setDeferredNotify(Boolean.TRUE.equals(notify));
+        record.setDeferredMessage(message);
+        record.setDeferredReason(reason);
+        record.setDeferredAt(now);
+        record.setDeferredBy(deferredBy);
+        record.setInterestLevel(1);
+        record.setLeechReviewPending(false);
+        touch(record, now);
+        saveAll();
+        return record;
+    }
+
+    public int triggerDeferrals(String triggerType, String triggerValue, String agentId) {
+        if (triggerType == null || triggerType.isBlank() || triggerValue == null || triggerValue.isBlank()) {
+            return 0;
+        }
+        String normalizedType = triggerType.trim().toLowerCase();
+        int updated = 0;
+        for (IssueMemoryRecord record : records.values()) {
+            if (record == null || !Boolean.TRUE.equals(record.getDeferredAccess())) {
+                continue;
+            }
+            if (agentId != null && !agentId.isBlank() && !agentId.equalsIgnoreCase(record.getAgentId())) {
+                continue;
+            }
+            if (!matchesTrigger(record, normalizedType, triggerValue.trim())) {
+                continue;
+            }
+            if (isLeechLocked(record)) {
+                continue;
+            }
+            int floor = calculateFloor(record.getAgentId(), record.getIssueId());
+            int target = record.getDeferredEscalateTo() != null ? record.getDeferredEscalateTo() : 3;
+            record.setInterestLevel(Math.max(floor, capInterest(record.getAgentId(), target)));
+            boolean notify = Boolean.TRUE.equals(record.getDeferredNotify());
+            String message = record.getDeferredMessage();
+            clearDeferral(record);
+            touch(record, System.currentTimeMillis());
+            if (notify) {
+                notifyDeferredTriggered(record, message);
+            }
+            updated++;
+        }
+        if (updated > 0) {
+            saveAll();
+        }
+        return updated;
+    }
+
+    public IssueMemoryRecord approveAccess(String agentId, int issueId, int level, String approvedBy, String note) {
+        IssueMemoryRecord record = getOrCreate(agentId, issueId);
+        int target = Math.max(1, Math.min(5, level));
+        int floor = calculateFloor(agentId, issueId);
+        record.setInterestLevel(Math.max(floor, capInterest(agentId, target)));
+        clearDeferral(record);
+        if (approvedBy != null && !approvedBy.isBlank()) {
+            record.setLeechConfirmedBy(approvedBy);
+        }
+        if (note != null && !note.isBlank()) {
+            record.setLeechNote(note);
+        }
+        record.setLastRefreshedAt(System.currentTimeMillis());
+        touch(record, System.currentTimeMillis());
+        saveAll();
+        return record;
+    }
+
     private IssueMemoryRecord getOrCreate(String agentId, int issueId) {
         if (agentId == null || agentId.isBlank()) {
             throw new IllegalArgumentException("agentId is required");
@@ -307,6 +486,8 @@ public class IssueInterestService {
         record.setInterestLevel(Math.max(floor, capInterest(agentId, DEFAULT_INTEREST_LEVEL)));
         record.setAccessCount(0);
         record.setLastAccessedAtActivation((long) getAgentActivationCount(agentId));
+        record.setAccessWindowCount(0);
+        record.setAccessWindowStartActivation((long) getAgentActivationCount(agentId));
         record.setCreatedAt(now);
         record.setUpdatedAt(now);
         records.put(key, record);
@@ -315,6 +496,9 @@ public class IssueInterestService {
 
     private boolean decayRecord(IssueMemoryRecord record, long activationCount) {
         if (record == null) {
+            return false;
+        }
+        if (isLeechLocked(record) || isDeferred(record)) {
             return false;
         }
         int level = normalizeLevel(record.getInterestLevel());
@@ -477,6 +661,9 @@ public class IssueInterestService {
         if (record == null) {
             return false;
         }
+        if (isLeechLocked(record) || isDeferred(record)) {
+            return false;
+        }
         int level = normalizeLevel(record.getInterestLevel());
         if (level <= 1) {
             return false;
@@ -515,6 +702,160 @@ public class IssueInterestService {
         if (record.getCreatedAt() == null) {
             record.setCreatedAt(timestamp);
         }
+    }
+
+    private void updateAccessWindow(IssueMemoryRecord record, long activationCount) {
+        Long windowStart = record.getAccessWindowStartActivation();
+        Integer windowCount = record.getAccessWindowCount();
+        if (windowStart == null || windowCount == null) {
+            record.setAccessWindowStartActivation(activationCount);
+            record.setAccessWindowCount(1);
+            return;
+        }
+        long delta = activationCount - windowStart;
+        if (delta > LEECH_ACCESS_WINDOW) {
+            record.setAccessWindowStartActivation(activationCount);
+            record.setAccessWindowCount(1);
+            return;
+        }
+        record.setAccessWindowCount(windowCount + 1);
+    }
+
+    private void evaluateLeechCandidate(IssueMemoryRecord record) {
+        if (record == null) {
+            return;
+        }
+        if (isLeechLocked(record) || Boolean.TRUE.equals(record.getLeechReviewPending())) {
+            return;
+        }
+        if (!hasContradictionSignal(record)) {
+            return;
+        }
+        Integer windowCount = record.getAccessWindowCount();
+        if (windowCount == null || windowCount < LEECH_ACCESS_THRESHOLD) {
+            return;
+        }
+        record.setLeechReviewPending(true);
+        record.setLeechFlaggedAt(System.currentTimeMillis());
+        notifyLeechReview(record);
+    }
+
+    private boolean hasContradictionSignal(IssueMemoryRecord record) {
+        return record.getLeechContradictionIssueIds() != null && !record.getLeechContradictionIssueIds().isEmpty();
+    }
+
+    private void notifyLeechReview(IssueMemoryRecord record) {
+        if (notificationStore == null) {
+            return;
+        }
+        String message = "Potential leech: " + record.getAgentId() + " + Issue #" + record.getIssueId();
+        String details = "Access window: " + (record.getAccessWindowCount() != null ? record.getAccessWindowCount() : 0)
+            + " over " + LEECH_ACCESS_WINDOW + " activations. Contradiction issue(s): "
+            + record.getLeechContradictionIssueIds();
+        notificationStore.push(
+            com.miniide.models.Notification.Level.WARNING,
+            com.miniide.models.Notification.Scope.WORKBENCH,
+            message,
+            details,
+            com.miniide.models.Notification.Category.ATTENTION,
+            true,
+            "Review",
+            Map.of("kind", "openIssue", "issueId", record.getIssueId()),
+            "issue-memory"
+        );
+    }
+
+    private void notifyDeferredTriggered(IssueMemoryRecord record, String message) {
+        if (notificationStore == null) {
+            return;
+        }
+        String base = "Wiedervorlage: Issue #" + record.getIssueId() + " reopened for " + record.getAgentId();
+        notificationStore.push(
+            com.miniide.models.Notification.Level.INFO,
+            com.miniide.models.Notification.Scope.WORKBENCH,
+            base,
+            message,
+            com.miniide.models.Notification.Category.INFO,
+            false,
+            "Open",
+            Map.of("kind", "openIssue", "issueId", record.getIssueId()),
+            "issue-memory"
+        );
+    }
+
+    private void clearDeferral(IssueMemoryRecord record) {
+        record.setDeferredAccess(false);
+        record.setDeferredTriggerType(null);
+        record.setDeferredTriggerValue(null);
+        record.setDeferredEscalateTo(null);
+        record.setDeferredNotify(null);
+        record.setDeferredMessage(null);
+        record.setDeferredReason(null);
+        record.setDeferredAt(null);
+        record.setDeferredBy(null);
+    }
+
+    private void clearLeechReview(IssueMemoryRecord record, long now, String note) {
+        record.setLeechReviewPending(false);
+        record.setLeechDismissedAt(now);
+        if (note != null && !note.isBlank()) {
+            record.setLeechNote(note);
+        }
+    }
+
+    private boolean isLeechLocked(IssueMemoryRecord record) {
+        return record != null && Boolean.TRUE.equals(record.getLeechMarked());
+    }
+
+    private boolean isDeferred(IssueMemoryRecord record) {
+        return record != null && Boolean.TRUE.equals(record.getDeferredAccess());
+    }
+
+    private boolean matchesTrigger(IssueMemoryRecord record, String triggerType, String triggerValue) {
+        if (record == null) {
+            return false;
+        }
+        String storedType = record.getDeferredTriggerType();
+        String storedValue = record.getDeferredTriggerValue();
+        if (storedType == null || storedValue == null) {
+            return false;
+        }
+        if (!storedType.equalsIgnoreCase(triggerType)) {
+            return false;
+        }
+        switch (storedType) {
+            case "scene_reached":
+                return compareNumericTrigger(storedValue, triggerValue);
+            case "milestone":
+            case "tag_appeared":
+                return storedValue.equalsIgnoreCase(triggerValue);
+            default:
+                return false;
+        }
+    }
+
+    private boolean compareNumericTrigger(String storedValue, String triggerValue) {
+        try {
+            long stored = Long.parseLong(storedValue.trim());
+            long current = Long.parseLong(triggerValue.trim());
+            return current >= stored;
+        } catch (NumberFormatException e) {
+            return storedValue.equalsIgnoreCase(triggerValue);
+        }
+    }
+
+    private double resolveEpochMultiplier(List<String> epochTypes) {
+        double multiplier = 1.0;
+        for (String type : epochTypes) {
+            if (type == null || type.isBlank()) {
+                continue;
+            }
+            double candidate = EPOCH_MULTIPLIERS.getOrDefault(type.trim().toLowerCase(), 1.0);
+            if (candidate > multiplier) {
+                multiplier = candidate;
+            }
+        }
+        return multiplier;
     }
 
     private List<String> normalizePersonalTags(List<String> tags) {

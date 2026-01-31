@@ -178,6 +178,53 @@
                 body: JSON.stringify(payload)
             });
         },
+        async contradiction(agentId, issueId, contradictionIssueId, note) {
+            const payload = { contradictionIssueId };
+            if (note) {
+                payload.note = note;
+            }
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/contradiction`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async confirmLeech(agentId, issueId, confirmedBy, note) {
+            const payload = {};
+            if (confirmedBy) payload.confirmedBy = confirmedBy;
+            if (note) payload.note = note;
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/leech/confirm`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async dismissLeech(agentId, issueId, note) {
+            const payload = note ? { note } : {};
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/leech/dismiss`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
+        async defer(agentId, issueId, payload) {
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/defer`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
+        async approve(agentId, issueId, level, approvedBy, note) {
+            const payload = {};
+            if (level) payload.level = level;
+            if (approvedBy) payload.approvedBy = approvedBy;
+            if (note) payload.note = note;
+            return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        },
         async activate(agentId, count) {
             return api(`/api/issue-memory/agents/${encodeURIComponent(agentId)}/activate`, {
                 method: 'POST',
@@ -208,6 +255,23 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+        },
+        async leeches(agentId) {
+            const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+            return api(`/api/issue-memory/leeches${query}`);
+        },
+        async triggerDeferral(type, value, agentId) {
+            const payload = {
+                trigger: { type, value }
+            };
+            if (agentId) {
+                payload.agentId = agentId;
+            }
+            return api('/api/issue-memory/wiedervorlage/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
         }
     };
 
@@ -227,6 +291,21 @@
     const telemetryApi = {
         async getSummary() {
             return api('/api/telemetry/summary');
+        },
+        async getStatus() {
+            return api('/api/telemetry/status');
+        },
+        async runTest(payload) {
+            return api('/api/telemetry/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+        },
+        async prune() {
+            return api('/api/telemetry/prune', {
+                method: 'POST'
+            });
         },
         async getConfig() {
             return api('/api/telemetry/config');

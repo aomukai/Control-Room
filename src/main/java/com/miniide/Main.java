@@ -58,7 +58,8 @@ public class Main {
             notificationStore.setCurrentProjectId(projectName);
             IssueMemoryService issueService = new IssueMemoryService(config.getWorkspacePath());
             if (projectContext.issueInterest() != null) {
-                projectContext.issueInterest().setIssueMemoryService(issueService);
+            projectContext.issueInterest().setIssueMemoryService(issueService);
+            projectContext.issueInterest().setNotificationStore(notificationStore);
             }
             CreditStore creditStore = new CreditStore(config.getWorkspacePath());
             MemoryService memoryService = new MemoryService();

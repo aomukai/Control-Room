@@ -28,10 +28,17 @@ public class IssueMemoryController implements Controller {
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/applied", this::recordApplied);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/irrelevant", this::markIrrelevant);
         app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/tags", this::updatePersonalTags);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/contradiction", this::recordContradiction);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/leech/confirm", this::confirmLeech);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/leech/dismiss", this::dismissLeech);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/defer", this::deferAccess);
+        app.post("/api/issue-memory/agents/{agentId}/issues/{issueId}/approve", this::approveAccess);
         app.post("/api/issue-memory/agents/{agentId}/activate", this::recordActivation);
         app.get("/api/issue-memory/agents/{agentId}/activation", this::getActivationCount);
         app.post("/api/issue-memory/decay", this::runDecay);
         app.post("/api/issue-memory/epoch", this::triggerEpoch);
+        app.get("/api/issue-memory/leeches", this::listLeeches);
+        app.post("/api/issue-memory/wiedervorlage/trigger", this::triggerDeferral);
     }
 
     private IssueInterestService service() {
@@ -172,6 +179,209 @@ public class IssueMemoryController implements Controller {
         }
     }
 
+    private void recordContradiction(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        int contradictionIssueId = 0;
+        String note = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("contradictionIssueId")) {
+                    contradictionIssueId = json.get("contradictionIssueId").asInt(0);
+                }
+                if (json.has("note")) {
+                    note = json.get("note").asText();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (contradictionIssueId <= 0) {
+            ctx.status(400).json(Map.of("error", "contradictionIssueId is required"));
+            return;
+        }
+        try {
+            IssueMemoryRecord record = service.recordContradictionSignal(agentId, issueId, contradictionIssueId, note);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void confirmLeech(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        String confirmedBy = null;
+        String note = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("confirmedBy")) {
+                    confirmedBy = json.get("confirmedBy").asText();
+                }
+                if (json.has("note")) {
+                    note = json.get("note").asText();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            IssueMemoryRecord record = service.confirmLeech(agentId, issueId, confirmedBy, note);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void dismissLeech(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        String note = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("note")) {
+                    note = json.get("note").asText();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            IssueMemoryRecord record = service.dismissLeech(agentId, issueId, note);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void deferAccess(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        String triggerType = null;
+        String triggerValue = null;
+        Integer escalateTo = null;
+        Boolean notify = null;
+        String message = null;
+        String reason = null;
+        String deferredBy = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("trigger") && json.get("trigger").isObject()) {
+                    JsonNode trigger = json.get("trigger");
+                    if (trigger.has("type")) {
+                        triggerType = trigger.get("type").asText(null);
+                    }
+                    if (trigger.has("value")) {
+                        triggerValue = trigger.get("value").asText(null);
+                    }
+                }
+                if (json.has("escalateTo")) {
+                    escalateTo = json.get("escalateTo").asInt(0);
+                }
+                if (json.has("notify")) {
+                    notify = json.get("notify").asBoolean(false);
+                }
+                if (json.has("message")) {
+                    message = json.get("message").asText(null);
+                }
+                if (json.has("reason")) {
+                    reason = json.get("reason").asText(null);
+                }
+                if (json.has("deferredBy")) {
+                    deferredBy = json.get("deferredBy").asText(null);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            IssueMemoryRecord record = service.deferAccess(agentId, issueId, triggerType, triggerValue,
+                escalateTo, notify, message, reason, deferredBy);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void approveAccess(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.pathParam("agentId");
+        int issueId = parseIssueId(ctx);
+        if (issueId <= 0) {
+            return;
+        }
+        int level = 3;
+        String approvedBy = null;
+        String note = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("level")) {
+                    level = json.get("level").asInt(3);
+                }
+                if (json.has("approvedBy")) {
+                    approvedBy = json.get("approvedBy").asText(null);
+                }
+                if (json.has("note")) {
+                    note = json.get("note").asText(null);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            IssueMemoryRecord record = service.approveAccess(agentId, issueId, level, approvedBy, note);
+            ctx.json(record);
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Controller.errorBody(e));
+        }
+    }
+
+    private void listLeeches(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String agentId = ctx.queryParam("agentId");
+        ctx.json(service.listLeechCandidates(agentId));
+    }
+
     private void runDecay(Context ctx) {
         IssueInterestService service = service();
         if (service == null) {
@@ -233,12 +443,21 @@ public class IssueMemoryController implements Controller {
             return;
         }
         String epochType = null;
+        List<String> epochTypes = null;
         List<String> tags = null;
         try {
             if (ctx.body() != null && !ctx.body().isBlank()) {
                 JsonNode json = objectMapper.readTree(ctx.body());
                 if (json.has("epochType")) {
                     epochType = json.get("epochType").asText(null);
+                }
+                if (json.has("epochTypes") && json.get("epochTypes").isArray()) {
+                    epochTypes = new java.util.ArrayList<>();
+                    for (JsonNode typeNode : json.get("epochTypes")) {
+                        if (typeNode != null && !typeNode.isNull()) {
+                            epochTypes.add(typeNode.asText());
+                        }
+                    }
                 }
                 if (json.has("tags") && json.get("tags").isArray()) {
                     tags = new java.util.ArrayList<>();
@@ -251,8 +470,49 @@ public class IssueMemoryController implements Controller {
             }
         } catch (Exception ignored) {
         }
-        int demoted = service.triggerEpoch(epochType, tags);
+        if (epochTypes == null || epochTypes.isEmpty()) {
+            epochTypes = epochType != null ? List.of(epochType) : List.of();
+        }
+        int demoted = service.triggerEpoch(epochTypes, tags);
         ctx.json(Map.of("demoted", demoted));
+    }
+
+    private void triggerDeferral(Context ctx) {
+        IssueInterestService service = service();
+        if (service == null) {
+            ctx.status(500).json(Map.of("error", "Issue memory service unavailable"));
+            return;
+        }
+        String triggerType = null;
+        String triggerValue = null;
+        String agentId = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("trigger") && json.get("trigger").isObject()) {
+                    JsonNode trigger = json.get("trigger");
+                    if (trigger.has("type")) {
+                        triggerType = trigger.get("type").asText(null);
+                    }
+                    if (trigger.has("value")) {
+                        triggerValue = trigger.get("value").asText(null);
+                    }
+                } else {
+                    if (json.has("type")) {
+                        triggerType = json.get("type").asText(null);
+                    }
+                    if (json.has("value")) {
+                        triggerValue = json.get("value").asText(null);
+                    }
+                }
+                if (json.has("agentId")) {
+                    agentId = json.get("agentId").asText(null);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        int updated = service.triggerDeferrals(triggerType, triggerValue, agentId);
+        ctx.json(Map.of("updated", updated));
     }
 
     private int parseIssueId(Context ctx) {

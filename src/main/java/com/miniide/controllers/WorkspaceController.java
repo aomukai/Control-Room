@@ -235,6 +235,7 @@ public class WorkspaceController implements Controller {
                 issueService.switchWorkspace(target);
                 if (projectContext.issueInterest() != null) {
                     projectContext.issueInterest().setIssueMemoryService(issueService);
+                    projectContext.issueInterest().setNotificationStore(notificationStore);
                 }
             }
             if (notificationStore != null) {

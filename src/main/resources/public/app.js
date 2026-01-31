@@ -7961,6 +7961,23 @@ async function showWorkspaceSwitcher() {
         activationCountInput.value = '1';
         activationCountInput.className = 'modal-input dev-tools-input';
 
+        const contradictionLabel = document.createElement('label');
+        contradictionLabel.className = 'modal-label';
+        contradictionLabel.textContent = 'Contradiction issue ID';
+        const contradictionInput = document.createElement('input');
+        contradictionInput.type = 'number';
+        contradictionInput.min = '1';
+        contradictionInput.className = 'modal-input dev-tools-input';
+        contradictionInput.placeholder = '42';
+
+        const leechNoteLabel = document.createElement('label');
+        leechNoteLabel.className = 'modal-label';
+        leechNoteLabel.textContent = 'Leech note (optional)';
+        const leechNoteInput = document.createElement('input');
+        leechNoteInput.type = 'text';
+        leechNoteInput.className = 'modal-input dev-tools-input';
+        leechNoteInput.placeholder = 'Chief note...';
+
         const epochLabel = document.createElement('label');
         epochLabel.className = 'modal-label';
         epochLabel.textContent = 'Epoch type';
@@ -7980,6 +7997,39 @@ async function showWorkspaceSwitcher() {
         epochTagsInput.className = 'modal-input dev-tools-input';
         epochTagsInput.rows = 2;
         epochTagsInput.placeholder = 'chapter-6, act-2';
+
+        const deferTypeLabel = document.createElement('label');
+        deferTypeLabel.className = 'modal-label';
+        deferTypeLabel.textContent = 'Wiedervorlage trigger';
+        const deferTypeSelect = document.createElement('select');
+        deferTypeSelect.className = 'modal-select dev-tools-select';
+        deferTypeSelect.innerHTML = `
+            <option value="">Select trigger</option>
+            <option value="scene_reached">scene_reached</option>
+            <option value="milestone">milestone</option>
+            <option value="tag_appeared">tag_appeared</option>
+        `;
+        const deferValueLabel = document.createElement('label');
+        deferValueLabel.className = 'modal-label';
+        deferValueLabel.textContent = 'Trigger value';
+        const deferValueInput = document.createElement('input');
+        deferValueInput.type = 'text';
+        deferValueInput.className = 'modal-input dev-tools-input';
+        deferValueInput.placeholder = 'e.g. 38 or Chapter 6';
+        const deferMessageLabel = document.createElement('label');
+        deferMessageLabel.className = 'modal-label';
+        deferMessageLabel.textContent = 'Wiedervorlage message';
+        const deferMessageInput = document.createElement('input');
+        deferMessageInput.type = 'text';
+        deferMessageInput.className = 'modal-input dev-tools-input';
+        deferMessageInput.placeholder = 'Optional notify message';
+        const deferReasonLabel = document.createElement('label');
+        deferReasonLabel.className = 'modal-label';
+        deferReasonLabel.textContent = 'Wiedervorlage reason';
+        const deferReasonInput = document.createElement('input');
+        deferReasonInput.type = 'text';
+        deferReasonInput.className = 'modal-input dev-tools-input';
+        deferReasonInput.placeholder = 'Optional reason';
 
         const issueMemoryActions = document.createElement('div');
         issueMemoryActions.className = 'dev-tools-controls';
@@ -8024,6 +8074,36 @@ async function showWorkspaceSwitcher() {
         issueEpochBtn.className = 'modal-btn modal-btn-secondary';
         issueEpochBtn.textContent = 'Trigger epoch';
 
+        const issueContradictionBtn = document.createElement('button');
+        issueContradictionBtn.type = 'button';
+        issueContradictionBtn.className = 'modal-btn modal-btn-secondary';
+        issueContradictionBtn.textContent = 'Flag contradiction';
+
+        const issueLeechConfirmBtn = document.createElement('button');
+        issueLeechConfirmBtn.type = 'button';
+        issueLeechConfirmBtn.className = 'modal-btn modal-btn-secondary';
+        issueLeechConfirmBtn.textContent = 'Confirm leech';
+
+        const issueLeechDismissBtn = document.createElement('button');
+        issueLeechDismissBtn.type = 'button';
+        issueLeechDismissBtn.className = 'modal-btn modal-btn-secondary';
+        issueLeechDismissBtn.textContent = 'Dismiss leech';
+
+        const issueLeechListBtn = document.createElement('button');
+        issueLeechListBtn.type = 'button';
+        issueLeechListBtn.className = 'modal-btn modal-btn-secondary';
+        issueLeechListBtn.textContent = 'List leech alerts';
+
+        const issueDeferBtn = document.createElement('button');
+        issueDeferBtn.type = 'button';
+        issueDeferBtn.className = 'modal-btn modal-btn-secondary';
+        issueDeferBtn.textContent = 'Defer access';
+
+        const issueTriggerDeferralBtn = document.createElement('button');
+        issueTriggerDeferralBtn.type = 'button';
+        issueTriggerDeferralBtn.className = 'modal-btn modal-btn-secondary';
+        issueTriggerDeferralBtn.textContent = 'Trigger deferral';
+
         const issueInspectBtn = document.createElement('button');
         issueInspectBtn.type = 'button';
         issueInspectBtn.className = 'modal-btn modal-btn-secondary';
@@ -8045,6 +8125,12 @@ async function showWorkspaceSwitcher() {
         issueMemoryActions.appendChild(issueAccessBtn);
         issueMemoryActions.appendChild(issueActivationBtn);
         issueMemoryActions.appendChild(issueEpochBtn);
+        issueMemoryActions.appendChild(issueContradictionBtn);
+        issueMemoryActions.appendChild(issueLeechConfirmBtn);
+        issueMemoryActions.appendChild(issueLeechDismissBtn);
+        issueMemoryActions.appendChild(issueLeechListBtn);
+        issueMemoryActions.appendChild(issueDeferBtn);
+        issueMemoryActions.appendChild(issueTriggerDeferralBtn);
         issueMemoryActions.appendChild(issueInspectBtn);
         issueMemoryActions.appendChild(issueActivationInfoBtn);
         issueMemoryActions.appendChild(issueReviveBtn);
@@ -8055,10 +8141,22 @@ async function showWorkspaceSwitcher() {
         issueMemoryControls.appendChild(issueIdInput);
         issueMemoryControls.appendChild(activationCountLabel);
         issueMemoryControls.appendChild(activationCountInput);
+        issueMemoryControls.appendChild(contradictionLabel);
+        issueMemoryControls.appendChild(contradictionInput);
+        issueMemoryControls.appendChild(leechNoteLabel);
+        issueMemoryControls.appendChild(leechNoteInput);
         issueMemoryControls.appendChild(epochLabel);
         issueMemoryControls.appendChild(epochSelect);
         issueMemoryControls.appendChild(epochTagsLabel);
         issueMemoryControls.appendChild(epochTagsInput);
+        issueMemoryControls.appendChild(deferTypeLabel);
+        issueMemoryControls.appendChild(deferTypeSelect);
+        issueMemoryControls.appendChild(deferValueLabel);
+        issueMemoryControls.appendChild(deferValueInput);
+        issueMemoryControls.appendChild(deferMessageLabel);
+        issueMemoryControls.appendChild(deferMessageInput);
+        issueMemoryControls.appendChild(deferReasonLabel);
+        issueMemoryControls.appendChild(deferReasonInput);
         issueMemoryControls.appendChild(issueMemoryActions);
         issueMemoryControls.appendChild(issueMemoryStatus);
 
@@ -8260,6 +8358,136 @@ async function showWorkspaceSwitcher() {
             }
         });
 
+        issueContradictionBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            const contradictionId = parseInt(contradictionInput.value, 10);
+            if (!agentId) {
+                setIssueMemoryStatus('Select an agent first.', 'warning');
+                return;
+            }
+            if (!issueId || !contradictionId) {
+                setIssueMemoryStatus('Enter issue ID and contradiction issue ID.', 'warning');
+                return;
+            }
+            issueContradictionBtn.disabled = true;
+            setIssueMemoryStatus(`Flagging contradiction for Issue #${issueId}...`);
+            try {
+                await issueMemoryApi.contradiction(agentId, issueId, contradictionId, leechNoteInput.value);
+                setIssueMemoryStatus(`Contradiction flagged (Issue #${contradictionId}).`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Flag contradiction failed: ${err.message}`, 'error');
+            } finally {
+                issueContradictionBtn.disabled = false;
+            }
+        });
+
+        issueLeechConfirmBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            if (!agentId || !issueId) {
+                setIssueMemoryStatus('Select an agent and issue ID.', 'warning');
+                return;
+            }
+            issueLeechConfirmBtn.disabled = true;
+            setIssueMemoryStatus(`Confirming leech for ${agentId} on Issue #${issueId}...`);
+            try {
+                await issueMemoryApi.confirmLeech(agentId, issueId, 'chief', leechNoteInput.value);
+                setIssueMemoryStatus(`Leech confirmed for Issue #${issueId}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Confirm leech failed: ${err.message}`, 'error');
+            } finally {
+                issueLeechConfirmBtn.disabled = false;
+            }
+        });
+
+        issueLeechDismissBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            if (!agentId || !issueId) {
+                setIssueMemoryStatus('Select an agent and issue ID.', 'warning');
+                return;
+            }
+            issueLeechDismissBtn.disabled = true;
+            setIssueMemoryStatus(`Dismissing leech alert for ${agentId} on Issue #${issueId}...`);
+            try {
+                await issueMemoryApi.dismissLeech(agentId, issueId, leechNoteInput.value);
+                setIssueMemoryStatus(`Leech alert dismissed for Issue #${issueId}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Dismiss leech failed: ${err.message}`, 'error');
+            } finally {
+                issueLeechDismissBtn.disabled = false;
+            }
+        });
+
+        issueLeechListBtn.addEventListener('click', async () => {
+            const agentId = issueAgentSelect.value;
+            issueLeechListBtn.disabled = true;
+            setIssueMemoryStatus(`Listing leech alerts${agentId ? ` for ${agentId}` : ''}...`);
+            try {
+                const res = await issueMemoryApi.leeches(agentId);
+                const count = Array.isArray(res) ? res.length : 0;
+                setIssueMemoryStatus(`Leech alerts: ${count}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`List leech alerts failed: ${err.message}`, 'error');
+            } finally {
+                issueLeechListBtn.disabled = false;
+            }
+        });
+
+        issueDeferBtn.addEventListener('click', async () => {
+            const issueId = parseInt(issueIdInput.value, 10);
+            const agentId = issueAgentSelect.value;
+            const triggerType = deferTypeSelect.value;
+            const triggerValue = deferValueInput.value.trim();
+            if (!agentId || !issueId) {
+                setIssueMemoryStatus('Select an agent and issue ID.', 'warning');
+                return;
+            }
+            if (!triggerType || !triggerValue) {
+                setIssueMemoryStatus('Select a trigger and value.', 'warning');
+                return;
+            }
+            issueDeferBtn.disabled = true;
+            setIssueMemoryStatus(`Deferring access for ${agentId} on Issue #${issueId}...`);
+            try {
+                const payload = {
+                    trigger: { type: triggerType, value: triggerValue },
+                    escalateTo: 3,
+                    notify: true,
+                    message: deferMessageInput.value,
+                    reason: deferReasonInput.value,
+                    deferredBy: 'chief'
+                };
+                await issueMemoryApi.defer(agentId, issueId, payload);
+                setIssueMemoryStatus(`Deferred access for Issue #${issueId}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Defer access failed: ${err.message}`, 'error');
+            } finally {
+                issueDeferBtn.disabled = false;
+            }
+        });
+
+        issueTriggerDeferralBtn.addEventListener('click', async () => {
+            const triggerType = deferTypeSelect.value;
+            const triggerValue = deferValueInput.value.trim();
+            const agentId = issueAgentSelect.value;
+            if (!triggerType || !triggerValue) {
+                setIssueMemoryStatus('Select a trigger and value.', 'warning');
+                return;
+            }
+            issueTriggerDeferralBtn.disabled = true;
+            setIssueMemoryStatus(`Triggering deferrals for ${triggerType}:${triggerValue}...`);
+            try {
+                const res = await issueMemoryApi.triggerDeferral(triggerType, triggerValue, agentId || null);
+                setIssueMemoryStatus(`Deferrals triggered: ${res.updated || 0}.`, 'success');
+            } catch (err) {
+                setIssueMemoryStatus(`Trigger deferral failed: ${err.message}`, 'error');
+            } finally {
+                issueTriggerDeferralBtn.disabled = false;
+            }
+        });
+
         issueInspectBtn.addEventListener('click', async () => {
             const issueId = parseInt(issueIdInput.value, 10);
             const agentId = issueAgentSelect.value;
@@ -8275,7 +8503,9 @@ async function showWorkspaceSwitcher() {
             setIssueMemoryStatus(`Loading record for ${agentId} + Issue #${issueId}...`);
             try {
                 const record = await issueMemoryApi.get(agentId, issueId);
-                const summary = `Level ${record.interestLevel}, accessCount ${record.accessCount}, lastAccessedAtActivation ${record.lastAccessedAtActivation ?? 'n/a'}`;
+                const leechState = record.leechMarked ? 'leech' : (record.leechReviewPending ? 'leech-review' : 'normal');
+                const deferredState = record.deferredAccess ? `deferred(${record.deferredTriggerType || '?'})` : 'active';
+                const summary = `Level ${record.interestLevel}, accessCount ${record.accessCount}, lastAccessedAtActivation ${record.lastAccessedAtActivation ?? 'n/a'}, ${leechState}, ${deferredState}`;
                 setIssueMemoryStatus(summary, 'success');
             } catch (err) {
                 setIssueMemoryStatus(`Fetch record failed: ${err.message}`, 'error');
@@ -8684,6 +8914,179 @@ async function showWorkspaceSwitcher() {
             }
         ));
 
+        const telemetrySection = document.createElement('div');
+        telemetrySection.className = 'dev-tools-section';
+        const telemetryTitle = document.createElement('div');
+        telemetryTitle.className = 'dev-tools-section-title';
+        telemetryTitle.textContent = 'Telemetry';
+        telemetrySection.appendChild(telemetryTitle);
+
+        const telemetryIntro = document.createElement('div');
+        telemetryIntro.className = 'dev-tools-item-desc';
+        telemetryIntro.textContent = 'Verify telemetry retention and log paths.';
+        telemetrySection.appendChild(telemetryIntro);
+
+        const telemetryRow = document.createElement('div');
+        telemetryRow.className = 'dev-tools-row dev-tools-row-stack';
+
+        const telemetryControls = document.createElement('div');
+        telemetryControls.className = 'dev-tools-controls';
+
+        const telemetryAgentLabel = document.createElement('label');
+        telemetryAgentLabel.className = 'modal-label';
+        telemetryAgentLabel.textContent = 'Agent ID (optional)';
+        const telemetryAgentInput = document.createElement('input');
+        telemetryAgentInput.type = 'text';
+        telemetryAgentInput.className = 'modal-input dev-tools-input';
+        telemetryAgentInput.placeholder = 'agent-id';
+
+        const telemetryTokensInLabel = document.createElement('label');
+        telemetryTokensInLabel.className = 'modal-label';
+        telemetryTokensInLabel.textContent = 'Tokens in';
+        const telemetryTokensInInput = document.createElement('input');
+        telemetryTokensInInput.type = 'number';
+        telemetryTokensInInput.min = '0';
+        telemetryTokensInInput.value = '120';
+        telemetryTokensInInput.className = 'modal-input dev-tools-input';
+
+        const telemetryTokensOutLabel = document.createElement('label');
+        telemetryTokensOutLabel.className = 'modal-label';
+        telemetryTokensOutLabel.textContent = 'Tokens out';
+        const telemetryTokensOutInput = document.createElement('input');
+        telemetryTokensOutInput.type = 'number';
+        telemetryTokensOutInput.min = '0';
+        telemetryTokensOutInput.value = '80';
+        telemetryTokensOutInput.className = 'modal-input dev-tools-input';
+
+        const telemetryActivationLabel = document.createElement('label');
+        telemetryActivationLabel.className = 'modal-label';
+        telemetryActivationLabel.textContent = 'Activations';
+        const telemetryActivationInput = document.createElement('input');
+        telemetryActivationInput.type = 'number';
+        telemetryActivationInput.min = '1';
+        telemetryActivationInput.value = '1';
+        telemetryActivationInput.className = 'modal-input dev-tools-input';
+
+        const telemetryButtons = document.createElement('div');
+        telemetryButtons.className = 'dev-tools-controls';
+
+        const telemetryStatusBtn = document.createElement('button');
+        telemetryStatusBtn.type = 'button';
+        telemetryStatusBtn.className = 'modal-btn modal-btn-secondary';
+        telemetryStatusBtn.textContent = 'Show status';
+
+        const telemetryTestBtn = document.createElement('button');
+        telemetryTestBtn.type = 'button';
+        telemetryTestBtn.className = 'modal-btn modal-btn-secondary';
+        telemetryTestBtn.textContent = 'Run test event';
+
+        const telemetryPruneBtn = document.createElement('button');
+        telemetryPruneBtn.type = 'button';
+        telemetryPruneBtn.className = 'modal-btn modal-btn-secondary';
+        telemetryPruneBtn.textContent = 'Prune now';
+
+        const telemetryStatus = document.createElement('div');
+        telemetryStatus.className = 'dev-tools-status';
+
+        const formatMb = (bytes) => {
+            if (!bytes || bytes <= 0) return '0 MB';
+            return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+        };
+        const formatDate = (value) => {
+            if (!value) return 'Unknown';
+            try {
+                return new Date(value).toLocaleString();
+            } catch (e) {
+                return 'Unknown';
+            }
+        };
+
+        const renderTelemetryStatus = (status) => {
+            if (!status) {
+                telemetryStatus.textContent = 'No telemetry status available.';
+                telemetryStatus.dataset.level = 'warning';
+                return;
+            }
+            const totalSize = formatMb(status.totalSizeBytes);
+            const root = status.telemetryRoot || 'n/a';
+            const count = status.sessionCount ?? 0;
+            const wouldDelete = status.wouldDeleteCount ?? 0;
+            const oldest = formatDate(status.oldestSessionStartedAt);
+            const newest = formatDate(status.newestSessionStartedAt);
+            telemetryStatus.textContent = `Sessions: ${count}, Size: ${totalSize}, Root: ${root}, Would delete: ${wouldDelete}, Oldest: ${oldest}, Newest: ${newest}`;
+            telemetryStatus.dataset.level = 'success';
+        };
+
+        telemetryStatusBtn.addEventListener('click', async () => {
+            telemetryStatusBtn.disabled = true;
+            telemetryStatus.textContent = 'Fetching telemetry status...';
+            telemetryStatus.dataset.level = 'info';
+            try {
+                const status = await telemetryApi.getStatus();
+                renderTelemetryStatus(status);
+            } catch (err) {
+                telemetryStatus.textContent = `Telemetry status failed: ${err.message}`;
+                telemetryStatus.dataset.level = 'error';
+            } finally {
+                telemetryStatusBtn.disabled = false;
+            }
+        });
+
+        telemetryTestBtn.addEventListener('click', async () => {
+            telemetryTestBtn.disabled = true;
+            telemetryStatus.textContent = 'Sending telemetry test event...';
+            telemetryStatus.dataset.level = 'info';
+            try {
+                const payload = {
+                    agentId: telemetryAgentInput.value.trim() || null,
+                    tokensIn: parseInt(telemetryTokensInInput.value, 10) || 0,
+                    tokensOut: parseInt(telemetryTokensOutInput.value, 10) || 0,
+                    activations: parseInt(telemetryActivationInput.value, 10) || 1
+                };
+                const status = await telemetryApi.runTest(payload);
+                renderTelemetryStatus(status);
+            } catch (err) {
+                telemetryStatus.textContent = `Telemetry test failed: ${err.message}`;
+                telemetryStatus.dataset.level = 'error';
+            } finally {
+                telemetryTestBtn.disabled = false;
+            }
+        });
+
+        telemetryPruneBtn.addEventListener('click', async () => {
+            telemetryPruneBtn.disabled = true;
+            telemetryStatus.textContent = 'Pruning telemetry sessions...';
+            telemetryStatus.dataset.level = 'info';
+            try {
+                const res = await telemetryApi.prune();
+                telemetryStatus.textContent = `Pruned sessions: ${res.deleted ?? 0}`;
+                telemetryStatus.dataset.level = 'success';
+            } catch (err) {
+                telemetryStatus.textContent = `Telemetry prune failed: ${err.message}`;
+                telemetryStatus.dataset.level = 'error';
+            } finally {
+                telemetryPruneBtn.disabled = false;
+            }
+        });
+
+        telemetryControls.appendChild(telemetryAgentLabel);
+        telemetryControls.appendChild(telemetryAgentInput);
+        telemetryControls.appendChild(telemetryTokensInLabel);
+        telemetryControls.appendChild(telemetryTokensInInput);
+        telemetryControls.appendChild(telemetryTokensOutLabel);
+        telemetryControls.appendChild(telemetryTokensOutInput);
+        telemetryControls.appendChild(telemetryActivationLabel);
+        telemetryControls.appendChild(telemetryActivationInput);
+
+        telemetryButtons.appendChild(telemetryStatusBtn);
+        telemetryButtons.appendChild(telemetryTestBtn);
+        telemetryButtons.appendChild(telemetryPruneBtn);
+
+        telemetryRow.appendChild(telemetryControls);
+        telemetryRow.appendChild(telemetryButtons);
+        telemetryRow.appendChild(telemetryStatus);
+        telemetrySection.appendChild(telemetryRow);
+
         const assistedSection = document.createElement('div');
         assistedSection.className = 'dev-tools-section';
         const assistedTitle = document.createElement('div');
@@ -8951,6 +9354,7 @@ async function showWorkspaceSwitcher() {
         body.appendChild(memorySection);
         body.appendChild(issueMemorySection);
         body.appendChild(localSection);
+        body.appendChild(telemetrySection);
         body.appendChild(assistedSection);
         body.appendChild(plannerSection);
         const isDevMode = state.workspace && state.workspace.devMode;

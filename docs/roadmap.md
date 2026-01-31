@@ -244,7 +244,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Outline Editor (Story Root)** - modal editor with scene cards, summaries, and ordered moves (refs: docs/reference/outline_editor.md)
 - [x] **Tiering System** - Unbounded capability tiers with caps, promotion/demotion, and safety valves (refs: docs/reference/tiers.md)
 - [x] **Memory Degradation (Phase 1)** - 5-level interest gradient for issue memory: issue-level fields, decay/compression routines, search filters, revive flow, and UI views. (refs: docs/reference/cr_memory.md#memory-interest-levels)
-- [ ] **Memory Degradation (Phase 2)** - implement access demotion model (activations, floors, epoch one-time bumps) and conservative leech/Wiedervorlage MVP; improve compression quality and prompt-backed summaries. (refs: docs/reference/memory_part2.md, docs/reference/memory_part2_1.md, docs/reference/cr_memory.md)
+- [x] **Memory Degradation (Phase 2)** - implement access demotion model (activations, floors, epoch one-time bumps) and conservative leech/Wiedervorlage MVP; improve compression quality and prompt-backed summaries. (refs: docs/reference/memory_part2.md, docs/reference/memory_part2_1.md, docs/reference/cr_memory.md)
   - Note: revisit memory compression prompts (reduce L2/L3 rephrase overlap, enforce entity carryover).
 - [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
 - [x] **Search Issues Prompt Tool** - Seeded prompt tool for issue search with personal tags + agent filter.
@@ -388,8 +388,11 @@ notificationStore.issueCommentAdded(id, author)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/telemetry/summary` | Get session + lifetime telemetry totals |
+| GET | `/api/telemetry/status` | Get retention snapshot (paths, size, would-delete preview) |
 | GET | `/api/telemetry/config` | Get telemetry logging config |
 | PUT | `/api/telemetry/config` | Update telemetry logging config |
+| POST | `/api/telemetry/test` | Emit a test telemetry event (dev tools) |
+| POST | `/api/telemetry/prune` | Force retention pruning (dev tools) |
 
 ### Notifications
 | Method | Endpoint | Description |

@@ -683,6 +683,93 @@
         }
     }
 
+    // Telemetry Status Widget - Retention + storage snapshot
+    class TelemetryStatusWidget extends Widget {
+        async render() {
+            if (!this.container) return;
+
+            this.container.innerHTML = `
+                <div class="widget-team-activity">
+                    <div class="workbench-card-subtitle">Telemetry status.</div>
+                    <div class="workbench-placeholder">Loading telemetry status…</div>
+                </div>
+            `;
+
+            if (!window.telemetryApi) {
+                return;
+            }
+
+            try {
+                const status = await telemetryApi.getStatus();
+                const formatMb = (bytes) => {
+                    if (!bytes || bytes <= 0) return '0 MB';
+                    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+                };
+                const formatDate = (value) => {
+                    if (!value) return 'Unknown';
+                    try {
+                        return new Date(value).toLocaleString();
+                    } catch (e) {
+                        return 'Unknown';
+                    }
+                };
+                const sessionCount = status?.sessionCount ?? 0;
+                const totalSize = formatMb(status?.totalSizeBytes);
+                const wouldDelete = status?.wouldDeleteCount ?? 0;
+                const oldest = formatDate(status?.oldestSessionStartedAt);
+                const newest = formatDate(status?.newestSessionStartedAt);
+
+                this.container.innerHTML = `
+                    <div class="widget-team-activity">
+                        <div class="workbench-card-subtitle">Telemetry retention snapshot</div>
+                        <div class="team-activity-totals">
+                            <div class="team-activity-total">
+                                <span>Sessions</span>
+                                <strong>${sessionCount}</strong>
+                            </div>
+                            <div class="team-activity-total">
+                                <span>Total size</span>
+                                <strong>${totalSize}</strong>
+                            </div>
+                            <div class="team-activity-total">
+                                <span>Would delete</span>
+                                <strong>${wouldDelete}</strong>
+                            </div>
+                        </div>
+                        <div class="team-activity-legend">Oldest: ${escapeHtml(oldest)} · Newest: ${escapeHtml(newest)}</div>
+                        <div class="team-activity-list">
+                            <div class="team-activity-row">
+                                <div class="team-activity-name">Root</div>
+                                <div class="team-activity-metric">
+                                    <span>${escapeHtml(status?.telemetryRoot || 'n/a')}</span>
+                                </div>
+                            </div>
+                            <div class="team-activity-row">
+                                <div class="team-activity-name">Retention</div>
+                                <div class="team-activity-metric">
+                                    <span>${escapeHtml(String(status?.maxSessions ?? ''))} sessions</span>
+                                </div>
+                                <div class="team-activity-metric">
+                                    <span>${escapeHtml(String(status?.maxAgeDays ?? ''))} days</span>
+                                </div>
+                                <div class="team-activity-metric">
+                                    <span>${escapeHtml(String(status?.maxTotalMb ?? ''))} MB</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch (err) {
+                this.container.innerHTML = `
+                    <div class="widget-team-activity">
+                        <div class="workbench-card-subtitle">Telemetry status.</div>
+                        <div class="workbench-placeholder">Telemetry status unavailable.</div>
+                    </div>
+                `;
+            }
+        }
+    }
+
     // Warmth Widget - Color temperature control
     class WarmthWidget extends Widget {
         constructor(instance, manifest) {
@@ -2318,6 +2405,22 @@
             settings: {}
         });
 
+        // Telemetry Status
+        widgetRegistry.register({
+            id: 'widget-telemetry-status',
+            name: 'Telemetry Status',
+            description: 'Retention and storage snapshot',
+            icon: '📈',
+            author: 'Control Room',
+            version: '1.0.0',
+            size: {
+                default: 'small',
+                allowedSizes: ['small', 'medium']
+            },
+            configurable: false,
+            settings: {}
+        });
+
         // Warmth
         widgetRegistry.register({
             id: 'widget-warmth',
@@ -2605,6 +2708,9 @@
                 break;
             case 'widget-team-activity':
                 widget = new TeamActivityWidget(instance, manifest);
+                break;
+            case 'widget-telemetry-status':
+                widget = new TelemetryStatusWidget(instance, manifest);
                 break;
             case 'widget-warmth':
                 widget = new WarmthWidget(instance, manifest);
