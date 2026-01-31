@@ -18,6 +18,9 @@ Focus only on what?s still pending (see roadmap.md for authoritative status).
 - Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
+## Ops Note
+- Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.
+
 Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.
 - Update roadmap/docs only when required to reflect completed work or resolve contradictions.
