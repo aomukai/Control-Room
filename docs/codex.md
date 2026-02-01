@@ -14,7 +14,7 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models).
+- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-0 and PH-1 are complete; next is PH-2 (Chief router).
 - Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 

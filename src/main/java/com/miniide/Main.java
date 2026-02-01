@@ -130,6 +130,7 @@ public class Main {
                 new OutlineController(projectContext, objectMapper),
                 new ChatController(projectContext, settingsService, providerChatService, memoryService, issueService, objectMapper),
                 new DashboardController(dashboardLayoutStore, objectMapper),
+                new AuditController(projectContext),
                 new TtsController(objectMapper),
                 new VersioningController(objectMapper, config.getWorkspacePath(), issueService, projectContext),
                 new AudioController()

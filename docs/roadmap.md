@@ -235,10 +235,10 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Verify agent turn queue indicator** - test alongside conference chat wiring (currently 1:1 chat only).
 - [x] **Versioning UX polish** - align Manual Save & History flow with docs/reference/versioning.md.
 - [ ] **Prompt hardening + receipts** - enforce task packet + receipt contracts, validators, retries (design for small local models first).
-  - [ ] **PH-0 Task packet + receipt schemas** - add minimal v0.1 schemas + validators; JSON-only enforcement + 2x retry + STOP_HOOK on failure.
-    - [ ] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
-  - [ ] **PH-1 Receipt storage + audit trail** - persist packets + receipts under `.control-room/audit/issues/<issue_id>/` with timestamped naming; add backend loader by issue_id.
-    - [ ] Acceptance: receipt written to disk; loader lists receipts for issue in timestamp order.
+  - [x] **PH-0 Task packet + receipt schemas** - add minimal v0.1 schemas + validators; JSON-only enforcement + 2x retry + STOP_HOOK on failure.
+    - [x] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
+  - [x] **PH-1 Receipt storage + audit trail** - persist packets + receipts under `.control-room/audit/issues/<issue_id>/` with timestamped naming; add backend loader by issue_id.
+    - [x] Acceptance: receipt written to disk; loader lists receipts for issue in timestamp order.
   - [ ] **PH-2 Chief router (v0.1)** - user prompt -> task packet or clarification questionnaire; packets include target resolution + output contract.
     - [ ] Note: if clarification exceeds 3 items or scope conflict detected, Chief switches to guided 1:1 (transcript saved as issue input).
     - [ ] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.

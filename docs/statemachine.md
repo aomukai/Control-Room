@@ -55,16 +55,16 @@ E) Playbook (Write Scene from Outline)
 - UI loads the full report on demand via a backend API endpoint.
 
 ## Status (aligns with roadmap)
-- [ ] PH-0 Task packet + receipt schemas (v0.1)
-- [ ] PH-1 Receipt storage + audit trail (backend loader)
+- [x] PH-0 Task packet + receipt schemas (v0.1)
+- [x] PH-1 Receipt storage + audit trail (backend loader)
 - [ ] PH-2 Chief router (v0.1): user -> packet or clarify
 - [ ] PH-3 Agent execution guardrails (validation, retry, path checks)
 - [ ] PH-4 UI: attached report view in issue modal
 - [ ] PH-5 Playbook: Write Scene from Outline
 
 ## Acceptance Tests (per phase)
-PH-0: Given a hardcoded sample input, validator accepts a well-formed packet and receipt; rejects 3 known-bad variants (missing required field, invalid intent enum, bad output_contract).
-PH-1: A receipt JSON is written to `.control-room/audit/issues/<issue_id>/`; the backend loader retrieves it by issue_id; the file is present on disk with correct timestamp-sorted naming.
+PH-0: Given a hardcoded sample input, validator accepts a well-formed packet and receipt; rejects 3 known-bad variants (missing required field, invalid intent enum, bad output_contract). (Done)
+PH-1: A receipt JSON is written to `.control-room/audit/issues/<issue_id>/`; the backend loader retrieves it by issue_id; the file is present on disk with correct timestamp-sorted naming. (Done)
 PH-2: Input “let’s do scene 3” → Chief emits a clarification questionnaire (valid packet, intent=clarify). User selects an option → Chief emits a task packet for the correct next agent. Both are valid JSON per schema.
 PH-3: Agent returns invalid JSON → retry fires → if still invalid after 2x, STOP_HOOK receipt is emitted to Chief. Agent references a file path not in expected_artifacts → STOP_HOOK. Both traceable in audit trail.
 PH-4: Issue modal loads receipt summary inline (from report_excerpt). “Open attached report” button triggers file load from audit storage. Works with both short (inline-only) and long (external file) receipts.
