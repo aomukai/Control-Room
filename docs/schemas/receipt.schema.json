@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "receipt.schema.json",
+  "title": "Receipt",
+  "type": "object",
+  "required": [
+    "receipt_id",
+    "packet_id",
+    "issue_id",
+    "actor",
+    "started_at",
+    "finished_at",
+    "inputs_used",
+    "outputs_produced",
+    "reasoning_summary",
+    "decisions",
+    "checks_performed",
+    "assumptions",
+    "risks",
+    "next_recommended_action",
+    "stop_hook",
+    "citations",
+    "report_excerpt"
+  ],
+  "properties": {
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "packet_id": { "type": "string", "minLength": 1 },
+    "issue_id": { "type": "string", "minLength": 1 },
+    "actor": {
+      "type": "object",
+      "required": ["agent_id", "provider", "model", "decoding"],
+      "properties": {
+        "agent_id": { "type": "string" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "decoding": {
+          "type": "object",
+          "required": ["requested", "effective", "source"],
+          "properties": {
+            "requested": { "type": ["object", "null"] },
+            "effective": { "type": ["object", "null"] },
+            "source": { "type": "string", "enum": ["template", "provider_override", "unknown"] }
+          }
+        }
+      }
+    },
+    "started_at": { "type": "string" },
+    "finished_at": { "type": "string" },
+    "inputs_used": { "type": "array", "items": { "type": "string" } },
+    "outputs_produced": { "type": "array", "items": { "type": "string" } },
+    "reasoning_summary": { "type": "string" },
+    "decisions": { "type": "array", "items": { "type": "string" } },
+    "checks_performed": { "type": "array", "items": { "type": "string" } },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "next_recommended_action": {
+      "type": "object",
+      "required": ["intent", "reason"],
+      "properties": {
+        "intent": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    },
+    "stop_hook": {
+      "type": "object",
+      "required": ["triggered"],
+      "properties": {
+        "triggered": { "type": "boolean" },
+        "type": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "citations": { "type": "array", "items": { "type": "string" } },
+    "report_excerpt": { "type": "string" },
+    "report_path": { "type": "string" },
+    "run_id": { "type": "string" },
+    "step_id": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1 }
+  }
+}

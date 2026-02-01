@@ -13,6 +13,8 @@ import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.models.MemoryItem;
 import com.miniide.providers.ProviderChatService;
+import com.miniide.prompt.PromptJsonValidator;
+import com.miniide.prompt.PromptValidationResult;
 import com.miniide.settings.SettingsService;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
@@ -57,6 +59,7 @@ public class ChatController implements Controller {
             JsonNode json = objectMapper.readTree(ctx.body());
             String message = json.has("message") ? json.get("message").asText() : "";
             String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
+            String expectSchema = json.has("expectSchema") ? json.get("expectSchema").asText(null) : null;
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
             boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
@@ -138,8 +141,7 @@ public class ChatController implements Controller {
                     prompt = grounding + "\n\n" + (prompt != null ? prompt : "");
                 }
                 final String finalPrompt = prompt;
-                String response = AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, keyRef, agentEndpoint, finalPrompt));
-                response = stripThinkingTags(response);
+                String response = runWithValidation(providerName, keyRef, agentEndpoint, finalPrompt, expectSchema);
                 if (projectContext != null && projectContext.telemetry() != null) {
                     long tokensIn = TelemetryStore.estimateTokens(finalPrompt);
                     long tokensOut = TelemetryStore.estimateTokens(response);
@@ -164,6 +166,56 @@ public class ChatController implements Controller {
             }
             ctx.status(500).json(Controller.errorBody(e));
         }
+    }
+
+    private String runWithValidation(String providerName, String apiKey, com.miniide.models.AgentEndpointConfig agentEndpoint,
+                                     String prompt, String expectSchema) {
+        final String finalPrompt = prompt;
+        if (expectSchema == null || expectSchema.isBlank()) {
+            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, finalPrompt);
+            return stripThinkingTags(response);
+        }
+
+        int maxAttempts = 3;
+        String currentPrompt = finalPrompt;
+        PromptValidationResult lastResult = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            final String promptToSend = currentPrompt;
+            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, promptToSend);
+            response = stripThinkingTags(response);
+            lastResult = validateBySchema(expectSchema, response);
+            if (lastResult.isValid()) {
+                return response;
+            }
+            if (attempt < maxAttempts) {
+                currentPrompt = currentPrompt + "\n\nYour previous response was invalid. Return ONLY valid JSON. No prose, no markdown, no extra text.";
+            }
+        }
+
+        String errorSummary = lastResult != null && !lastResult.getErrors().isEmpty()
+            ? String.join(", ", lastResult.getErrors())
+            : "invalid-json";
+        return "STOP_HOOK: error\nValidation failed: " + errorSummary;
+    }
+
+    private String callAgentWithGate(String providerName, String apiKey,
+                                     com.miniide.models.AgentEndpointConfig agentEndpoint,
+                                     String prompt) {
+        try {
+            return AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, apiKey, agentEndpoint, prompt));
+        } catch (Exception e) {
+            throw new RuntimeException("Agent chat failed", e);
+        }
+    }
+
+    private PromptValidationResult validateBySchema(String expectSchema, String response) {
+        if ("task_packet".equalsIgnoreCase(expectSchema)) {
+            return PromptJsonValidator.validateTaskPacket(response);
+        }
+        if ("receipt".equalsIgnoreCase(expectSchema)) {
+            return PromptJsonValidator.validateReceipt(response);
+        }
+        return PromptValidationResult.of(List.of("schema:unknown"));
     }
 
     private boolean agentsUnlocked() {

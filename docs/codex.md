@@ -14,12 +14,16 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Prompt hardening + validators for agent actions (focus on local models).
+- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models).
 - Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
+## Working Notes
+- Prompt hardening state machine + requirements tracked in docs/statemachine.md.
+
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.
+- Gradle compile checks must be run in the host environment (JAVA_HOME is not set in the sandbox).
 
 Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.

@@ -234,6 +234,20 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Single-Active Agent Turns** - enforce serialized agent turns (one active agent at a time) for local LLM viability (refs: docs/reference/cr_agents.md#agent-workflow)
 - [x] **Verify agent turn queue indicator** - test alongside conference chat wiring (currently 1:1 chat only).
 - [x] **Versioning UX polish** - align Manual Save & History flow with docs/reference/versioning.md.
+- [ ] **Prompt hardening + receipts** - enforce task packet + receipt contracts, validators, retries (design for small local models first).
+  - [ ] **PH-0 Task packet + receipt schemas** - add minimal v0.1 schemas + validators; JSON-only enforcement + 2x retry + STOP_HOOK on failure.
+    - [ ] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
+  - [ ] **PH-1 Receipt storage + audit trail** - persist packets + receipts under `.control-room/audit/issues/<issue_id>/` with timestamped naming; add backend loader by issue_id.
+    - [ ] Acceptance: receipt written to disk; loader lists receipts for issue in timestamp order.
+  - [ ] **PH-2 Chief router (v0.1)** - user prompt -> task packet or clarification questionnaire; packets include target resolution + output contract.
+    - [ ] Note: if clarification exceeds 3 items or scope conflict detected, Chief switches to guided 1:1 (transcript saved as issue input).
+    - [ ] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.
+  - [ ] **PH-3 Agent execution guardrails** - reject invalid packets/receipts; enforce no-hallucinated-paths; require expected_artifacts or STOP_HOOK.
+    - [ ] Acceptance: invalid JSON -> 2x retry -> STOP_HOOK; bad path -> STOP_HOOK with audit trail.
+  - [ ] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.
+    - [ ] Acceptance: issue modal renders report_excerpt; attached report loads in read-only modal.
+  - [ ] **PH-5 Playbook: Write Scene from Outline** - deterministic state machine + routing policy + stop/clarify rules; runs Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
+    - [ ] Acceptance: end-to-end “scene 3” run produces ordered packet/receipt audit trail with artifacts.
 
 ### Next (Queued)
 
@@ -253,7 +267,6 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 ### Future
 
 - [ ] **Export Stage** - PDF/EPUB/DOCX manuscript export (refs: docs/reference/cr_editor.md)
-- [ ] **Prompt hardening + validators** - define and test prompts for agent actions; enforce JSON contracts, grounding, and retries (design for small local models first).
 
 ### Completed Milestones (for reference)
 
