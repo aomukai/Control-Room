@@ -7,6 +7,7 @@
     const canonicalizeRole = window.canonicalizeRole;
     const buildChatPrompt = window.buildChatPrompt;
     const extractStopHook = window.extractStopHook;
+    const ROLE_ENDPOINT_PRESETS = window.ROLE_ENDPOINT_PRESETS || {};
 
     function isAssistantAgent(agent) {
         if (!agent || agent.enabled === false) {
@@ -17,6 +18,80 @@
             return true;
         }
         return agent.canBeTeamLead === true;
+    }
+
+    function normalizeRoleForPreset(role) {
+        const roleKey = canonicalizeRole ? canonicalizeRole(role) : null;
+        if (!roleKey) {
+            return null;
+        }
+        if (roleKey === 'chief of staff') {
+            return 'assistant';
+        }
+        return roleKey;
+    }
+
+    function getRoleEndpointPreset(role) {
+        const roleKey = normalizeRoleForPreset(role);
+        if (!roleKey) {
+            return ROLE_ENDPOINT_PRESETS.default || null;
+        }
+        return ROLE_ENDPOINT_PRESETS[roleKey] || ROLE_ENDPOINT_PRESETS.default || null;
+    }
+
+    function hasSamplingValues(target) {
+        if (!target) {
+            return false;
+        }
+        const fields = ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty'];
+        return fields.some(field => {
+            const value = target[field];
+            return value !== null && value !== undefined && value !== '';
+        });
+    }
+
+    function applyRoleEndpointPreset(target, role, options = {}) {
+        if (!target || target.useProviderDefaults) {
+            return false;
+        }
+        const preset = getRoleEndpointPreset(role);
+        if (!preset) {
+            return false;
+        }
+        const force = options.force === true;
+        if (!force && hasSamplingValues(target)) {
+            return false;
+        }
+        target.temperature = preset.temperature ?? target.temperature ?? '';
+        target.topP = preset.topP ?? target.topP ?? '';
+        target.topK = preset.topK ?? target.topK ?? '';
+        target.minP = preset.minP ?? target.minP ?? '';
+        target.repeatPenalty = preset.repeatPenalty ?? target.repeatPenalty ?? '';
+        return true;
+    }
+
+    async function applyRoleEndpointPresetForAgent(agent, role) {
+        if (!agent || !agent.id) {
+            return;
+        }
+        let endpoint = null;
+        try {
+            endpoint = await agentEndpointsApi.get(agent.id);
+        } catch (_) {
+            endpoint = null;
+        }
+        if (!endpoint && agent.endpoint) {
+            endpoint = { ...agent.endpoint };
+        }
+        if (!endpoint || endpoint.useProviderDefaults) {
+            return;
+        }
+        const applied = applyRoleEndpointPreset(endpoint, role, { force: true });
+        if (!applied) {
+            return;
+        }
+        await agentEndpointsApi.save(agent.id, endpoint);
+        await window.loadAgentStatuses();
     }
 
     function resolveAgentIdFromLabel(label) {
@@ -595,7 +670,7 @@
                 showRoleSettingsModal(agent);
                 break;
             case 'open-agent-settings':
-                showAgentSettingsModal(agent);
+                showAgentSettingsModal(agent, { applyRolePresetWhenEmpty: true });
                 break;
             case 'change-role':
                 showChangeRoleModal(agent);
@@ -802,9 +877,12 @@
             keyRef: '',
             baseUrl: '',
             temperature: '',
+            topP: '',
+            topK: '',
+            minP: '',
+            repeatPenalty: '',
             maxOutputTokens: '',
-            timeoutMs: '',
-            maxRetries: '',
+            useProviderDefaults: false,
             configurePersonality: false,
             personalityConfigured: false,
             personalityInstructions: '',
@@ -830,6 +908,8 @@
 
         let stepIndex = Number.isInteger(resumeStepIndex) ? resumeStepIndex : 0;
         const lastStep = 4;
+        let lastRoleKey = canonicalizeRole(formState.role);
+        applyRoleEndpointPreset(formState, formState.role, { force: true });
 
         const updateButtons = () => {
             cancelBtn.textContent = stepIndex === 0 ? 'Cancel' : 'Back';
@@ -894,6 +974,8 @@
                 formState.goals = [...chosen.goals];
                 formState.instructions = chosen.instructions;
                 description.textContent = chosen.description;
+                applyRoleEndpointPreset(formState, formState.role, { force: true });
+                lastRoleKey = canonicalizeRole(formState.role);
             });
 
             row.appendChild(label);
@@ -965,6 +1047,11 @@
                 const hasRole = Boolean(formState.role);
                 roleError.style.display = hasRole ? 'none' : 'block';
                 setNextEnabled(hasRole);
+                const nextRoleKey = canonicalizeRole(formState.role);
+                if (nextRoleKey && nextRoleKey !== lastRoleKey) {
+                    applyRoleEndpointPreset(formState, formState.role, { force: true });
+                    lastRoleKey = nextRoleKey;
+                }
             };
 
             nameInput.addEventListener('input', updateIdentityState);
@@ -1028,23 +1115,30 @@
                         apiKeyRef: formState.keyRef || null,
                         baseUrl: formState.baseUrl || null,
                         temperature: formState.temperature ?? null,
+                        topP: formState.topP ?? null,
+                        topK: formState.topK ?? null,
+                        minP: formState.minP ?? null,
+                        repeatPenalty: formState.repeatPenalty ?? null,
                         maxOutputTokens: formState.maxOutputTokens ?? null,
-                        timeoutMs: formState.timeoutMs ?? null,
-                        maxRetries: formState.maxRetries ?? null
+                        useProviderDefaults: formState.useProviderDefaults ?? false
                     }
                 };
                 showAgentSettingsModal(draftAgent, {
                     allowDraft: true,
                     initialEndpoint: draftAgent.endpoint,
+                    applyRolePresetWhenEmpty: true,
                     onSave: async (endpoint) => {
                         formState.provider = endpoint.provider || formState.provider;
                         formState.model = endpoint.model || '';
                         formState.keyRef = endpoint.apiKeyRef || endpoint.keyRef || '';
                         formState.baseUrl = endpoint.baseUrl || '';
                         formState.temperature = endpoint.temperature ?? '';
+                        formState.topP = endpoint.topP ?? '';
+                        formState.topK = endpoint.topK ?? '';
+                        formState.minP = endpoint.minP ?? '';
+                        formState.repeatPenalty = endpoint.repeatPenalty ?? '';
                         formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
-                        formState.timeoutMs = endpoint.timeoutMs ?? '';
-                        formState.maxRetries = endpoint.maxRetries ?? '';
+                        formState.useProviderDefaults = endpoint.useProviderDefaults ?? false;
                     },
                     onClose: () => {
                         showAddAgentWizard({ state: formState, stepIndex: resumeStep });
@@ -1222,8 +1316,7 @@
                     model: formState.model,
                     apiKeyRef: formState.keyRef || null,
                     baseUrl: formState.baseUrl || null,
-                    timeoutMs: formState.timeoutMs || null,
-                    maxRetries: formState.maxRetries || null
+                    useProviderDefaults: formState.useProviderDefaults || false
                 },
                 personality: {
                     tone: 'neutral',
@@ -1249,6 +1342,22 @@
             const temperature = parseFloat(formState.temperature);
             if (!Number.isNaN(temperature)) {
                 payload.endpoint.temperature = temperature;
+            }
+            const topP = parseFloat(formState.topP);
+            if (!Number.isNaN(topP)) {
+                payload.endpoint.topP = topP;
+            }
+            const topK = parseInt(formState.topK, 10);
+            if (!Number.isNaN(topK)) {
+                payload.endpoint.topK = topK;
+            }
+            const minP = parseFloat(formState.minP);
+            if (!Number.isNaN(minP)) {
+                payload.endpoint.minP = minP;
+            }
+            const repeatPenalty = parseFloat(formState.repeatPenalty);
+            if (!Number.isNaN(repeatPenalty)) {
+                payload.endpoint.repeatPenalty = repeatPenalty;
             }
             const maxTokens = parseInt(formState.maxOutputTokens, 10);
             if (!Number.isNaN(maxTokens)) {
@@ -1492,6 +1601,7 @@
         const agentAvatar = agent?.avatar || '';
         const personality = agent?.personality || {};
         const baseInstructions = personality.baseInstructions || '';
+        const originalRoleKey = canonicalizeRole(agentRole);
 
         // Personality sliders config: [id, leftLabel, rightLabel, defaultValue, tooltip]
         const sliderConfig = [
@@ -2010,6 +2120,12 @@
 
                     // Refresh agent list to show updated data
                     await window.loadAgents();
+                    if (agent?.id) {
+                        const nextRoleKey = canonicalizeRole(roleValue);
+                        if (nextRoleKey && nextRoleKey !== originalRoleKey) {
+                            await applyRoleEndpointPresetForAgent(agent, roleValue);
+                        }
+                    }
 
                     close();
                 }
@@ -2393,6 +2509,7 @@
         const allowDraft = Boolean(options.allowDraft);
         const onSaveDraft = typeof options.onSave === 'function' ? options.onSave : null;
         const onCloseDraft = typeof options.onClose === 'function' ? options.onClose : null;
+        const applyPresetWhenEmpty = options.applyRolePresetWhenEmpty !== false;
         const name = agent?.name || 'Agent';
         const agentId = agent?.id;
         const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
@@ -2436,9 +2553,12 @@
             keyRef: '',
             baseUrl: '',
             temperature: '',
+            topP: '',
+            topK: '',
+            minP: '',
+            repeatPenalty: '',
             maxOutputTokens: '',
-            timeoutMs: '',
-            maxRetries: '',
+            useProviderDefaults: false,
             nanoGptLegacy: false
         };
 
@@ -2623,9 +2743,67 @@
         tempInput.min = '0';
         tempInput.max = '2';
         tempInput.className = 'modal-input';
-        tempInput.placeholder = 'Leave blank for provider default';
+        tempInput.placeholder = 'Role preset';
         tempRow.appendChild(tempLabel);
         tempRow.appendChild(tempInput);
+
+        const topPRow = document.createElement('div');
+        topPRow.className = 'modal-row';
+        const topPLabel = document.createElement('label');
+        topPLabel.className = 'modal-label';
+        topPLabel.textContent = 'Top P';
+        const topPInput = document.createElement('input');
+        topPInput.type = 'number';
+        topPInput.step = '0.01';
+        topPInput.min = '0';
+        topPInput.max = '1';
+        topPInput.className = 'modal-input';
+        topPInput.placeholder = 'Role preset';
+        topPRow.appendChild(topPLabel);
+        topPRow.appendChild(topPInput);
+
+        const topKRow = document.createElement('div');
+        topKRow.className = 'modal-row';
+        const topKLabel = document.createElement('label');
+        topKLabel.className = 'modal-label';
+        topKLabel.textContent = 'Top K';
+        const topKInput = document.createElement('input');
+        topKInput.type = 'number';
+        topKInput.min = '0';
+        topKInput.className = 'modal-input';
+        topKInput.placeholder = 'Role preset';
+        topKRow.appendChild(topKLabel);
+        topKRow.appendChild(topKInput);
+
+        const minPRow = document.createElement('div');
+        minPRow.className = 'modal-row';
+        const minPLabel = document.createElement('label');
+        minPLabel.className = 'modal-label';
+        minPLabel.textContent = 'Min P';
+        const minPInput = document.createElement('input');
+        minPInput.type = 'number';
+        minPInput.step = '0.01';
+        minPInput.min = '0';
+        minPInput.max = '1';
+        minPInput.className = 'modal-input';
+        minPInput.placeholder = 'Role preset';
+        minPRow.appendChild(minPLabel);
+        minPRow.appendChild(minPInput);
+
+        const repeatRow = document.createElement('div');
+        repeatRow.className = 'modal-row';
+        const repeatLabel = document.createElement('label');
+        repeatLabel.className = 'modal-label';
+        repeatLabel.textContent = 'Repeat Penalty';
+        const repeatInput = document.createElement('input');
+        repeatInput.type = 'number';
+        repeatInput.step = '0.01';
+        repeatInput.min = '0.5';
+        repeatInput.max = '2';
+        repeatInput.className = 'modal-input';
+        repeatInput.placeholder = 'Role preset';
+        repeatRow.appendChild(repeatLabel);
+        repeatRow.appendChild(repeatInput);
 
         const tokenRow = document.createElement('div');
         tokenRow.className = 'modal-row';
@@ -2636,35 +2814,18 @@
         tokenInput.type = 'number';
         tokenInput.min = '1';
         tokenInput.className = 'modal-input';
-        tokenInput.placeholder = 'Leave blank for provider default';
+        tokenInput.placeholder = 'Role preset';
         tokenRow.appendChild(tokenLabel);
         tokenRow.appendChild(tokenInput);
 
-        const timeoutRow = document.createElement('div');
-        timeoutRow.className = 'modal-row';
-        const timeoutLabel = document.createElement('label');
-        timeoutLabel.className = 'modal-label';
-        timeoutLabel.textContent = 'Timeout (ms)';
-        const timeoutInput = document.createElement('input');
-        timeoutInput.type = 'number';
-        timeoutInput.min = '1000';
-        timeoutInput.className = 'modal-input';
-        timeoutInput.placeholder = 'Leave blank for default';
-        timeoutRow.appendChild(timeoutLabel);
-        timeoutRow.appendChild(timeoutInput);
-
-        const retryRow = document.createElement('div');
-        retryRow.className = 'modal-row';
-        const retryLabel = document.createElement('label');
-        retryLabel.className = 'modal-label';
-        retryLabel.textContent = 'Max Retries';
-        const retryInput = document.createElement('input');
-        retryInput.type = 'number';
-        retryInput.min = '0';
-        retryInput.className = 'modal-input';
-        retryInput.placeholder = 'Leave blank for default';
-        retryRow.appendChild(retryLabel);
-        retryRow.appendChild(retryInput);
+        const defaultsRow = document.createElement('label');
+        defaultsRow.className = 'modal-checkbox-row';
+        const defaultsToggle = document.createElement('input');
+        defaultsToggle.type = 'checkbox';
+        const defaultsText = document.createElement('span');
+        defaultsText.textContent = 'Use provider defaults (ignore role presets)';
+        defaultsRow.appendChild(defaultsToggle);
+        defaultsRow.appendChild(defaultsText);
 
         content.appendChild(providerRow);
         content.appendChild(keyRow);
@@ -2682,10 +2843,13 @@
         advancedBody.style.display = 'none';
         advancedBody.appendChild(baseRow);
         advancedBody.appendChild(nanoLegacyRow);
+        advancedBody.appendChild(defaultsRow);
         advancedBody.appendChild(tempRow);
+        advancedBody.appendChild(topPRow);
+        advancedBody.appendChild(topKRow);
+        advancedBody.appendChild(minPRow);
+        advancedBody.appendChild(repeatRow);
         advancedBody.appendChild(tokenRow);
-        advancedBody.appendChild(timeoutRow);
-        advancedBody.appendChild(retryRow);
         advancedSection.appendChild(advancedToggle);
         advancedSection.appendChild(advancedBody);
         content.appendChild(advancedSection);
@@ -2698,6 +2862,15 @@
         const updateLocalActions = () => {
             const isLocal = window.LOCAL_PROVIDERS.has(formState.provider);
             localActions.style.display = isLocal ? 'flex' : 'none';
+        };
+
+        const updateSamplingState = () => {
+            const disabled = formState.useProviderDefaults === true;
+            [tempInput, topPInput, topKInput, minPInput, repeatInput, tokenInput].forEach(input => {
+                if (input) {
+                    input.disabled = disabled;
+                }
+            });
         };
 
         const updateLocalHint = (message = '') => {
@@ -2886,9 +3059,12 @@
                         formState.keyRef = endpoint.apiKeyRef || '';
                         formState.baseUrl = endpoint.baseUrl || '';
                         formState.temperature = endpoint.temperature ?? '';
+                        formState.topP = endpoint.topP ?? '';
+                        formState.topK = endpoint.topK ?? '';
+                        formState.minP = endpoint.minP ?? '';
+                        formState.repeatPenalty = endpoint.repeatPenalty ?? '';
                         formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
-                        formState.timeoutMs = endpoint.timeoutMs ?? '';
-                        formState.maxRetries = endpoint.maxRetries ?? '';
+                        formState.useProviderDefaults = endpoint.useProviderDefaults ?? false;
                     }
                 } catch (_) {
                     if (agent?.endpoint) {
@@ -2896,7 +3072,12 @@
                         formState.model = agent.endpoint.model || '';
                         formState.baseUrl = agent.endpoint.baseUrl || '';
                         formState.temperature = agent.endpoint.temperature ?? '';
+                        formState.topP = agent.endpoint.topP ?? '';
+                        formState.topK = agent.endpoint.topK ?? '';
+                        formState.minP = agent.endpoint.minP ?? '';
+                        formState.repeatPenalty = agent.endpoint.repeatPenalty ?? '';
                         formState.maxOutputTokens = agent.endpoint.maxOutputTokens ?? '';
+                        formState.useProviderDefaults = agent.endpoint.useProviderDefaults ?? false;
                     }
                 }
             } else if (allowDraft && options.initialEndpoint) {
@@ -2906,9 +3087,12 @@
                 formState.keyRef = endpoint.apiKeyRef || endpoint.keyRef || '';
                 formState.baseUrl = endpoint.baseUrl || '';
                 formState.temperature = endpoint.temperature ?? '';
+                formState.topP = endpoint.topP ?? '';
+                formState.topK = endpoint.topK ?? '';
+                formState.minP = endpoint.minP ?? '';
+                formState.repeatPenalty = endpoint.repeatPenalty ?? '';
                 formState.maxOutputTokens = endpoint.maxOutputTokens ?? '';
-                formState.timeoutMs = endpoint.timeoutMs ?? '';
-                formState.maxRetries = endpoint.maxRetries ?? '';
+                formState.useProviderDefaults = endpoint.useProviderDefaults ?? false;
             }
 
             if (formState.provider === 'nanogpt') {
@@ -2919,6 +3103,10 @@
             }
             if (formState.baseUrl) {
                 baseUrlTouched = true;
+            }
+
+            if (applyPresetWhenEmpty) {
+                applyRoleEndpointPreset(formState, agent?.role, { force: false });
             }
 
             initialEndpointSnapshot = {
@@ -2932,9 +3120,12 @@
             modelSearch.value = '';
             baseInput.value = formState.baseUrl;
             tempInput.value = formState.temperature;
+            topPInput.value = formState.topP;
+            topKInput.value = formState.topK;
+            minPInput.value = formState.minP;
+            repeatInput.value = formState.repeatPenalty;
             tokenInput.value = formState.maxOutputTokens;
-            timeoutInput.value = formState.timeoutMs;
-            retryInput.value = formState.maxRetries;
+            defaultsToggle.checked = formState.useProviderDefaults;
             nanoLegacyToggle.checked = formState.nanoGptLegacy;
             const advancedPref = localStorage.getItem('control-room:agent-settings-advanced');
             if (advancedPref === 'open') {
@@ -2942,6 +3133,7 @@
                 advancedToggle.textContent = 'Hide advanced';
             }
 
+            updateSamplingState();
             updateVaultSection();
             updateKeySelect();
             updateKeyVisibility();
@@ -3070,16 +3262,41 @@
             formState.temperature = tempInput.value;
         });
 
+        topPInput.addEventListener('input', () => {
+            formState.topP = topPInput.value;
+        });
+
+        topKInput.addEventListener('input', () => {
+            formState.topK = topKInput.value;
+        });
+
+        minPInput.addEventListener('input', () => {
+            formState.minP = minPInput.value;
+        });
+
+        repeatInput.addEventListener('input', () => {
+            formState.repeatPenalty = repeatInput.value;
+        });
+
         tokenInput.addEventListener('input', () => {
             formState.maxOutputTokens = tokenInput.value;
         });
 
-        timeoutInput.addEventListener('input', () => {
-            formState.timeoutMs = timeoutInput.value;
-        });
-
-        retryInput.addEventListener('input', () => {
-            formState.maxRetries = retryInput.value;
+        defaultsToggle.addEventListener('change', () => {
+            formState.useProviderDefaults = defaultsToggle.checked;
+            if (formState.useProviderDefaults) {
+                updateSamplingState();
+                return;
+            }
+            const applied = applyRoleEndpointPreset(formState, agent?.role, { force: false });
+            if (applied) {
+                tempInput.value = formState.temperature;
+                topPInput.value = formState.topP;
+                topKInput.value = formState.topK;
+                minPInput.value = formState.minP;
+                repeatInput.value = formState.repeatPenalty;
+            }
+            updateSamplingState();
         });
 
         vaultBtn.addEventListener('click', async () => {
@@ -3140,24 +3357,33 @@
                 provider: formState.provider,
                 model: formState.model,
                 apiKeyRef: formState.keyRef || null,
-                baseUrl: formState.baseUrl || null
+                baseUrl: formState.baseUrl || null,
+                useProviderDefaults: formState.useProviderDefaults || false
             };
 
             const temperature = parseFloat(formState.temperature);
             if (!Number.isNaN(temperature)) {
                 payload.temperature = temperature;
             }
+            const topP = parseFloat(formState.topP);
+            if (!Number.isNaN(topP)) {
+                payload.topP = topP;
+            }
+            const topK = parseInt(formState.topK, 10);
+            if (!Number.isNaN(topK)) {
+                payload.topK = topK;
+            }
+            const minP = parseFloat(formState.minP);
+            if (!Number.isNaN(minP)) {
+                payload.minP = minP;
+            }
+            const repeatPenalty = parseFloat(formState.repeatPenalty);
+            if (!Number.isNaN(repeatPenalty)) {
+                payload.repeatPenalty = repeatPenalty;
+            }
             const maxTokens = parseInt(formState.maxOutputTokens, 10);
             if (!Number.isNaN(maxTokens)) {
                 payload.maxOutputTokens = maxTokens;
-            }
-            const timeoutMs = parseInt(formState.timeoutMs, 10);
-            if (!Number.isNaN(timeoutMs)) {
-                payload.timeoutMs = timeoutMs;
-            }
-            const maxRetries = parseInt(formState.maxRetries, 10);
-            if (!Number.isNaN(maxRetries)) {
-                payload.maxRetries = maxRetries;
             }
 
             try {

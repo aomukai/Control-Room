@@ -145,6 +145,16 @@
         default: 'Assist with the creative process according to your specialized role. Collaborate with other agents and escalate to the user when needed.'
     };
 
+    const ROLE_ENDPOINT_PRESETS = {
+        continuity: { temperature: 0.05, topP: 0.85, topK: 40, minP: 0.08, repeatPenalty: 1.12 },
+        assistant: { temperature: 0.15, topP: 0.9, topK: 60, minP: 0.06, repeatPenalty: 1.1 },
+        planner: { temperature: 0.3, topP: 0.92, topK: 80, minP: 0.05, repeatPenalty: 1.08 },
+        critic: { temperature: 0.25, topP: 0.9, topK: 80, minP: 0.06, repeatPenalty: 1.1 },
+        editor: { temperature: 0.45, topP: 0.93, topK: 120, minP: 0.04, repeatPenalty: 1.08 },
+        writer: { temperature: 0.85, topP: 0.95, topK: 200, minP: 0.02, repeatPenalty: 1.06 },
+        default: { temperature: 0.3, topP: 0.92, topK: 80, minP: 0.05, repeatPenalty: 1.08 }
+    };
+
     function canonicalizeRole(role) {
         if (role === null || role === undefined) {
             return null;
@@ -160,6 +170,7 @@
     window.state = state;
     window.ROLE_TEMPLATES = ROLE_TEMPLATES;
     window.DEFAULT_ROLE_CHARTERS = DEFAULT_ROLE_CHARTERS;
+    window.ROLE_ENDPOINT_PRESETS = ROLE_ENDPOINT_PRESETS;
     window.canonicalizeRole = canonicalizeRole;
 
 })();

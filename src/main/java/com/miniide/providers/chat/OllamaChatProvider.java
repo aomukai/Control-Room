@@ -33,6 +33,29 @@ public class OllamaChatProvider extends AbstractChatProvider {
         msg.put("role", "user");
         msg.put("content", message);
 
+        boolean useDefaults = endpoint.getUseProviderDefaults() != null && endpoint.getUseProviderDefaults();
+        if (!useDefaults) {
+            ObjectNode options = payload.putObject("options");
+            if (endpoint.getTemperature() != null) {
+                options.put("temperature", endpoint.getTemperature());
+            }
+            if (endpoint.getTopP() != null) {
+                options.put("top_p", endpoint.getTopP());
+            }
+            if (endpoint.getTopK() != null) {
+                options.put("top_k", endpoint.getTopK());
+            }
+            if (endpoint.getMinP() != null) {
+                options.put("min_p", endpoint.getMinP());
+            }
+            if (endpoint.getRepeatPenalty() != null) {
+                options.put("repeat_penalty", endpoint.getRepeatPenalty());
+            }
+            if (endpoint.getMaxOutputTokens() != null) {
+                options.put("num_predict", endpoint.getMaxOutputTokens());
+            }
+        }
+
         JsonNode response = sendJsonPost(url, payload, null, null, endpoint.getTimeoutMs());
 
         JsonNode content = response.path("message").path("content");

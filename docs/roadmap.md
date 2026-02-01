@@ -82,6 +82,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] Invite to Conference modal (UI wiring) (refs: docs/reference/cr_workbench.md)
 - [x] Agent intro issues + greeting comment auto-post (refs: docs/reference/cr_agents.md#agent-lifecycle)
 - [x] Agent Settings modal (provider/model/key wiring) (refs: docs/reference/cr_agents.md#agent-endpoints)
+- [x] Agent endpoint role presets (temp/top_p/top_k/min_p/repeat_penalty) with provider-default override + auto-apply on role change/empty settings
 - [x] Agent status lamp + reachability checks (refs: docs/reference/cr_agents.md)
 - [x] Drag-and-drop agent reorder (persisted) (refs: docs/reference/cr_agents.md)
 - [x] Retired Agents modal (disable/reactivate) (refs: docs/reference/cr_agents.md#agent-lifecycle)

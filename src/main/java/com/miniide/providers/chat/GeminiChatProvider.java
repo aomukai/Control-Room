@@ -36,6 +36,23 @@ public class GeminiChatProvider extends AbstractChatProvider {
         ArrayNode parts = content.putArray("parts");
         parts.addObject().put("text", message);
 
+        boolean useDefaults = endpoint.getUseProviderDefaults() != null && endpoint.getUseProviderDefaults();
+        if (!useDefaults) {
+            ObjectNode generationConfig = payload.putObject("generationConfig");
+            if (endpoint.getTemperature() != null) {
+                generationConfig.put("temperature", endpoint.getTemperature());
+            }
+            if (endpoint.getTopP() != null) {
+                generationConfig.put("topP", endpoint.getTopP());
+            }
+            if (endpoint.getTopK() != null) {
+                generationConfig.put("topK", endpoint.getTopK());
+            }
+            if (endpoint.getMaxOutputTokens() != null) {
+                generationConfig.put("maxOutputTokens", endpoint.getMaxOutputTokens());
+            }
+        }
+
         JsonNode response = sendJsonPost(url, payload, null, null, endpoint.getTimeoutMs());
 
         JsonNode candidates = response.path("candidates");

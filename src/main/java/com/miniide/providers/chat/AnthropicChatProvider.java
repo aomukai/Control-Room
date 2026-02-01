@@ -26,10 +26,22 @@ public class AnthropicChatProvider extends AbstractChatProvider {
 
         ObjectNode payload = mapper.createObjectNode();
         payload.put("model", endpoint.getModel());
-        payload.put("max_tokens", endpoint.getMaxOutputTokens() != null ? endpoint.getMaxOutputTokens() : 512);
+        boolean useDefaults = endpoint.getUseProviderDefaults() != null && endpoint.getUseProviderDefaults();
+        int maxTokens = endpoint.getMaxOutputTokens() != null && !useDefaults
+            ? endpoint.getMaxOutputTokens()
+            : 512;
+        payload.put("max_tokens", maxTokens);
 
-        if (endpoint.getTemperature() != null) {
-            payload.put("temperature", endpoint.getTemperature());
+        if (!useDefaults) {
+            if (endpoint.getTemperature() != null) {
+                payload.put("temperature", endpoint.getTemperature());
+            }
+            if (endpoint.getTopP() != null) {
+                payload.put("top_p", endpoint.getTopP());
+            }
+            if (endpoint.getTopK() != null) {
+                payload.put("top_k", endpoint.getTopK());
+            }
         }
 
         ArrayNode messages = payload.putArray("messages");

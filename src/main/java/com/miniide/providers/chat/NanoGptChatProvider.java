@@ -34,11 +34,25 @@ public class NanoGptChatProvider extends AbstractChatProvider {
         msg.put("role", "user");
         msg.put("content", message);
 
-        if (endpoint.getTemperature() != null) {
-            payload.put("temperature", endpoint.getTemperature());
-        }
-        if (endpoint.getMaxOutputTokens() != null) {
-            payload.put("max_tokens", endpoint.getMaxOutputTokens());
+        if (endpoint.getUseProviderDefaults() == null || !endpoint.getUseProviderDefaults()) {
+            if (endpoint.getTemperature() != null) {
+                payload.put("temperature", endpoint.getTemperature());
+            }
+            if (endpoint.getTopP() != null) {
+                payload.put("top_p", endpoint.getTopP());
+            }
+            if (endpoint.getTopK() != null) {
+                payload.put("top_k", endpoint.getTopK());
+            }
+            if (endpoint.getMinP() != null) {
+                payload.put("min_p", endpoint.getMinP());
+            }
+            if (endpoint.getRepeatPenalty() != null) {
+                payload.put("repeat_penalty", endpoint.getRepeatPenalty());
+            }
+            if (endpoint.getMaxOutputTokens() != null) {
+                payload.put("max_tokens", endpoint.getMaxOutputTokens());
+            }
         }
 
         JsonNode response = sendJsonPost(url, payload, apiKey == null ? null : "Bearer " + apiKey, null, endpoint.getTimeoutMs());

@@ -4152,12 +4152,20 @@ html, body {
 .agent-settings-modal {
     min-width: 520px;
     max-width: 720px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .agent-settings-body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.agent-settings-modal .modal-body {
+    overflow-y: auto;
+    flex: 1 1 auto;
 }
 
 .agent-settings-inline {
