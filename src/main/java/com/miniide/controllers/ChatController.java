@@ -291,6 +291,7 @@ public class ChatController implements Controller {
                 if (projectContext != null && projectContext.audit() != null) {
                     projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
                 }
+                maybeCreateChiefRouterWarning(issueId, chief, endpoint, response);
                 ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router validation failed", "content", response));
                 return;
             }
@@ -303,6 +304,7 @@ public class ChatController implements Controller {
                 if (projectContext != null && projectContext.audit() != null) {
                     projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
                 }
+                maybeCreateChiefRouterWarning(issueId, chief, endpoint, response);
                 ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router returned invalid JSON", "content", response));
                 return;
             }
@@ -329,6 +331,7 @@ public class ChatController implements Controller {
                 if (projectContext != null && projectContext.audit() != null) {
                     projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
                 }
+                maybeCreateChiefRouterWarning(issueId, chief, endpoint, response);
                 ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router packet validation failed",
                     "details", validation.getErrors(), "content", response));
                 return;
@@ -577,6 +580,55 @@ public class ChatController implements Controller {
             obj.set("clarification", clarification);
         }
         return obj;
+    }
+
+    private void maybeCreateChiefRouterWarning(String issueId, Agent chief, com.miniide.models.AgentEndpointConfig endpoint,
+                                               String response) {
+        if (issueService == null || issueId == null || issueId.isBlank()) {
+            return;
+        }
+        String tag = "chief-router-warning";
+        long now = System.currentTimeMillis();
+        long dayMs = 24L * 60 * 60 * 1000;
+        List<Issue> existing = issueService.listIssuesByTag(tag);
+        for (Issue issue : existing) {
+            if (issue == null) {
+                continue;
+            }
+            String title = safe(issue.getTitle()).toLowerCase();
+            if (!title.contains(issueId.toLowerCase())) {
+                continue;
+            }
+            if (now - issue.getCreatedAt() < dayMs) {
+                return;
+            }
+        }
+        String model = endpoint != null ? safe(endpoint.getModel()) : "";
+        String provider = endpoint != null ? safe(endpoint.getProvider()) : "";
+        String title = "Chief router struggling for issue " + issueId;
+        StringBuilder body = new StringBuilder();
+        body.append("Chief router failed to emit a valid task packet and fallback was used.\n\n");
+        body.append("**Issue ID**: ").append(issueId).append("\n");
+        if (!provider.isBlank() || !model.isBlank()) {
+            body.append("**Endpoint**: ").append(provider);
+            if (!model.isBlank()) {
+                body.append(" / ").append(model);
+            }
+            body.append("\n");
+        }
+        if (response != null && !response.isBlank()) {
+            String snippet = response.length() > 400 ? response.substring(0, 400) + "..." : response;
+            body.append("\n**Model output**:\n").append(snippet).append("\n");
+        }
+        String assignedTo = chief != null ? chief.getName() : "system";
+        issueService.createIssue(
+            title,
+            body.toString(),
+            "system",
+            assignedTo,
+            List.of("warning", "chief", tag),
+            "normal"
+        );
     }
 
     private boolean agentsUnlocked() {
