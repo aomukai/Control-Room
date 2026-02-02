@@ -3980,6 +3980,7 @@
                 `Attendees: ${formatConferenceRoster()}`,
                 `Moderators: ${formatModerators()}`,
                 `You are ${agentName} (${agentRole}). Respond as this agent.`,
+                'Primary task: find ONE issue in your role domain using evidence from the VFS. Secondary observations are optional and must be clearly labeled as secondary.',
                 roleFrame,
                 evidenceRules,
                 contextPrelude,
@@ -3996,22 +3997,22 @@
         const buildRoleFrame = (role) => {
             const normalized = (role || '').toLowerCase();
             if (normalized.includes('planner')) {
-                return 'Role framing: Focus on outline structure, scene order, stakes, and story arc continuity. Avoid project management jargon unless asked.';
+                return 'Role framing: Focus on outline structure, scene order, stakes, and story arc continuity. Avoid project management jargon unless asked. Evidence must reference outline or scene ordering.';
             }
             if (normalized.includes('writer')) {
-                return 'Role framing: Focus on prose quality, pacing, voice, and concrete scene execution. Avoid project management jargon unless asked.';
+                return 'Role framing: Focus on prose quality, pacing, voice, and concrete scene execution. Avoid project management jargon unless asked. Evidence must reference a scene file quote.';
             }
             if (normalized.includes('editor')) {
-                return 'Role framing: Focus on line-level clarity, consistency, and tightening the draft. Avoid project management jargon unless asked.';
+                return 'Role framing: Focus on line-level clarity, consistency, and tightening the draft. Avoid project management jargon unless asked. Evidence must reference a scene file quote or line/section.';
             }
             if (normalized.includes('critic')) {
-                return 'Role framing: Focus on critique of narrative choices and reader experience. Avoid meeting-meta feedback.';
+                return 'Role framing: Focus on critique of narrative choices and reader experience. Avoid meeting-meta feedback. Evidence must reference a scene file quote.';
             }
             if (normalized.includes('continuity')) {
-                return 'Role framing: Focus on canon consistency, timeline coherence, and named entities accuracy.';
+                return 'Role framing: Focus on canon consistency, timeline coherence, and named entities accuracy. Evidence must reference compendium/canon or scene quotes.';
             }
             if (normalized.includes('assistant') || normalized.includes('chief')) {
-                return 'Role framing: Synthesize grounded findings across agents and surface next steps tied to the text.';
+                return 'Role framing: Synthesize grounded findings across agents and surface next steps tied to the text. Evidence must reference outline or scene quotes.';
             }
             return 'Role framing: Stay grounded in the fiction project and avoid business standup tropes.';
         };
@@ -4112,8 +4113,10 @@
                 if (window.fileApi) {
                     const tree = await fileApi.getTree();
                     const storyFiles = collectStoryFiles(tree, 6);
+                    const outlineAvailable = storyFiles.some(item => item.toLowerCase().includes('scn-outline'));
                     if (storyFiles.length) {
                         parts.push(`Story/Canon files (sample): ${storyFiles.join(' | ')}`);
+                        parts.push(`Outline available in VFS: ${outlineAvailable ? 'Yes (Story/SCN-outline.md)' : 'No'}`);
                     } else {
                         parts.push('Story/Canon files: none detected.');
                     }

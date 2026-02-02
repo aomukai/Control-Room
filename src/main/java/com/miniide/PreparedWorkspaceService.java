@@ -45,6 +45,7 @@ public class PreparedWorkspaceService {
         FileNode story = new FileNode("Story", "Story", "folder");
         FileNode compendium = new FileNode("Compendium", "Compendium", "folder");
 
+        story.addChild(buildOutlineFile());
         story.addChild(buildScenesFolder());
         compendium.addChild(buildCompendiumFolder("Characters"));
         compendium.addChild(buildCompendiumFolder("Locations"));
@@ -350,6 +351,10 @@ public class PreparedWorkspaceService {
             scenesFolder.addChild(new FileNode(filename, "Story/Scenes/" + filename, "file"));
         }
         return scenesFolder;
+    }
+
+    private FileNode buildOutlineFile() {
+        return new FileNode("SCN-outline.md", "Story/SCN-outline.md", "file");
     }
 
     private FileNode buildCompendiumFolder(String bucket) throws IOException {

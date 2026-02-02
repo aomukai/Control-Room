@@ -263,7 +263,7 @@ public class PromptRegistry {
                 "Search locations:\\n" +
                 "- Story/Scenes/ (scene files)\\n" +
                 "- Story/Compendium/ (canon/worldbuilding)\\n" +
-                "- Story/outline.md (story structure)\\n\\n" +
+                "- Story/SCN-outline.md (story structure, virtual)\\n\\n" +
                 "Metadata fields to return per file:\\n" +
                 "- Type: scene/canon/outline\\n" +
                 "- POV (if scene) with confidence and match_basis\\n" +
