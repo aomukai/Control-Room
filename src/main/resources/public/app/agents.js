@@ -4019,11 +4019,12 @@
         const buildEvidenceRules = () => {
             return [
                 'Evidence line requirement (mandatory): include exactly one line starting with "Evidence:".',
+                'Evidence must reference story content (outline/scenes/canon/compendium) or explicitly request access to those.',
                 'Valid formats:',
                 '✅ Evidence: I checked [file/memory tier] and found [specific thing].',
                 '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
                 '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
-                '❌ Missing evidence line or generic claims without checks will be rejected.'
+                '❌ Missing evidence line, issue-tracker-only evidence, or generic claims without checks will be rejected.'
             ].join('\n');
         };
 
@@ -4036,7 +4037,25 @@
             const checkedFound = normalized.includes('i checked') && normalized.includes('and found');
             const checkedFoundNo = normalized.includes('i checked') && (normalized.includes('found no') || normalized.includes('found nothing'));
             const needCheck = normalized.includes('i need to check') && (normalized.includes('requesting') || normalized.includes('request'));
-            if (checkedFound || checkedFoundNo || needCheck) {
+            const storyKeywords = [
+                'outline',
+                'scene',
+                'story/',
+                'compendium',
+                'canon',
+                'scn-outline',
+                'scn outline',
+                'manuscript'
+            ];
+            const mentionsStorySource = storyKeywords.some(keyword => normalized.includes(keyword));
+            const mentionsIssueOnly = normalized.includes('issue') && !mentionsStorySource;
+            if ((checkedFound || checkedFoundNo) && mentionsIssueOnly) {
+                return { ok: false, reason: 'issue-only' };
+            }
+            if ((checkedFound || checkedFoundNo) && mentionsStorySource) {
+                return { ok: true };
+            }
+            if (needCheck) {
                 return { ok: true };
             }
             return { ok: false, reason: 'format' };
@@ -4075,6 +4094,19 @@
                 // ignore
             }
             try {
+                if (window.fileApi) {
+                    const tree = await fileApi.getTree();
+                    const storyFiles = collectStoryFiles(tree, 6);
+                    if (storyFiles.length) {
+                        parts.push(`Story/Canon files (sample): ${storyFiles.join(' | ')}`);
+                    } else {
+                        parts.push('Story/Canon files: none detected.');
+                    }
+                }
+            } catch (_) {
+                // ignore
+            }
+            try {
                 if (window.issueApi) {
                     const issues = await issueApi.list({ status: 'open' });
                     if (Array.isArray(issues) && issues.length) {
@@ -4089,6 +4121,24 @@
             }
             conferenceContext.text = parts.join('\n');
             conferenceContext.isLoading = false;
+        };
+
+        const collectStoryFiles = (node, limit = 6) => {
+            const results = [];
+            const walk = (item) => {
+                if (!item || results.length >= limit) return;
+                if (item.type === 'file' && item.path) {
+                    const lower = item.path.toLowerCase();
+                    if (lower.startsWith('story/') || lower.startsWith('compendium/') || lower.includes('scn-outline')) {
+                        results.push(item.path);
+                    }
+                }
+                if (Array.isArray(item.children)) {
+                    item.children.forEach(child => walk(child));
+                }
+            };
+            walk(node);
+            return results;
         };
 
         const getActiveParticipants = () => {
@@ -4148,7 +4198,10 @@
                         evidenceCheck = validateEvidenceLine(reply);
                     }
                     if (!evidenceCheck.ok) {
-                        const rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
+                        let rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
+                        if (evidenceCheck.reason === 'issue-only') {
+                            rejection = 'Ungrounded response rejected. Issue-tracker evidence alone is not sufficient; cite story content or request access.';
+                        }
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
                         notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
