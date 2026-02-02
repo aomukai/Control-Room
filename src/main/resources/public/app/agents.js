@@ -4052,10 +4052,25 @@
             if ((checkedFound || checkedFoundNo) && mentionsIssueOnly) {
                 return { ok: false, reason: 'issue-only' };
             }
-            if ((checkedFound || checkedFoundNo) && mentionsStorySource) {
+            const hasQuote = /["“”'‘’][^"“”'‘’]{6,}["“”'‘’]/.test(evidenceLine);
+            const hasLocation = normalized.includes('line') || normalized.includes('section') || normalized.includes('paragraph');
+            const hasScope = normalized.includes('scene') || normalized.includes('.md') || normalized.includes('file') || normalized.includes('files');
+            const hasContentClaims = lines.some(line => {
+                const lower = line.toLowerCase();
+                return lower.startsWith('problem:') || lower.startsWith('suggestion:') || lower.includes('problem') || lower.includes('suggestion');
+            });
+
+            if (checkedFoundNo && mentionsStorySource) {
+                if (!hasScope) return { ok: false, reason: 'missing-scope' };
                 return { ok: true };
             }
+            if (checkedFound && mentionsStorySource) {
+                if (hasQuote) return { ok: true };
+                if (hasLocation && !hasContentClaims) return { ok: true };
+                return { ok: false, reason: hasContentClaims ? 'missing-quote' : 'missing-location' };
+            }
             if (needCheck) {
+                if (!hasScope) return { ok: false, reason: 'missing-scope' };
                 return { ok: true };
             }
             return { ok: false, reason: 'format' };
@@ -4201,6 +4216,12 @@
                         let rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
                         if (evidenceCheck.reason === 'issue-only') {
                             rejection = 'Ungrounded response rejected. Issue-tracker evidence alone is not sufficient; cite story content or request access.';
+                        } else if (evidenceCheck.reason === 'missing-quote') {
+                            rejection = 'Ungrounded response rejected. Content claims require a direct quote from the cited file.';
+                        } else if (evidenceCheck.reason === 'missing-location') {
+                            rejection = 'Ungrounded response rejected. Structural claims must cite a line/section reference.';
+                        } else if (evidenceCheck.reason === 'missing-scope') {
+                            rejection = 'Ungrounded response rejected. Absence or access claims must specify scope (files/scenes scanned).';
                         }
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
