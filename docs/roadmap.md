@@ -239,9 +239,9 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
     - [x] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
   - [x] **PH-1 Receipt storage + audit trail** - persist packets + receipts under `.control-room/audit/issues/<issue_id>/` with timestamped naming; add backend loader by issue_id.
     - [x] Acceptance: receipt written to disk; loader lists receipts for issue in timestamp order.
-  - [ ] **PH-2 Chief router (v0.1)** - user prompt -> task packet or clarification questionnaire; packets include target resolution + output contract.
-    - [ ] Note: if clarification exceeds 3 items or scope conflict detected, Chief switches to guided 1:1 (transcript saved as issue input).
-    - [ ] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.
+  - [x] **PH-2 Chief router (v0.1)** - user prompt -> task packet or clarification questionnaire; packets include target resolution + output contract.
+    - [x] Note: if clarification exceeds 3 items or scope conflict detected, Chief switches to guided 1:1 (transcript saved as issue input).
+    - [x] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.
   - [ ] **PH-3 Agent execution guardrails** - reject invalid packets/receipts; enforce no-hallucinated-paths; require expected_artifacts or STOP_HOOK.
     - [ ] Acceptance: invalid JSON -> 2x retry -> STOP_HOOK; bad path -> STOP_HOOK with audit trail.
   - [ ] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.

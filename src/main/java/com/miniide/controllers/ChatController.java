@@ -19,6 +19,7 @@ import com.miniide.settings.SettingsService;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ public class ChatController implements Controller {
     @Override
     public void registerRoutes(Javalin app) {
         app.post("/api/ai/chat", this::aiChat);
+        app.post("/api/ai/chief/route", this::chiefRoute);
     }
 
     private void aiChat(Context ctx) {
@@ -218,6 +220,365 @@ public class ChatController implements Controller {
         return PromptValidationResult.of(List.of("schema:unknown"));
     }
 
+    private void chiefRoute(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String message = json.has("message") ? json.get("message").asText() : "";
+            String issueId = json.has("issueId") ? json.get("issueId").asText(null) : null;
+            String parentPacketId = json.has("parentPacketId") ? json.get("parentPacketId").asText(null) : null;
+            String clarificationChoice = json.has("clarificationChoice") ? json.get("clarificationChoice").asText(null) : null;
+            boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
+
+            if (issueId == null || issueId.isBlank()) {
+                ctx.status(400).json(Map.of("error", "issueId required"));
+                return;
+            }
+            if (message == null || message.isBlank()) {
+                ctx.status(400).json(Map.of("error", "message required"));
+                return;
+            }
+            if (!agentsUnlocked()) {
+                ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+                return;
+            }
+            Agent chief = resolveChiefOfStaff();
+            if (chief == null) {
+                ctx.status(404).json(Map.of("error", "Chief of Staff agent not found"));
+                return;
+            }
+            var endpoint = projectContext.agentEndpoints().getEndpoint(chief.getId());
+            if (endpoint == null) {
+                endpoint = chief.getEndpoint();
+            }
+            if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
+                ctx.status(400).json(Map.of("error", "Chief agent endpoint not configured"));
+                return;
+            }
+            if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+                ctx.status(400).json(Map.of("error", "Chief agent model not configured"));
+                return;
+            }
+            String provider = endpoint.getProvider().trim().toLowerCase();
+            String apiKey = null;
+            if (requiresApiKey(provider)) {
+                String keyRef = endpoint.getApiKeyRef();
+                if (keyRef == null || keyRef.isBlank()) {
+                    ctx.status(400).json(Map.of("error", "API key required for " + provider));
+                    return;
+                }
+                apiKey = settingsService.resolveKey(keyRef);
+            } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
+                apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
+            }
+
+            String prompt = buildChiefRouterPrompt(message, issueId, parentPacketId, clarificationChoice);
+            if (!skipToolCatalog) {
+                String toolCatalog = projectContext.promptTools() != null
+                    ? projectContext.promptTools().buildCatalogPrompt()
+                    : "";
+                if (toolCatalog != null && !toolCatalog.isBlank()) {
+                    prompt = toolCatalog + "\n\n" + prompt;
+                }
+            }
+            String grounding = buildEarlyGroundingHeader();
+            if (grounding != null && !grounding.isBlank()) {
+                prompt = grounding + "\n\n" + prompt;
+            }
+            String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet");
+            if (response != null && response.startsWith("STOP_HOOK")) {
+                JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
+                String packetId = fallback.path("packet_id").asText("");
+                if (projectContext != null && projectContext.audit() != null) {
+                    projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
+                }
+                ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router validation failed", "content", response));
+                return;
+            }
+            JsonNode packetNode;
+            try {
+                packetNode = objectMapper.readTree(response);
+            } catch (Exception parseError) {
+                JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
+                String packetId = fallback.path("packet_id").asText("");
+                if (projectContext != null && projectContext.audit() != null) {
+                    projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
+                }
+                ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router returned invalid JSON", "content", response));
+                return;
+            }
+            if (packetNode != null && packetNode.isObject()) {
+                var obj = (com.fasterxml.jackson.databind.node.ObjectNode) packetNode;
+                String currentIssue = obj.path("parent_issue_id").asText("");
+                if (!issueId.equals(currentIssue)) {
+                    obj.put("parent_issue_id", issueId);
+                }
+                if (parentPacketId != null && !parentPacketId.isBlank()) {
+                    String currentParent = obj.path("parent_packet_id").asText("");
+                    if (!parentPacketId.equals(currentParent)) {
+                        obj.put("parent_packet_id", parentPacketId);
+                    }
+                }
+                ensureRequiredPacketShape(obj, message, clarificationChoice);
+                response = objectMapper.writeValueAsString(obj);
+                packetNode = obj;
+            }
+            PromptValidationResult validation = PromptJsonValidator.validateTaskPacket(response);
+            if (!validation.isValid()) {
+                JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
+                String packetId = fallback.path("packet_id").asText("");
+                if (projectContext != null && projectContext.audit() != null) {
+                    projectContext.audit().writePacket(issueId, packetId, objectMapper.writeValueAsString(fallback));
+                }
+                ctx.json(Map.of("packet", fallback, "fallback", true, "error", "Chief router packet validation failed",
+                    "details", validation.getErrors(), "content", response));
+                return;
+            }
+
+            String packetId = packetNode.path("packet_id").asText("");
+            if (packetId == null || packetId.isBlank()) {
+                ctx.status(422).json(Map.of("error", "Packet packet_id missing"));
+                return;
+            }
+
+            if (projectContext != null && projectContext.audit() != null) {
+                projectContext.audit().writePacket(issueId, packetId, response);
+            }
+
+            ctx.json(Map.of("packet", packetNode, "fallback", false));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private String buildChiefRouterPrompt(String message, String issueId, String parentPacketId, String clarificationChoice) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are the Chief Router. Convert the user request into a Task Packet JSON (v0.1).\n");
+        builder.append("Return ONLY valid JSON. No prose, no markdown, no code fences.\n");
+        builder.append("The JSON must satisfy the task_packet schema and required fields.\n");
+        builder.append("Every required field must be present even if unknown; use empty strings only where allowed.\n");
+        builder.append("Do not omit scope, inputs, constraints, handoff, or output_contract. Use empty objects/arrays as needed.\n");
+        builder.append("Allowed intent values: clarify, plan_scene, beat_architect, continuity_check, write_beat, critique_scene, edit_scene, summarize_context, finalize, other.\n");
+        builder.append("If clarification is needed, use intent=clarify and include a clarification object with question + 2-4 choices.\n");
+        builder.append("If a clarification choice is provided, DO NOT use intent=clarify. Use it to produce the next task packet.\n");
+        builder.append("Use parent_issue_id exactly as provided.\n");
+        if (parentPacketId != null && !parentPacketId.isBlank()) {
+            builder.append("Use parent_packet_id exactly as provided.\n");
+        }
+        builder.append("Use target.scene_ref from the user request if possible; otherwise use \"unknown\".\n");
+        builder.append("Use target.resolution_method \"outline_order\" unless a specific file/path is required.\n");
+        builder.append("Set output_contract.output_mode to json_only for clarify packets; otherwise choose the best fit.\n");
+        builder.append("output_contract.output_mode must be one of: patch, artifact, json_only.\n");
+        builder.append("output_contract.expected_artifacts must be an array (can be empty).\n");
+        builder.append("timestamp must be ISO-8601 UTC. Use this timestamp: ").append(Instant.now().toString()).append("\n");
+        builder.append("requested_by.agent_id must be \"user\".\n");
+        builder.append("Return a single JSON object only, with no trailing text.\n");
+        builder.append("Template (fill values, keep structure):\n");
+        builder.append("{");
+        builder.append("\"packet_id\":\"pkt_...\",");
+        builder.append("\"parent_issue_id\":\"...\",");
+        builder.append("\"parent_packet_id\":\"\",");
+        builder.append("\"intent\":\"clarify|plan_scene|...\",");
+        builder.append("\"target\":{\"scene_ref\":\"...\",\"resolution_method\":\"outline_order\",\"canonical_path\":\"\"},");
+        builder.append("\"scope\":{\"allowed\":[],\"blocked\":[]},");
+        builder.append("\"inputs\":{\"files\":[],\"canon\":\"\",\"context\":\"\"},");
+        builder.append("\"constraints\":{\"rules\":[],\"pov\":\"\",\"tense\":\"\",\"style\":\"\",\"forbidden\":[]},");
+        builder.append("\"output_contract\":{\"output_mode\":\"json_only\",\"expected_artifacts\":[],\"stop_conditions\":[]},");
+        builder.append("\"handoff\":{\"required_next_step\":\"\",\"report_to_chief_only\":false},");
+        builder.append("\"timestamp\":\"").append(Instant.now().toString()).append("\",");
+        builder.append("\"requested_by\":{\"agent_id\":\"user\",\"reason\":\"\"},");
+        builder.append("\"clarification\":{\"question\":\"\",\"choices\":[]}");
+        builder.append("}\n");
+        builder.append("\n");
+        builder.append("parent_issue_id: ").append(issueId).append("\n");
+        if (parentPacketId != null && !parentPacketId.isBlank()) {
+            builder.append("parent_packet_id: ").append(parentPacketId).append("\n");
+        }
+        builder.append("user_message: ").append(message).append("\n");
+        if (clarificationChoice != null && !clarificationChoice.isBlank()) {
+            builder.append("clarification_choice: ").append(clarificationChoice).append("\n");
+        }
+        return builder.toString().trim();
+    }
+
+    private void ensureRequiredPacketShape(com.fasterxml.jackson.databind.node.ObjectNode obj, String message, String clarificationChoice) {
+        if (obj == null) {
+            return;
+        }
+        var om = objectMapper;
+        if (!obj.has("target") || !obj.get("target").isObject()) {
+            var target = om.createObjectNode();
+            target.put("scene_ref", "unknown");
+            target.put("resolution_method", "outline_order");
+            target.put("canonical_path", "");
+            obj.set("target", target);
+        } else {
+            var target = (com.fasterxml.jackson.databind.node.ObjectNode) obj.get("target");
+            if (!target.has("scene_ref")) target.put("scene_ref", "unknown");
+            if (!target.has("resolution_method")) target.put("resolution_method", "outline_order");
+            if (!target.has("canonical_path")) target.put("canonical_path", "");
+        }
+        if (!obj.has("scope") || !obj.get("scope").isObject()) {
+            var scope = om.createObjectNode();
+            scope.set("allowed", om.createArrayNode());
+            scope.set("blocked", om.createArrayNode());
+            obj.set("scope", scope);
+        }
+        if (!obj.has("inputs") || !obj.get("inputs").isObject()) {
+            var inputs = om.createObjectNode();
+            inputs.set("files", om.createArrayNode());
+            inputs.put("canon", "");
+            inputs.put("context", "");
+            obj.set("inputs", inputs);
+        }
+        if (!obj.has("constraints") || !obj.get("constraints").isObject()) {
+            var constraints = om.createObjectNode();
+            constraints.set("rules", om.createArrayNode());
+            constraints.put("pov", "");
+            constraints.put("tense", "");
+            constraints.put("style", "");
+            constraints.set("forbidden", om.createArrayNode());
+            obj.set("constraints", constraints);
+        }
+        if (!obj.has("output_contract") || !obj.get("output_contract").isObject()) {
+            var output = om.createObjectNode();
+            output.put("output_mode", "json_only");
+            output.set("expected_artifacts", om.createArrayNode());
+            output.set("stop_conditions", om.createArrayNode());
+            obj.set("output_contract", output);
+        } else {
+            var output = (com.fasterxml.jackson.databind.node.ObjectNode) obj.get("output_contract");
+            if (!output.has("output_mode")) output.put("output_mode", "json_only");
+            if (!output.has("expected_artifacts")) output.set("expected_artifacts", om.createArrayNode());
+            if (!output.has("stop_conditions")) output.set("stop_conditions", om.createArrayNode());
+        }
+        if (!obj.has("handoff") || !obj.get("handoff").isObject()) {
+            var handoff = om.createObjectNode();
+            handoff.put("required_next_step", "");
+            handoff.put("report_to_chief_only", false);
+            obj.set("handoff", handoff);
+        }
+        if (!obj.has("requested_by") || !obj.get("requested_by").isObject()) {
+            var requestedBy = om.createObjectNode();
+            requestedBy.put("agent_id", "user");
+            requestedBy.put("reason", "");
+            obj.set("requested_by", requestedBy);
+        }
+        if (!obj.has("timestamp")) {
+            obj.put("timestamp", Instant.now().toString());
+        }
+        if (!obj.has("intent")) {
+            obj.put("intent", "clarify");
+        }
+        boolean shouldForceClarify = shouldForceClarifyForScene(message, clarificationChoice);
+        if (shouldForceClarify) {
+            obj.put("intent", "clarify");
+        }
+        if (!obj.has("packet_id")) {
+            obj.put("packet_id", "pkt_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        }
+        if ("clarify".equalsIgnoreCase(obj.path("intent").asText())) {
+            if (!obj.has("clarification") || !obj.get("clarification").isObject()) {
+                var clarification = om.createObjectNode();
+                clarification.put("question", "Which scene resolution should we use?");
+                var choices = om.createArrayNode();
+                choices.add("Outline order (default)");
+                choices.add("By filename/path");
+                choices.add("Specify a different scene reference");
+                clarification.set("choices", choices);
+                obj.set("clarification", clarification);
+            } else {
+                var clarification = (com.fasterxml.jackson.databind.node.ObjectNode) obj.get("clarification");
+                if (!clarification.has("question") || clarification.path("question").asText("").isBlank()) {
+                    clarification.put("question", "Which scene resolution should we use?");
+                }
+                if (!clarification.has("choices") || !clarification.get("choices").isArray()
+                    || clarification.get("choices").size() < 2) {
+                    var choices = om.createArrayNode();
+                    choices.add("Outline order (default)");
+                    choices.add("By filename/path");
+                    choices.add("Specify a different scene reference");
+                    clarification.set("choices", choices);
+                }
+            }
+        }
+    }
+
+    private boolean shouldForceClarifyForScene(String message, String clarificationChoice) {
+        if (clarificationChoice != null && !clarificationChoice.isBlank()) {
+            return false;
+        }
+        if (message == null) {
+            return false;
+        }
+        String trimmed = message.trim().toLowerCase();
+        if (trimmed.isBlank()) {
+            return false;
+        }
+        if (trimmed.matches(".*\\bscene\\s*#?\\s*\\d+\\b.*")) {
+            return true;
+        }
+        return trimmed.matches(".*\\bscene\\s+\\w+\\b.*");
+    }
+
+    private JsonNode buildFallbackPacket(String message, String issueId, String parentPacketId, String clarificationChoice) {
+        var om = objectMapper;
+        var obj = om.createObjectNode();
+        obj.put("packet_id", "pkt_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        obj.put("parent_issue_id", issueId != null ? issueId : "");
+        obj.put("parent_packet_id", parentPacketId != null ? parentPacketId : "");
+        String intent = shouldForceClarifyForScene(message, clarificationChoice) ? "clarify" : "plan_scene";
+        if (clarificationChoice != null && !clarificationChoice.isBlank()) {
+            intent = "plan_scene";
+        }
+        obj.put("intent", intent);
+        var target = om.createObjectNode();
+        target.put("scene_ref", "unknown");
+        target.put("resolution_method", "outline_order");
+        target.put("canonical_path", "");
+        obj.set("target", target);
+        var scope = om.createObjectNode();
+        scope.set("allowed", om.createArrayNode());
+        scope.set("blocked", om.createArrayNode());
+        obj.set("scope", scope);
+        var inputs = om.createObjectNode();
+        inputs.set("files", om.createArrayNode());
+        inputs.put("canon", "");
+        inputs.put("context", "");
+        obj.set("inputs", inputs);
+        var constraints = om.createObjectNode();
+        constraints.set("rules", om.createArrayNode());
+        constraints.put("pov", "");
+        constraints.put("tense", "");
+        constraints.put("style", "");
+        constraints.set("forbidden", om.createArrayNode());
+        obj.set("constraints", constraints);
+        var output = om.createObjectNode();
+        output.put("output_mode", "json_only");
+        output.set("expected_artifacts", om.createArrayNode());
+        output.set("stop_conditions", om.createArrayNode());
+        obj.set("output_contract", output);
+        var handoff = om.createObjectNode();
+        handoff.put("required_next_step", intent);
+        handoff.put("report_to_chief_only", false);
+        obj.set("handoff", handoff);
+        obj.put("timestamp", Instant.now().toString());
+        var requestedBy = om.createObjectNode();
+        requestedBy.put("agent_id", "user");
+        requestedBy.put("reason", "");
+        obj.set("requested_by", requestedBy);
+        if ("clarify".equals(intent)) {
+            var clarification = om.createObjectNode();
+            clarification.put("question", "Which scene resolution should we use?");
+            var choices = om.createArrayNode();
+            choices.add("Outline order (default)");
+            choices.add("By filename/path");
+            choices.add("Specify a different scene reference");
+            clarification.set("choices", choices);
+            obj.set("clarification", clarification);
+        }
+        return obj;
+    }
+
     private boolean agentsUnlocked() {
         return projectContext != null
             && projectContext.preparation() != null
@@ -360,6 +721,23 @@ public class ChatController implements Controller {
             return !includeArchived;
         }
         return false;
+    }
+
+    private Agent resolveChiefOfStaff() {
+        if (projectContext == null || projectContext.agents() == null) {
+            return null;
+        }
+        List<Agent> agents = projectContext.agents().listEnabledAgents();
+        for (Agent agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            String role = agent.getRole() != null ? agent.getRole().trim().toLowerCase() : "";
+            if ("assistant".equals(role) || "chief of staff".equals(role) || Boolean.TRUE.equals(agent.getCanBeTeamLead())) {
+                return agent;
+            }
+        }
+        return null;
     }
 
     private String buildEarlyGroundingHeader() {
