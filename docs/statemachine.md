@@ -60,7 +60,7 @@ E) Playbook (Write Scene from Outline)
 - [x] PH-2 Chief router (v0.1): user -> packet or clarify
 - [x] PH-3 Agent execution guardrails (validation, retry, path checks)
 - [x] PH-4 UI: attached report view in issue modal
-- [ ] PH-5 Playbook: Write Scene from Outline
+- [x] PH-5 Playbook: Write Scene from Outline
 
 ## Acceptance Tests (per phase)
 PH-0: Given a hardcoded sample input, validator accepts a well-formed packet and receipt; rejects 3 known-bad variants (missing required field, invalid intent enum, bad output_contract). (Done)

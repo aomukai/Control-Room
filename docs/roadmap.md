@@ -246,8 +246,8 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
     - [x] Acceptance: invalid JSON -> 2x retry -> STOP_HOOK; bad path -> STOP_HOOK with audit trail.
   - [x] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.
     - [x] Acceptance: issue modal renders report_excerpt; attached report loads in read-only modal.
-  - [ ] **PH-5 Playbook: Write Scene from Outline** - deterministic state machine + routing policy + stop/clarify rules; runs Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
-    - [ ] Acceptance: end-to-end “scene 3” run produces ordered packet/receipt audit trail with artifacts.
+  - [x] **PH-5 Playbook: Write Scene from Outline** - deterministic state machine + routing policy + stop/clarify rules; runs Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
+    - [x] Acceptance: end-to-end “scene 3” run produces ordered packet/receipt audit trail with artifacts.
 
 ### Next (Queued)
 

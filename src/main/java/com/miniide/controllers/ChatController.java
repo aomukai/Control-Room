@@ -56,6 +56,7 @@ public class ChatController implements Controller {
         app.post("/api/ai/chat", this::aiChat);
         app.post("/api/ai/chief/route", this::chiefRoute);
         app.post("/api/ai/task/execute", this::executeTaskPacket);
+        app.post("/api/ai/playbook/scene", this::runScenePlaybook);
     }
 
     private void aiChat(Context ctx) {
@@ -224,6 +225,124 @@ public class ChatController implements Controller {
         return new ReceiptAttempt(false, maxAttempts, lastResponse, lastResult);
     }
 
+    private TaskExecutionResult executeTaskPacketInternal(JsonNode packet, String agentId, boolean skipToolCatalog,
+                                                          boolean simulateInvalid, boolean simulateBadOutput) throws Exception {
+        String issueId = packet.path("parent_issue_id").asText("");
+        String packetId = packet.path("packet_id").asText("");
+        if (issueId.isBlank() || packetId.isBlank()) {
+            return TaskExecutionResult.error("Packet missing parent_issue_id or packet_id", null, false, null);
+        }
+        if (!agentsUnlocked()) {
+            return TaskExecutionResult.error("Project preparation incomplete. Agents are locked.", null, false, null);
+        }
+        Agent agent = projectContext.agents().getAgent(agentId);
+        if (agent == null) {
+            return TaskExecutionResult.error("Agent not found: " + agentId, null, false, null);
+        }
+        var endpoint = projectContext.agentEndpoints().getEndpoint(agentId);
+        if (endpoint == null) {
+            endpoint = agent.getEndpoint();
+        }
+        if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
+            return TaskExecutionResult.error("Agent endpoint not configured", null, false, null);
+        }
+        if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+            return TaskExecutionResult.error("Agent model not configured", null, false, null);
+        }
+        String provider = endpoint.getProvider().trim().toLowerCase();
+        String apiKey = null;
+        if (requiresApiKey(provider)) {
+            String keyRef = endpoint.getApiKeyRef();
+            if (keyRef == null || keyRef.isBlank()) {
+                return TaskExecutionResult.error("API key required for " + provider, null, false, null);
+            }
+            apiKey = settingsService.resolveKey(keyRef);
+        } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
+            apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
+        }
+
+        List<String> expectedArtifacts = readExpectedArtifacts(packet);
+        String outputMode = packet.path("output_contract").path("output_mode").asText("");
+        if (!"json_only".equalsIgnoreCase(outputMode) && expectedArtifacts.isEmpty()) {
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "expected_artifacts missing for output_mode " + outputMode,
+                "expected-artifacts");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("expected_artifacts required", receipt, true, null);
+        }
+
+        if (simulateInvalid) {
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "Simulated invalid receipt for guardrail test.",
+                "invalid-receipt");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("Simulated invalid receipt", receipt, true, null);
+        }
+        if (simulateBadOutput) {
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "Simulated outputs not in expected_artifacts for guardrail test.",
+                "unexpected-artifacts");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("Simulated unexpected outputs", receipt, true, null);
+        }
+
+        String packetJson = objectMapper.writeValueAsString(packet);
+        String prompt = buildTaskExecutionPrompt(packetJson);
+        if (!skipToolCatalog) {
+            String toolCatalog = projectContext.promptTools() != null
+                ? projectContext.promptTools().buildCatalogPrompt()
+                : "";
+            if (toolCatalog != null && !toolCatalog.isBlank()) {
+                prompt = toolCatalog + "\n\n" + prompt;
+            }
+        }
+        String grounding = buildEarlyGroundingHeader();
+        if (grounding != null && !grounding.isBlank()) {
+            prompt = grounding + "\n\n" + prompt;
+        }
+
+        ReceiptAttempt attempt = runReceiptWithValidation(provider, apiKey, endpoint, prompt);
+        if (!attempt.valid) {
+            String detail = attempt.validation != null && !attempt.validation.getErrors().isEmpty()
+                ? String.join(", ", attempt.validation.getErrors())
+                : "invalid-receipt-json";
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "Receipt validation failed: " + detail,
+                "invalid-receipt");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("Invalid receipt JSON", receipt, true, attempt.response);
+        }
+
+        JsonNode receiptNode = objectMapper.readTree(attempt.response);
+        String receiptPacketId = receiptNode.path("packet_id").asText("");
+        String receiptIssueId = receiptNode.path("issue_id").asText("");
+        if (!packetId.equals(receiptPacketId) || !issueId.equals(receiptIssueId)) {
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "Receipt packet_id/issue_id mismatch",
+                "mismatched-receipt");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("Receipt mismatch", receipt, true, null);
+        }
+
+        List<String> outputs = readOutputsProduced(receiptNode);
+        List<String> violations = new ArrayList<>();
+        for (String out : outputs) {
+            if (!expectedArtifacts.contains(out)) {
+                violations.add(out);
+            }
+        }
+        if (!violations.isEmpty()) {
+            JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                "Outputs not in expected_artifacts: " + String.join(", ", violations),
+                "unexpected-artifacts");
+            writeReceiptAndComment(issueId, packetId, receipt);
+            return TaskExecutionResult.error("Unexpected output paths", receipt, true, null);
+        }
+
+        writeReceiptAndComment(issueId, packetId, receiptNode);
+        return TaskExecutionResult.success(receiptNode);
+    }
+
     private String callAgentWithGate(String providerName, String apiKey,
                                      com.miniide.models.AgentEndpointConfig agentEndpoint,
                                      String prompt) {
@@ -261,141 +380,110 @@ public class ChatController implements Controller {
                 return;
             }
             JsonNode packet = objectMapper.readTree(packetJson);
-            String issueId = packet.path("parent_issue_id").asText("");
-            String packetId = packet.path("packet_id").asText("");
-            if (issueId.isBlank() || packetId.isBlank()) {
-                ctx.status(422).json(Map.of("error", "Packet missing parent_issue_id or packet_id"));
-                return;
-            }
 
             String agentId = json.has("agentId") ? json.get("agentId").asText(null) : null;
             if (agentId == null || agentId.isBlank()) {
                 ctx.status(400).json(Map.of("error", "agentId required"));
                 return;
             }
+
+            boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
+            boolean simulateInvalid = json.has("simulateInvalidReceipt") && json.get("simulateInvalidReceipt").asBoolean();
+            boolean simulateBadOutput = json.has("simulateUnexpectedOutput") && json.get("simulateUnexpectedOutput").asBoolean();
+            TaskExecutionResult result = executeTaskPacketInternal(packet, agentId, skipToolCatalog, simulateInvalid, simulateBadOutput);
+            if (result.error != null) {
+                ctx.json(Map.of("receipt", result.receipt, "stopHook", result.stopHook, "error", result.error,
+                    "content", result.content));
+                return;
+            }
+            ctx.json(Map.of("receipt", result.receipt, "stopHook", result.stopHook));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void runScenePlaybook(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            String issueId = json.has("issueId") ? json.get("issueId").asText(null) : null;
+            String message = json.has("message") ? json.get("message").asText() : "";
+            String clarificationChoice = json.has("clarificationChoice") ? json.get("clarificationChoice").asText(null) : null;
+            if (issueId == null || issueId.isBlank()) {
+                ctx.status(400).json(Map.of("error", "issueId required"));
+                return;
+            }
+            if (message == null || message.isBlank()) {
+                ctx.status(400).json(Map.of("error", "message required"));
+                return;
+            }
             if (!agentsUnlocked()) {
                 ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
                 return;
             }
-            Agent agent = projectContext.agents().getAgent(agentId);
-            if (agent == null) {
-                ctx.status(404).json(Map.of("error", "Agent not found: " + agentId));
+
+            ChiefPacketResult chiefPacket = routeChiefPacket(issueId, message, null, clarificationChoice);
+            if (chiefPacket == null || chiefPacket.packet == null) {
+                ctx.status(500).json(Map.of("error", "Chief router failed"));
                 return;
             }
-            var endpoint = projectContext.agentEndpoints().getEndpoint(agentId);
-            if (endpoint == null) {
-                endpoint = agent.getEndpoint();
+            JsonNode packet = chiefPacket.packet;
+            String chiefPacketId = packet.path("packet_id").asText("");
+            if (projectContext != null && projectContext.audit() != null && !chiefPacketId.isBlank()) {
+                projectContext.audit().writePacket(issueId, chiefPacketId, objectMapper.writeValueAsString(packet));
             }
-            if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
-                ctx.status(400).json(Map.of("error", "Agent endpoint not configured"));
+            String intent = packet.path("intent").asText("");
+            if ("clarify".equalsIgnoreCase(intent)) {
+                ctx.json(Map.of("status", "clarify", "packet", packet, "fallback", chiefPacket.fallback));
                 return;
             }
-            if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
-                ctx.status(400).json(Map.of("error", "Agent model not configured"));
-                return;
-            }
-            String provider = endpoint.getProvider().trim().toLowerCase();
-            String apiKey = null;
-            if (requiresApiKey(provider)) {
-                String keyRef = endpoint.getApiKeyRef();
-                if (keyRef == null || keyRef.isBlank()) {
-                    ctx.status(400).json(Map.of("error", "API key required for " + provider));
+
+            String runId = "run_" + Instant.now().toString().replace(":", "").replace(".", "");
+            String basePacketId = packet.path("packet_id").asText("");
+            String issue = packet.path("parent_issue_id").asText(issueId);
+            JsonNode target = packet.path("target");
+            JsonNode scope = packet.path("scope");
+            JsonNode inputs = packet.path("inputs");
+            JsonNode constraints = packet.path("constraints");
+
+            List<PlaybookStep> steps = List.of(
+                new PlaybookStep("plan_scene", "planner", "continuity_check"),
+                new PlaybookStep("continuity_check", "continuity", "write_beat"),
+                new PlaybookStep("write_beat", "writer", "critique_scene"),
+                new PlaybookStep("critique_scene", "critic", "edit_scene"),
+                new PlaybookStep("edit_scene", "editor", "continuity_check"),
+                new PlaybookStep("continuity_check", "continuity", "finalize"),
+                new PlaybookStep("finalize", "assistant", "")
+            );
+
+            List<JsonNode> packets = new ArrayList<>();
+            List<JsonNode> receipts = new ArrayList<>();
+            String parentPacketId = basePacketId;
+            int stepIndex = 0;
+            for (PlaybookStep step : steps) {
+                stepIndex++;
+                Agent agent = resolveAgentForRole(step.roleKey);
+                if (agent == null) {
+                    ctx.status(404).json(Map.of("error", "Agent not found for role: " + step.roleKey));
                     return;
                 }
-                apiKey = settingsService.resolveKey(keyRef);
-            } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
-                apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
-            }
-
-            boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
-            List<String> expectedArtifacts = readExpectedArtifacts(packet);
-            String outputMode = packet.path("output_contract").path("output_mode").asText("");
-            if (!"json_only".equalsIgnoreCase(outputMode) && expectedArtifacts.isEmpty()) {
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "expected_artifacts missing for output_mode " + outputMode,
-                    "expected-artifacts");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "expected_artifacts required"));
-                return;
-            }
-
-            boolean simulateInvalid = json.has("simulateInvalidReceipt") && json.get("simulateInvalidReceipt").asBoolean();
-            if (simulateInvalid) {
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "Simulated invalid receipt for guardrail test.",
-                    "invalid-receipt");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Simulated invalid receipt"));
-                return;
-            }
-            boolean simulateBadOutput = json.has("simulateUnexpectedOutput") && json.get("simulateUnexpectedOutput").asBoolean();
-            if (simulateBadOutput) {
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "Simulated outputs not in expected_artifacts for guardrail test.",
-                    "unexpected-artifacts");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Simulated unexpected outputs"));
-                return;
-            }
-
-            String prompt = buildTaskExecutionPrompt(packetJson);
-            if (!skipToolCatalog) {
-                String toolCatalog = projectContext.promptTools() != null
-                    ? projectContext.promptTools().buildCatalogPrompt()
-                    : "";
-                if (toolCatalog != null && !toolCatalog.isBlank()) {
-                    prompt = toolCatalog + "\n\n" + prompt;
+                JsonNode stepPacket = buildPlaybookPacket(issue, parentPacketId, runId, stepIndex,
+                    step.intent, target, scope, inputs, constraints, agent.getId(), step.nextIntent);
+                String stepPacketId = stepPacket.path("packet_id").asText("");
+                if (projectContext != null && projectContext.audit() != null) {
+                    projectContext.audit().writePacket(issue, stepPacketId, objectMapper.writeValueAsString(stepPacket));
                 }
-            }
-            String grounding = buildEarlyGroundingHeader();
-            if (grounding != null && !grounding.isBlank()) {
-                prompt = grounding + "\n\n" + prompt;
-            }
-
-            ReceiptAttempt attempt = runReceiptWithValidation(provider, apiKey, endpoint, prompt);
-            if (!attempt.valid) {
-                String detail = attempt.validation != null && !attempt.validation.getErrors().isEmpty()
-                    ? String.join(", ", attempt.validation.getErrors())
-                    : "invalid-receipt-json";
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "Receipt validation failed: " + detail,
-                    "invalid-receipt");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Invalid receipt JSON",
-                    "content", attempt.response));
-                return;
-            }
-
-            JsonNode receiptNode = objectMapper.readTree(attempt.response);
-            String receiptPacketId = receiptNode.path("packet_id").asText("");
-            String receiptIssueId = receiptNode.path("issue_id").asText("");
-            if (!packetId.equals(receiptPacketId) || !issueId.equals(receiptIssueId)) {
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "Receipt packet_id/issue_id mismatch",
-                    "mismatched-receipt");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Receipt mismatch"));
-                return;
-            }
-
-            List<String> outputs = readOutputsProduced(receiptNode);
-            List<String> violations = new ArrayList<>();
-            for (String out : outputs) {
-                if (!expectedArtifacts.contains(out)) {
-                    violations.add(out);
+                packets.add(stepPacket);
+                TaskExecutionResult result = executeTaskPacketInternal(stepPacket, agent.getId(), false, false, false);
+                receipts.add(result.receipt);
+                if (result.stopHook) {
+                    ctx.json(Map.of("status", "stopped", "packets", packets, "receipts", receipts,
+                        "stopHook", true, "error", result.error));
+                    return;
                 }
-            }
-            if (!violations.isEmpty()) {
-                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
-                    "Outputs not in expected_artifacts: " + String.join(", ", violations),
-                    "unexpected-artifacts");
-                writeReceiptAndComment(issueId, packetId, receipt);
-                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Unexpected output paths"));
-                return;
+                parentPacketId = stepPacketId;
             }
 
-            writeReceiptAndComment(issueId, packetId, receiptNode);
-            ctx.json(Map.of("receipt", receiptNode, "stopHook", false));
+            ctx.json(Map.of("status", "completed", "packets", packets, "receipts", receipts));
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }
@@ -595,6 +683,75 @@ public class ChatController implements Controller {
         return builder.toString().trim();
     }
 
+    private ChiefPacketResult routeChiefPacket(String issueId, String message, String parentPacketId, String clarificationChoice) throws Exception {
+        Agent chief = resolveChiefOfStaff();
+        if (chief == null) {
+            return null;
+        }
+        var endpoint = projectContext.agentEndpoints().getEndpoint(chief.getId());
+        if (endpoint == null) {
+            endpoint = chief.getEndpoint();
+        }
+        if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
+            return null;
+        }
+        if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+            return null;
+        }
+        String provider = endpoint.getProvider().trim().toLowerCase();
+        String apiKey = null;
+        if (requiresApiKey(provider)) {
+            String keyRef = endpoint.getApiKeyRef();
+            if (keyRef == null || keyRef.isBlank()) {
+                return null;
+            }
+            apiKey = settingsService.resolveKey(keyRef);
+        } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
+            apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
+        }
+
+        String prompt = buildChiefRouterPrompt(message, issueId, parentPacketId, clarificationChoice);
+        String toolCatalog = projectContext.promptTools() != null
+            ? projectContext.promptTools().buildCatalogPrompt()
+            : "";
+        if (toolCatalog != null && !toolCatalog.isBlank()) {
+            prompt = toolCatalog + "\n\n" + prompt;
+        }
+        String grounding = buildEarlyGroundingHeader();
+        if (grounding != null && !grounding.isBlank()) {
+            prompt = grounding + "\n\n" + prompt;
+        }
+
+        String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet");
+        if (response != null && response.startsWith("STOP_HOOK")) {
+            JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
+            return new ChiefPacketResult(fallback, true);
+        }
+        JsonNode packetNode;
+        try {
+            packetNode = objectMapper.readTree(response);
+        } catch (Exception parseError) {
+            JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
+            return new ChiefPacketResult(fallback, true);
+        }
+        if (packetNode != null && packetNode.isObject()) {
+            var obj = (com.fasterxml.jackson.databind.node.ObjectNode) packetNode;
+            String currentIssue = obj.path("parent_issue_id").asText("");
+            if (!issueId.equals(currentIssue)) {
+                obj.put("parent_issue_id", issueId);
+            }
+            if (parentPacketId != null && !parentPacketId.isBlank()) {
+                String currentParent = obj.path("parent_packet_id").asText("");
+                if (!parentPacketId.equals(currentParent)) {
+                    obj.put("parent_packet_id", parentPacketId);
+                }
+            }
+            ensureRequiredPacketShape(obj, message, clarificationChoice);
+            packetNode = obj;
+        }
+        return new ChiefPacketResult(packetNode, false);
+    }
+
     private void ensureRequiredPacketShape(com.fasterxml.jackson.databind.node.ObjectNode obj, String message, String clarificationChoice) {
         if (obj == null) {
             return;
@@ -713,6 +870,76 @@ public class ChatController implements Controller {
             return true;
         }
         return trimmed.matches(".*\\bscene\\s+\\w+\\b.*");
+    }
+
+    private JsonNode buildPlaybookPacket(String issueId, String parentPacketId, String runId, int stepIndex,
+                                         String intent, JsonNode target, JsonNode scope, JsonNode inputs,
+                                         JsonNode constraints, String requestedBy, String nextIntent) {
+        var om = objectMapper;
+        var obj = om.createObjectNode();
+        obj.put("packet_id", "pkt_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        obj.put("parent_issue_id", issueId);
+        obj.put("parent_packet_id", parentPacketId != null ? parentPacketId : "");
+        obj.put("intent", intent);
+        obj.put("run_id", runId);
+        obj.put("step_id", "step_" + stepIndex);
+        obj.put("attempt", 1);
+
+        obj.set("target", target != null && target.isObject() ? target.deepCopy() : defaultTargetNode());
+        obj.set("scope", scope != null && scope.isObject() ? scope.deepCopy() : defaultScopeNode());
+        obj.set("inputs", inputs != null && inputs.isObject() ? inputs.deepCopy() : defaultInputsNode());
+        obj.set("constraints", constraints != null && constraints.isObject() ? constraints.deepCopy() : defaultConstraintsNode());
+
+        var output = om.createObjectNode();
+        output.put("output_mode", "json_only");
+        output.set("expected_artifacts", om.createArrayNode());
+        output.set("stop_conditions", om.createArrayNode());
+        obj.set("output_contract", output);
+
+        var handoff = om.createObjectNode();
+        handoff.put("required_next_step", nextIntent != null ? nextIntent : "");
+        handoff.put("report_to_chief_only", false);
+        obj.set("handoff", handoff);
+
+        obj.put("timestamp", Instant.now().toString());
+        var requested = om.createObjectNode();
+        requested.put("agent_id", requestedBy != null ? requestedBy : "chief");
+        requested.put("reason", "playbook");
+        obj.set("requested_by", requested);
+        return obj;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode defaultTargetNode() {
+        var node = objectMapper.createObjectNode();
+        node.put("scene_ref", "unknown");
+        node.put("resolution_method", "outline_order");
+        node.put("canonical_path", "");
+        return node;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode defaultScopeNode() {
+        var node = objectMapper.createObjectNode();
+        node.set("allowed", objectMapper.createArrayNode());
+        node.set("blocked", objectMapper.createArrayNode());
+        return node;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode defaultInputsNode() {
+        var node = objectMapper.createObjectNode();
+        node.set("files", objectMapper.createArrayNode());
+        node.put("canon", "");
+        node.put("context", "");
+        return node;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode defaultConstraintsNode() {
+        var node = objectMapper.createObjectNode();
+        node.set("rules", objectMapper.createArrayNode());
+        node.put("pov", "");
+        node.put("tense", "");
+        node.put("style", "");
+        node.set("forbidden", objectMapper.createArrayNode());
+        return node;
     }
 
     private JsonNode buildFallbackPacket(String message, String issueId, String parentPacketId, String clarificationChoice) {
@@ -1019,6 +1246,50 @@ public class ChatController implements Controller {
         }
     }
 
+    private static final class TaskExecutionResult {
+        private final JsonNode receipt;
+        private final boolean stopHook;
+        private final String error;
+        private final String content;
+
+        private TaskExecutionResult(JsonNode receipt, boolean stopHook, String error, String content) {
+            this.receipt = receipt;
+            this.stopHook = stopHook;
+            this.error = error;
+            this.content = content;
+        }
+
+        private static TaskExecutionResult success(JsonNode receipt) {
+            return new TaskExecutionResult(receipt, false, null, null);
+        }
+
+        private static TaskExecutionResult error(String error, JsonNode receipt, boolean stopHook, String content) {
+            return new TaskExecutionResult(receipt, stopHook, error, content);
+        }
+    }
+
+    private static final class ChiefPacketResult {
+        private final JsonNode packet;
+        private final boolean fallback;
+
+        private ChiefPacketResult(JsonNode packet, boolean fallback) {
+            this.packet = packet;
+            this.fallback = fallback;
+        }
+    }
+
+    private static final class PlaybookStep {
+        private final String intent;
+        private final String roleKey;
+        private final String nextIntent;
+
+        private PlaybookStep(String intent, String roleKey, String nextIntent) {
+            this.intent = intent;
+            this.roleKey = roleKey;
+            this.nextIntent = nextIntent;
+        }
+    }
+
     private boolean agentsUnlocked() {
         return projectContext != null
             && projectContext.preparation() != null
@@ -1176,6 +1447,37 @@ public class ChatController implements Controller {
             if ("assistant".equals(role) || "chief of staff".equals(role) || Boolean.TRUE.equals(agent.getCanBeTeamLead())) {
                 return agent;
             }
+        }
+        return null;
+    }
+
+    private Agent resolveAgentForRole(String roleKey) {
+        if (projectContext == null || projectContext.agents() == null || roleKey == null) {
+            return null;
+        }
+        String normalized = roleKey.trim().toLowerCase();
+        List<Agent> agents = projectContext.agents().listEnabledAgents();
+        Agent fallback = null;
+        for (Agent agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            String role = agent.getRole() != null ? agent.getRole().trim().toLowerCase() : "";
+            if (!role.equals(normalized)) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(agent.getIsPrimaryForRole())) {
+                return agent;
+            }
+            if (fallback == null) {
+                fallback = agent;
+            }
+        }
+        if (fallback != null) {
+            return fallback;
+        }
+        if ("assistant".equals(normalized) || "chief".equals(normalized)) {
+            return resolveChiefOfStaff();
         }
         return null;
     }
