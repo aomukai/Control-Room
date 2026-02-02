@@ -240,6 +240,171 @@ public class PromptRegistry {
             promptFile.getPrompts().add(tool);
             changed = true;
         }
+        if (getPrompt("file-locator") == null) {
+            PromptTool tool = new PromptTool();
+            tool.setId("file-locator");
+            tool.setName("File Locator");
+            tool.setArchetype("Any");
+            tool.setScope("project");
+            tool.setUsageNotes("Use to find relevant files before analysis. Required first step for scenes, canon, or outline tasks.");
+            tool.setGoals("Locate real project files, report metadata with confidence/match basis, and avoid assuming file contents.");
+            tool.setGuardrails(
+                "Return actual file paths only. Never invent files. " +
+                "Include confidence and match_basis for each metadata field. " +
+                "If DEEP_SCAN exceeds safe context, warn and request confirmation."
+            );
+            tool.setPrompt(
+                "file_locator(\\n" +
+                "  search_criteria: string,\\n" +
+                "  scan_mode?: \"FAST_SCAN\" | \"DEEP_SCAN\",\\n" +
+                "  max_files?: number,\\n" +
+                "  dry_run?: boolean\\n" +
+                ")\\n\\n" +
+                "Search locations:\\n" +
+                "- Story/Scenes/ (scene files)\\n" +
+                "- Story/Compendium/ (canon/worldbuilding)\\n" +
+                "- Story/outline.md (story structure)\\n\\n" +
+                "Metadata fields to return per file:\\n" +
+                "- Type: scene/canon/outline\\n" +
+                "- POV (if scene) with confidence and match_basis\\n" +
+                "- Scene # (if applicable) with confidence and match_basis\\n" +
+                "- Size: word count or file size\\n" +
+                "- Modified: last modified timestamp\\n" +
+                "- Keywords: list with confidence and match_basis\\n\\n" +
+                "Match basis values: FILENAME_MATCH | CONTENT_MATCH | METADATA_MATCH\\n\\n" +
+                "If scan_mode=DEEP_SCAN, estimate token usage before loading content:\\n" +
+                "DEEP_SCAN requested on [N] files (estimated [TOKENS] tokens).\\n" +
+                "WARNING if TOKENS > 30000. Recommend FAST_SCAN or reduce scope to <= 6 files.\\n" +
+                "Proceed anyway? [yes/no]\\n\\n" +
+                "If dry_run=true, output what would be scanned and estimated token usage only."
+            );
+            long now = System.currentTimeMillis();
+            tool.setCreatedAt(now);
+            tool.setUpdatedAt(now);
+            promptFile.getPrompts().add(tool);
+            changed = true;
+        }
+        if (getPrompt("task-router") == null) {
+            PromptTool tool = new PromptTool();
+            tool.setId("task-router");
+            tool.setName("Task Router");
+            tool.setArchetype("Chief");
+            tool.setScope("project");
+            tool.setUsageNotes("Use when a user request needs routing to specialized agents or tools.");
+            tool.setGoals("Classify task type, choose role(s), define evidence type, and specify required context.");
+            tool.setGuardrails(
+                "Do not hardcode agent names. Route by role. " +
+                "If a role is unavailable, route to Chief with FALLBACK reason. " +
+                "If ambiguous, output CLARIFY questions before routing."
+            );
+            tool.setPrompt(
+                "task_router(\\n" +
+                "  user_request: string,\\n" +
+                "  dry_run?: boolean\\n" +
+                ")\\n\\n" +
+                "Available roles:\\n" +
+                "- planner (outline structure, scene ordering, stakes)\\n" +
+                "- writer (prose drafting, scenes, dialogue)\\n" +
+                "- editor (line editing, clarity, consistency)\\n" +
+                "- critic (narrative impact, reader experience)\\n" +
+                "- continuity (timeline, canon consistency, character tracking)\\n" +
+                "- chief (router/moderator)\\n\\n" +
+                "Output format (exact fields):\\n" +
+                "ROUTE: [role or roles]\\n" +
+                "ORDER: [sequential order if multiple]\\n" +
+                "PARALLEL: [roles that can run together]\\n" +
+                "CONTEXT: [files needed] or \"needs file_locator scan\"\\n" +
+                "EXPECTED_OUTPUT: [what to produce]\\n" +
+                "EVIDENCE_TYPE: QUOTE | LINE_REF | SCOPE_SCAN\\n" +
+                "COMPLEXITY: LOW | MEDIUM | HIGH\\n" +
+                "ESTIMATED_TIME: [e.g., 3-5 minutes]\\n" +
+                "PRIORITY: LOW | NORMAL | HIGH\\n" +
+                "FALLBACK: [reason if routing to chief]\\n\\n" +
+                "If ambiguous, output: CLARIFY: [specific questions]\\n\\n" +
+                "If dry_run=true, output a routing preview only (no final route)."
+            );
+            long now = System.currentTimeMillis();
+            tool.setCreatedAt(now);
+            tool.setUpdatedAt(now);
+            promptFile.getPrompts().add(tool);
+            changed = true;
+        }
+        if (getPrompt("canon-checker") == null) {
+            PromptTool tool = new PromptTool();
+            tool.setId("canon-checker");
+            tool.setName("Canon Checker");
+            tool.setArchetype("Continuity");
+            tool.setScope("project");
+            tool.setUsageNotes("Use when verifying scene content against canon files.");
+            tool.setGoals("Ensure scenes do not contradict canon. Identify gaps explicitly.");
+            tool.setGuardrails(
+                "Do not proceed without canon access. " +
+                "If canon files missing, output CANON_NEEDED and stop. " +
+                "Quote both canon and scene for any claim."
+            );
+            tool.setPrompt(
+                "canon_checker(\\n" +
+                "  scene_file: string,\\n" +
+                "  canon_files: string[],\\n" +
+                "  dry_run?: boolean\\n" +
+                ")\\n\\n" +
+                "If canon_files are missing, output:\\n" +
+                "CANON_NEEDED: [list of canon files]\\n" +
+                "STATUS: Cannot validate without canon\\n\\n" +
+                "Otherwise, verify character, location, technology, culture, and historical facts.\\n" +
+                "Report format:\\n" +
+                "Scene: [filename]\\n" +
+                "Canon: [filename]\\n" +
+                "Scene quote: \"...\"\\n" +
+                "Canon quote: \"...\"\\n" +
+                "Status: Consistent | Inconsistent | Canon gap\\n" +
+                "Recommendation: [Add to canon / Revise scene / Flag for review]\\n\\n" +
+                "If dry_run=true, output which files would be checked."
+            );
+            long now = System.currentTimeMillis();
+            tool.setCreatedAt(now);
+            tool.setUpdatedAt(now);
+            promptFile.getPrompts().add(tool);
+            changed = true;
+        }
+        if (getPrompt("outline-analyzer") == null) {
+            PromptTool tool = new PromptTool();
+            tool.setId("outline-analyzer");
+            tool.setName("Outline Analyzer");
+            tool.setArchetype("Planner");
+            tool.setScope("project");
+            tool.setUsageNotes("Analyze story outline for structure, gaps, and stakes progression.");
+            tool.setGoals("Identify structural issues with grounded references to outline text.");
+            tool.setGuardrails(
+                "If outline path unknown, call file_locator first. " +
+                "Do not claim outline is missing without file_locator confirmation. " +
+                "Quote outline text for all structural claims."
+            );
+            tool.setPrompt(
+                "outline_analyzer(\\n" +
+                "  outline_path?: string,\\n" +
+                "  dry_run?: boolean\\n" +
+                ")\\n\\n" +
+                "If outline_path not provided, call file_locator for \"outline\" and report results.\\n" +
+                "If no outline file exists, output: No outline file found.\\n\\n" +
+                "Analyze:\\n" +
+                "1) Scene count and distribution\\n" +
+                "2) Stakes progression\\n" +
+                "3) Act structure (setup/confrontation/resolution)\\n" +
+                "4) Gaps or missing transitions\\n" +
+                "5) POV balance\\n\\n" +
+                "Report format:\\n" +
+                "Structure Overview: ...\\n" +
+                "Problem Identified: [quote + location]\\n" +
+                "Suggested Fix: [actionable change]\\n\\n" +
+                "If dry_run=true, output which outline file would be analyzed."
+            );
+            long now = System.currentTimeMillis();
+            tool.setCreatedAt(now);
+            tool.setUpdatedAt(now);
+            promptFile.getPrompts().add(tool);
+            changed = true;
+        }
         if (changed && hasWorkspaceMarker()) {
             saveToDisk();
         }
