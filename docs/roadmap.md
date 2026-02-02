@@ -252,6 +252,15 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 ### Next (Queued)
 
 - [x] **Conference chat wiring** - connect conference chat flow; validate agent turn queue indicator here.
+- [ ] **Conference grounding hardening**
+  - [x] User-only conference history in prompts (no agent cross-contamination).
+  - [x] Role framing + evidence rules injected per agent.
+  - [x] Quote verification against VFS file content.
+  - [x] VFS outline path exposed + outline content mapped to API output.
+  - [ ] Evidence parser accepts **Evidence:** (bold) format.
+  - [ ] Structural claims require line/section or outline entry reference.
+  - [ ] Block chain-of-thought leakage in conference replies.
+  - [ ] Reject plain-text tool calls (tools are prompt-only).
 
 ### Medium Term
 

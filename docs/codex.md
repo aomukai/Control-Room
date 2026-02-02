@@ -10,21 +10,23 @@ Any claim like “file not found” must be verified with ls/test -f/direct open
 ## Authority & Navigation
 roadmap.md is the sole source of truth for implementation status and sequencing. index.md is a router to find the right reference docs and anchors; use it for navigation only.
 
-## What?s Next
-Focus only on what?s still pending (see roadmap.md for authoritative status).
+## What’s Next
+Focus only on what’s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-5 is complete.
-- Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
+- Conference grounding: evidence format parser, structural claim enforcement, chain-of-thought blocking, and quote verification robustness.
+- VFS alignment: outline content parity between VFS (Story/SCN-outline.md) and outline API.
+- Prompt tools baseline: file_locator/task_router/canon_checker/outline_analyzer prompts + usage expectations.
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
 ## Working Notes
-- Prompt hardening state machine + requirements tracked in docs/statemachine.md.
+- Conference grounding state machine + requirements tracked in docs/statemachine.md.
 
 ## Next Session Plan
-1) Validate playbook end-to-end with real agents and confirm audit trail ordering.
-2) Decide whether to require artifact outputs for playbook steps.
-3) Harden failure handling and retry policy based on real model behavior.
+1) Fix Evidence line parser to accept **Evidence:** while preserving single-line rule.
+2) Enforce structural claim evidence (line/section or outline entry).
+3) Add chain-of-thought rejection and plain-text tool-call rejection.
+4) Re-run a conference test and capture logs.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.
