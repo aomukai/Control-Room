@@ -68,6 +68,10 @@ public class PreparedWorkspaceService {
     }
 
     public String readFile(String relativePath) throws IOException {
+        String normalized = relativePath != null ? relativePath.replace('\\', '/') : "";
+        if ("Story/SCN-outline.md".equalsIgnoreCase(normalized)) {
+            return readOutlineMarkdown();
+        }
         CanonPath path = CanonPath.parse(relativePath);
         if (path == null) {
             throw new FileNotFoundException("File not found: " + relativePath);
@@ -84,6 +88,40 @@ public class PreparedWorkspaceService {
             throw new FileNotFoundException("Card not found: " + relativePath);
         }
         return card.getContent() != null ? card.getContent() : "";
+    }
+
+    private String readOutlineMarkdown() throws IOException {
+        Path outlinePath = workspaceRoot.resolve(".control-room").resolve("story").resolve("outline.json");
+        StringBuilder builder = new StringBuilder();
+        builder.append("# Story Outline\n\n");
+        if (!Files.exists(outlinePath)) {
+            return builder.toString();
+        }
+        try {
+            com.miniide.models.OutlineDocument outline = mapper.readValue(outlinePath.toFile(), com.miniide.models.OutlineDocument.class);
+            if (outline == null || outline.getScenes() == null || outline.getScenes().isEmpty()) {
+                return builder.toString();
+            }
+            int index = 1;
+            for (com.miniide.models.OutlineScene scene : outline.getScenes()) {
+                if (scene == null) {
+                    continue;
+                }
+                String title = scene.getTitle() != null && !scene.getTitle().isBlank()
+                    ? scene.getTitle().trim()
+                    : "Scene " + index;
+                builder.append("## ").append(title).append("\n");
+                String summary = scene.getSummary() != null ? scene.getSummary().trim() : "";
+                if (!summary.isBlank()) {
+                    builder.append(summary).append("\n");
+                }
+                builder.append("\n");
+                index++;
+            }
+            return builder.toString().trim() + "\n";
+        } catch (Exception e) {
+            return builder.toString();
+        }
     }
 
     public void writeFile(String relativePath, String content) throws IOException {

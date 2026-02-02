@@ -3963,7 +3963,8 @@
         };
 
         const formatChatLogForPrompt = (limit = 12) => {
-            const slice = chatLog.slice(-limit);
+            const userOnly = chatLog.filter(entry => entry && entry.role === 'user');
+            const slice = userOnly.slice(-limit);
             if (slice.length === 0) return 'No prior messages.';
             return slice.map(entry => `${entry.author}: ${entry.content}`).join('\n');
         };
@@ -4029,7 +4030,7 @@
             ].join('\n');
         };
 
-        const validateEvidenceLine = (content) => {
+        const validateEvidenceLine = async (content, agentRole) => {
             if (!content) return { ok: false, reason: 'empty' };
             const lines = String(content).split('\n').map(line => line.trim()).filter(Boolean);
             const evidenceLine = lines.find(line => line.toLowerCase().startsWith('evidence:'));
@@ -4060,13 +4061,21 @@
                 const lower = line.toLowerCase();
                 return lower.startsWith('problem:') || lower.startsWith('suggestion:') || lower.includes('problem') || lower.includes('suggestion');
             });
+            const roleRequirement = roleEvidenceRequirement(agentRole);
+            if (roleRequirement && !roleRequirement(normalized)) {
+                return { ok: false, reason: 'wrong-source' };
+            }
 
             if (checkedFoundNo && mentionsStorySource) {
                 if (!hasScope) return { ok: false, reason: 'missing-scope' };
                 return { ok: true };
             }
             if (checkedFound && mentionsStorySource) {
-                if (hasQuote) return { ok: true };
+                if (hasQuote) {
+                    const quoteCheck = await verifyQuoteInFile(evidenceLine);
+                    if (!quoteCheck.ok) return quoteCheck;
+                    return { ok: true };
+                }
                 if (hasLocation && !hasContentClaims) return { ok: true };
                 return { ok: false, reason: hasContentClaims ? 'missing-quote' : 'missing-location' };
             }
@@ -4075,6 +4084,52 @@
                 return { ok: true };
             }
             return { ok: false, reason: 'format' };
+        };
+
+        const roleEvidenceRequirement = (role) => {
+            const normalized = (role || '').toLowerCase();
+            if (normalized.includes('planner')) {
+                return (line) => line.includes('outline') || line.includes('scn-outline');
+            }
+            if (normalized.includes('writer') || normalized.includes('editor') || normalized.includes('critic')) {
+                return (line) => line.includes('story/scenes') || line.includes('scene');
+            }
+            if (normalized.includes('continuity')) {
+                return (line) => line.includes('compendium') || line.includes('canon') || line.includes('story/scenes');
+            }
+            if (normalized.includes('assistant') || normalized.includes('chief')) {
+                return (line) => line.includes('outline') || line.includes('story/scenes') || line.includes('compendium');
+            }
+            return null;
+        };
+
+        const verifyQuoteInFile = async (evidenceLine) => {
+            const fileMatch = evidenceLine.match(/[A-Za-z0-9_./-]+\.md/i);
+            if (!fileMatch) return { ok: false, reason: 'missing-file' };
+            const filePath = fileMatch[0];
+            const quoteMatch = evidenceLine.match(/["“”'‘’]([^"“”'‘’]{6,})["“”'‘’]/);
+            if (!quoteMatch) return { ok: false, reason: 'missing-quote' };
+            const quote = quoteMatch[1];
+            if (!window.fileApi) return { ok: false, reason: 'no-file-api' };
+            try {
+                const content = await fileApi.getFile(filePath);
+                const normalizedQuote = normalizeText(quote);
+                const normalizedContent = normalizeText(content || '');
+                if (!normalizedContent.includes(normalizedQuote)) {
+                    return { ok: false, reason: 'quote-not-found' };
+                }
+                return { ok: true };
+            } catch (err) {
+                return { ok: false, reason: 'file-read-failed' };
+            }
+        };
+
+        const normalizeText = (value) => {
+            return String(value || '')
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .replace(/[“”'‘’]/g, '"')
+                .trim();
         };
 
         const loadConferenceContext = async () => {
@@ -4203,7 +4258,7 @@
                     }), `Conference response from ${agent.name || 'agent'}`);
                     let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
                     let reply = parsed.content || 'No response.';
-                    let evidenceCheck = validateEvidenceLine(reply);
+                    let evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     if (!evidenceCheck.ok) {
                         const retryPrompt = buildConferencePrompt(agent, text, { retry: true });
                         const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
@@ -4213,7 +4268,7 @@
                         }), `Conference retry for ${agent.name || 'agent'}`);
                         parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
                         reply = parsed.content || 'No response.';
-                        evidenceCheck = validateEvidenceLine(reply);
+                        evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     }
                     if (!evidenceCheck.ok) {
                         let rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
@@ -4225,6 +4280,12 @@
                             rejection = 'Ungrounded response rejected. Structural claims must cite a line/section reference.';
                         } else if (evidenceCheck.reason === 'missing-scope') {
                             rejection = 'Ungrounded response rejected. Absence or access claims must specify scope (files/scenes scanned).';
+                        } else if (evidenceCheck.reason === 'wrong-source') {
+                            rejection = 'Ungrounded response rejected. Evidence source does not match role requirements.';
+                        } else if (evidenceCheck.reason === 'quote-not-found') {
+                            rejection = 'Ungrounded response rejected. Quoted text was not found in the cited file.';
+                        } else if (evidenceCheck.reason === 'missing-file' || evidenceCheck.reason === 'file-read-failed') {
+                            rejection = 'Ungrounded response rejected. Evidence file could not be verified.';
                         }
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
