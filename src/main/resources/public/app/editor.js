@@ -577,14 +577,18 @@
             }
 
             if (isStoryRoot(node)) {
-                const outlineNode = {
-                    name: 'SCN-outline.md',
-                    path: OUTLINE_VIRTUAL_PATH,
-                    type: 'file',
-                    virtual: true
-                };
-                const outlineItem = createTreeItem(outlineNode, depth + 1);
-                container.appendChild(outlineItem.element);
+                const hasOutline = Array.isArray(node.children)
+                    && node.children.some(child => normalizeWorkspacePath(child.path || '') === OUTLINE_VIRTUAL_PATH);
+                if (!hasOutline) {
+                    const outlineNode = {
+                        name: 'SCN-outline.md',
+                        path: OUTLINE_VIRTUAL_PATH,
+                        type: 'file',
+                        virtual: true
+                    };
+                    const outlineItem = createTreeItem(outlineNode, depth + 1);
+                    container.appendChild(outlineItem.element);
+                }
             }
 
             node.children.forEach(child => {
