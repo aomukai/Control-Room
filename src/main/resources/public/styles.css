@@ -5353,6 +5353,56 @@ html, body {
     margin-top: 16px;
 }
 
+.issue-receipts-section {
+    margin-top: 16px;
+}
+
+.issue-receipts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.issue-receipt-entry {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+.issue-receipt-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    gap: 12px;
+}
+
+.issue-receipt-label {
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.issue-receipt-excerpt {
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+
+.issue-receipts-empty,
+.issue-receipts-loading,
+.issue-receipts-error {
+    padding: 12px 14px;
+    background: var(--bg-dark);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
 .issue-comments-list {
     display: flex;
     flex-direction: column;
@@ -11863,8 +11913,68 @@ body.no-project #editor-placeholder .placeholder-text p {
         text-align: center;
     }
 
-    .focus-editor-actions {
-        width: 100%;
-        justify-content: flex-end;
-    }
+.focus-editor-actions {
+    width: 100%;
+    justify-content: flex-end;
+}
+}
+
+/* Issue report modal */
+.issue-report-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1400;
+}
+
+.issue-report-modal {
+    background: var(--bg-medium);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 85%;
+    max-width: 900px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.issue-report-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-light);
+    border-radius: 8px 8px 0 0;
+}
+
+.issue-report-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.issue-report-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+}
+
+.issue-report-close:hover {
+    color: var(--text-bright);
+}
+
+.issue-report-body {
+    padding: 18px 20px;
+    overflow-y: auto;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.6;
 }

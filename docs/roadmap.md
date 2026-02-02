@@ -244,8 +244,8 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
     - [x] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.
   - [x] **PH-3 Agent execution guardrails** - reject invalid packets/receipts; enforce no-hallucinated-paths; require expected_artifacts or STOP_HOOK.
     - [x] Acceptance: invalid JSON -> 2x retry -> STOP_HOOK; bad path -> STOP_HOOK with audit trail.
-  - [ ] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.
-    - [ ] Acceptance: issue modal renders report_excerpt; attached report loads in read-only modal.
+  - [x] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.
+    - [x] Acceptance: issue modal renders report_excerpt; attached report loads in read-only modal.
   - [ ] **PH-5 Playbook: Write Scene from Outline** - deterministic state machine + routing policy + stop/clarify rules; runs Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
     - [ ] Acceptance: end-to-end “scene 3” run produces ordered packet/receipt audit trail with artifacts.
 

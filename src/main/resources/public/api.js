@@ -588,6 +588,20 @@
         }
     };
 
+    // Audit API
+    const auditApi = {
+        async listIssue(issueId) {
+            return api(`/api/audit/issues/${encodeURIComponent(issueId)}`);
+        },
+        async getIssueFile(issueId, filename) {
+            const response = await fetch(`/api/audit/issues/${encodeURIComponent(issueId)}/files/${encodeURIComponent(filename)}`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch audit file');
+            }
+            return response.text();
+        }
+    };
+
     // Versioning API
     const versioningApi = {
         async status() {
@@ -875,6 +889,7 @@
     window.promptToolsApi = promptToolsApi;
     window.workspaceApi = workspaceApi;
     window.patchApi = patchApi;
+    window.auditApi = auditApi;
     window.fileApi = fileApi;
     window.preparationApi = preparationApi;
     window.segmentsApi = segmentsApi;

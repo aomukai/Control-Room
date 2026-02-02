@@ -14,18 +14,18 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-3 is complete; next is PH-4 (Attached report UI).
+- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-4 is complete; next is PH-5 (Playbook: Write Scene from Outline).
 - Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
 ## Working Notes
 - Prompt hardening state machine + requirements tracked in docs/statemachine.md.
 
-## Next Session Plan (PH-4 Attached Report UI)
-1) Render receipt report_excerpt inline in the issue modal.
-2) Add “Open attached report” button and load report content from audit storage.
-3) Support both inline-only and external report file cases.
-4) Add a small UI test: receipt list shows excerpt + opens report.
+## Next Session Plan (PH-5 Playbook: Write Scene from Outline)
+1) Implement deterministic playbook routing: Chief -> Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
+2) Add packet/receipt handoffs and audit trail entries for each step.
+3) Enforce stop/clarify rules at each gate.
+4) Add manual test: “let’s do scene 3” runs end-to-end with ordered audit trail.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

@@ -747,6 +747,12 @@
         state.issueModal.isLoading = true;
         state.issueModal.error = null;
         state.issueModal.issue = null;
+        state.issueModal.audit = {
+            entries: [],
+            receipts: [],
+            isLoading: false,
+            error: null
+        };
         state.issueModal.memory = {
             agentId: null,
             record: null,
@@ -776,6 +782,7 @@
                 state.issueModal.memory.agentId = memoryAgent;
                 await loadIssueMemory(issue.id, memoryAgent);
             }
+            await loadIssueAudit(issue.id);
             renderIssueModal();
         } catch (err) {
             state.issueModal.isLoading = false;
@@ -790,6 +797,12 @@
         state.issueModal.isLoading = false;
         state.issueModal.error = null;
         state.issueModal.issue = null;
+        state.issueModal.audit = {
+            entries: [],
+            receipts: [],
+            isLoading: false,
+            error: null
+        };
         state.issueModal.memory = {
             agentId: null,
             record: null,
@@ -829,6 +842,65 @@
             state.issueModal.memory.error = err.message;
             state.issueModal.memory.isLoading = false;
             renderIssueModal();
+        }
+    }
+
+    async function loadIssueAudit(issueId) {
+        if (!issueId || !window.auditApi) return;
+        state.issueModal.audit.isLoading = true;
+        state.issueModal.audit.error = null;
+        renderIssueModal();
+        try {
+            const entries = await auditApi.listIssue(issueId);
+            const receipts = await buildReceiptEntries(issueId, entries);
+            state.issueModal.audit.entries = entries;
+            state.issueModal.audit.receipts = receipts;
+            state.issueModal.audit.isLoading = false;
+            renderIssueModal();
+        } catch (err) {
+            state.issueModal.audit.error = err.message;
+            state.issueModal.audit.isLoading = false;
+            renderIssueModal();
+        }
+    }
+
+    async function buildReceiptEntries(issueId, entries) {
+        if (!Array.isArray(entries)) {
+            return [];
+        }
+        const receiptEntries = entries.filter(entry => entry && entry.kind === 'receipt');
+        const reportEntries = entries.filter(entry => entry && entry.kind === 'report');
+        const reportByPacket = new Map();
+        reportEntries.forEach(entry => {
+            if (entry.packetId && entry.filename) {
+                reportByPacket.set(entry.packetId, entry.filename);
+            }
+        });
+
+        const receipts = [];
+        for (const entry of receiptEntries) {
+            const receipt = await fetchReceipt(issueId, entry.filename);
+            const reportExcerpt = receipt && receipt.report_excerpt ? receipt.report_excerpt : '';
+            receipts.push({
+                packetId: entry.packetId,
+                timestamp: entry.timestamp,
+                filename: entry.filename,
+                reportExcerpt,
+                reportFilename: reportByPacket.get(entry.packetId) || null
+            });
+        }
+        return receipts;
+    }
+
+    async function fetchReceipt(issueId, filename) {
+        if (!issueId || !filename || !window.auditApi) {
+            return null;
+        }
+        try {
+            const content = await auditApi.getIssueFile(issueId, filename);
+            return JSON.parse(content);
+        } catch (err) {
+            return null;
         }
     }
 
@@ -964,6 +1036,36 @@
                     </div>
                 `
                 : '';
+
+            const auditState = state.issueModal.audit || {};
+            let receiptsHtml = '';
+            if (!window.auditApi) {
+                receiptsHtml = '<div class="issue-receipts-empty">Audit service unavailable.</div>';
+            } else if (auditState.isLoading) {
+                receiptsHtml = '<div class="issue-receipts-loading">Loading receipts...</div>';
+            } else if (auditState.error) {
+                receiptsHtml = `<div class="issue-receipts-error">Failed to load receipts: ${escapeHtml(auditState.error)}</div>`;
+            } else if (Array.isArray(auditState.receipts) && auditState.receipts.length) {
+                receiptsHtml = auditState.receipts.map(entry => {
+                    const timestamp = entry.timestamp ? entry.timestamp : '';
+                    const excerpt = entry.reportExcerpt ? entry.reportExcerpt : 'No excerpt available.';
+                    const reportBtn = entry.reportFilename
+                        ? `<button type="button" class="issue-action-btn issue-action-secondary issue-open-report-btn" data-report-file="${escapeHtml(entry.reportFilename)}">Open attached report</button>`
+                        : '';
+                    return `
+                        <div class="issue-receipt-entry">
+                            <div class="issue-receipt-header">
+                                <span class="issue-receipt-label">Receipt ${escapeHtml(entry.packetId || '')}</span>
+                                <span class="issue-receipt-timestamp">${escapeHtml(timestamp)}</span>
+                            </div>
+                            <div class="issue-receipt-excerpt issue-markdown">${formatIssueBody(excerpt)}</div>
+                            ${reportBtn}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                receiptsHtml = '<div class="issue-receipts-empty">No receipts yet.</div>';
+            }
 
             const memoryLevelsHtml = `
                 <details class="issue-memory-levels">
@@ -1152,6 +1254,11 @@
                         </div>
                     ` : ''}
 
+                    <div class="issue-receipts-section">
+                        <h3 class="issue-section-title">Receipts</h3>
+                        <div class="issue-receipts-list">${receiptsHtml}</div>
+                    </div>
+
                     <div class="issue-comments-section">
                         <h3 class="issue-section-title">Discussion (${issue.comments ? issue.comments.length : 0})</h3>
                         <div class="issue-comments-list">${commentsHtml}</div>
@@ -1203,6 +1310,24 @@
                     } else if (typeof showPatchReviewModal === 'function') {
                         showPatchReviewModal(patchId);
                     }
+                }
+            });
+        });
+
+        const reportButtons = modal.querySelectorAll('[data-report-file]');
+        reportButtons.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const filename = btn.getAttribute('data-report-file');
+                const issue = state.issueModal.issue;
+                if (!issue || !filename || !window.auditApi) return;
+                btn.disabled = true;
+                try {
+                    const content = await auditApi.getIssueFile(issue.id, filename);
+                    openIssueReportModal(filename, content);
+                } catch (err) {
+                    notificationStore.error(`Failed to load report: ${err.message}`, 'workbench');
+                } finally {
+                    btn.disabled = false;
                 }
             });
         });
@@ -1606,6 +1731,37 @@
         } else if (closeBtn) {
             closeBtn.focus();
         }
+    }
+
+    function openIssueReportModal(title, content) {
+        const existing = document.getElementById('issue-report-overlay');
+        if (existing) {
+            existing.remove();
+        }
+        const overlay = document.createElement('div');
+        overlay.id = 'issue-report-overlay';
+        overlay.className = 'issue-report-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'issue-report-modal';
+        modal.innerHTML = `
+            <div class="issue-report-header">
+                <div class="issue-report-title">${escapeHtml(title || 'Attached Report')}</div>
+                <button type="button" class="issue-report-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="issue-report-body issue-markdown">${formatIssueBody(content || '')}</div>
+        `;
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const closeBtn = modal.querySelector('.issue-report-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => overlay.remove());
+        }
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
     }
 
 
