@@ -14,18 +14,18 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what?s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-2 is complete; next is PH-3 (Agent execution guardrails).
+- Prompt hardening + receipts for agent actions (task packets, receipts, validators, retries; focus on local models). PH-3 is complete; next is PH-4 (Attached report UI).
 - Memory Degradation (Phase 2): access demotion + leech/Wiedervorlage MVP complete; compression prompts tightened (docs/reference/memory_part2.md, docs/reference/memory_part2_1.md).
 - Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
 
 ## Working Notes
 - Prompt hardening state machine + requirements tracked in docs/statemachine.md.
 
-## Next Session Plan (PH-3 Agent Guardrails)
-1) Enforce strict packet/receipt validation for agent execution with 2x retry and STOP_HOOK receipt on failure.
-2) Implement expected_artifacts path checks; STOP_HOOK when output paths are out of bounds.
-3) Wire guardrail failures into audit trail + issue comments (report_excerpt only).
-4) Add manual tests: invalid JSON retry -> STOP_HOOK; bad path -> STOP_HOOK.
+## Next Session Plan (PH-4 Attached Report UI)
+1) Render receipt report_excerpt inline in the issue modal.
+2) Add “Open attached report” button and load report content from audit storage.
+3) Support both inline-only and external report file cases.
+4) Add a small UI test: receipt list shows excerpt + opens report.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

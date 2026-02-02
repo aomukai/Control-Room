@@ -58,7 +58,7 @@ E) Playbook (Write Scene from Outline)
 - [x] PH-0 Task packet + receipt schemas (v0.1)
 - [x] PH-1 Receipt storage + audit trail (backend loader)
 - [x] PH-2 Chief router (v0.1): user -> packet or clarify
-- [ ] PH-3 Agent execution guardrails (validation, retry, path checks)
+- [x] PH-3 Agent execution guardrails (validation, retry, path checks)
 - [ ] PH-4 UI: attached report view in issue modal
 - [ ] PH-5 Playbook: Write Scene from Outline
 

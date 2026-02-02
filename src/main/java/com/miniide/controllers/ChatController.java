@@ -20,6 +20,7 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +55,7 @@ public class ChatController implements Controller {
     public void registerRoutes(Javalin app) {
         app.post("/api/ai/chat", this::aiChat);
         app.post("/api/ai/chief/route", this::chiefRoute);
+        app.post("/api/ai/task/execute", this::executeTaskPacket);
     }
 
     private void aiChat(Context ctx) {
@@ -200,6 +202,28 @@ public class ChatController implements Controller {
         return "STOP_HOOK: error\nValidation failed: " + errorSummary;
     }
 
+    private ReceiptAttempt runReceiptWithValidation(String providerName, String apiKey,
+                                                    com.miniide.models.AgentEndpointConfig agentEndpoint,
+                                                    String prompt) {
+        int maxAttempts = 3;
+        String currentPrompt = prompt;
+        PromptValidationResult lastResult = null;
+        String lastResponse = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, currentPrompt);
+            response = stripThinkingTags(response);
+            lastResponse = response;
+            lastResult = PromptJsonValidator.validateReceipt(response);
+            if (lastResult.isValid()) {
+                return new ReceiptAttempt(true, attempt, response, lastResult);
+            }
+            if (attempt < maxAttempts) {
+                currentPrompt = currentPrompt + "\n\nYour previous response was invalid. Return ONLY valid JSON. No prose, no markdown, no extra text.";
+            }
+        }
+        return new ReceiptAttempt(false, maxAttempts, lastResponse, lastResult);
+    }
+
     private String callAgentWithGate(String providerName, String apiKey,
                                      com.miniide.models.AgentEndpointConfig agentEndpoint,
                                      String prompt) {
@@ -218,6 +242,163 @@ public class ChatController implements Controller {
             return PromptJsonValidator.validateReceipt(response);
         }
         return PromptValidationResult.of(List.of("schema:unknown"));
+    }
+
+    private void executeTaskPacket(Context ctx) {
+        try {
+            JsonNode json = objectMapper.readTree(ctx.body());
+            JsonNode packetNode = json.get("packet");
+            if (packetNode == null || packetNode.isNull()) {
+                ctx.status(400).json(Map.of("error", "packet required"));
+                return;
+            }
+            String packetJson = packetNode.isTextual()
+                ? packetNode.asText()
+                : objectMapper.writeValueAsString(packetNode);
+            PromptValidationResult packetValidation = PromptJsonValidator.validateTaskPacket(packetJson);
+            if (!packetValidation.isValid()) {
+                ctx.status(422).json(Map.of("error", "Invalid task packet", "details", packetValidation.getErrors()));
+                return;
+            }
+            JsonNode packet = objectMapper.readTree(packetJson);
+            String issueId = packet.path("parent_issue_id").asText("");
+            String packetId = packet.path("packet_id").asText("");
+            if (issueId.isBlank() || packetId.isBlank()) {
+                ctx.status(422).json(Map.of("error", "Packet missing parent_issue_id or packet_id"));
+                return;
+            }
+
+            String agentId = json.has("agentId") ? json.get("agentId").asText(null) : null;
+            if (agentId == null || agentId.isBlank()) {
+                ctx.status(400).json(Map.of("error", "agentId required"));
+                return;
+            }
+            if (!agentsUnlocked()) {
+                ctx.status(403).json(Map.of("error", "Project preparation incomplete. Agents are locked."));
+                return;
+            }
+            Agent agent = projectContext.agents().getAgent(agentId);
+            if (agent == null) {
+                ctx.status(404).json(Map.of("error", "Agent not found: " + agentId));
+                return;
+            }
+            var endpoint = projectContext.agentEndpoints().getEndpoint(agentId);
+            if (endpoint == null) {
+                endpoint = agent.getEndpoint();
+            }
+            if (endpoint == null || endpoint.getProvider() == null || endpoint.getProvider().isBlank()) {
+                ctx.status(400).json(Map.of("error", "Agent endpoint not configured"));
+                return;
+            }
+            if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+                ctx.status(400).json(Map.of("error", "Agent model not configured"));
+                return;
+            }
+            String provider = endpoint.getProvider().trim().toLowerCase();
+            String apiKey = null;
+            if (requiresApiKey(provider)) {
+                String keyRef = endpoint.getApiKeyRef();
+                if (keyRef == null || keyRef.isBlank()) {
+                    ctx.status(400).json(Map.of("error", "API key required for " + provider));
+                    return;
+                }
+                apiKey = settingsService.resolveKey(keyRef);
+            } else if (endpoint.getApiKeyRef() != null && !endpoint.getApiKeyRef().isBlank()) {
+                apiKey = settingsService.resolveKey(endpoint.getApiKeyRef());
+            }
+
+            boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
+            List<String> expectedArtifacts = readExpectedArtifacts(packet);
+            String outputMode = packet.path("output_contract").path("output_mode").asText("");
+            if (!"json_only".equalsIgnoreCase(outputMode) && expectedArtifacts.isEmpty()) {
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "expected_artifacts missing for output_mode " + outputMode,
+                    "expected-artifacts");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "expected_artifacts required"));
+                return;
+            }
+
+            boolean simulateInvalid = json.has("simulateInvalidReceipt") && json.get("simulateInvalidReceipt").asBoolean();
+            if (simulateInvalid) {
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "Simulated invalid receipt for guardrail test.",
+                    "invalid-receipt");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Simulated invalid receipt"));
+                return;
+            }
+            boolean simulateBadOutput = json.has("simulateUnexpectedOutput") && json.get("simulateUnexpectedOutput").asBoolean();
+            if (simulateBadOutput) {
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "Simulated outputs not in expected_artifacts for guardrail test.",
+                    "unexpected-artifacts");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Simulated unexpected outputs"));
+                return;
+            }
+
+            String prompt = buildTaskExecutionPrompt(packetJson);
+            if (!skipToolCatalog) {
+                String toolCatalog = projectContext.promptTools() != null
+                    ? projectContext.promptTools().buildCatalogPrompt()
+                    : "";
+                if (toolCatalog != null && !toolCatalog.isBlank()) {
+                    prompt = toolCatalog + "\n\n" + prompt;
+                }
+            }
+            String grounding = buildEarlyGroundingHeader();
+            if (grounding != null && !grounding.isBlank()) {
+                prompt = grounding + "\n\n" + prompt;
+            }
+
+            ReceiptAttempt attempt = runReceiptWithValidation(provider, apiKey, endpoint, prompt);
+            if (!attempt.valid) {
+                String detail = attempt.validation != null && !attempt.validation.getErrors().isEmpty()
+                    ? String.join(", ", attempt.validation.getErrors())
+                    : "invalid-receipt-json";
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "Receipt validation failed: " + detail,
+                    "invalid-receipt");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Invalid receipt JSON",
+                    "content", attempt.response));
+                return;
+            }
+
+            JsonNode receiptNode = objectMapper.readTree(attempt.response);
+            String receiptPacketId = receiptNode.path("packet_id").asText("");
+            String receiptIssueId = receiptNode.path("issue_id").asText("");
+            if (!packetId.equals(receiptPacketId) || !issueId.equals(receiptIssueId)) {
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "Receipt packet_id/issue_id mismatch",
+                    "mismatched-receipt");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Receipt mismatch"));
+                return;
+            }
+
+            List<String> outputs = readOutputsProduced(receiptNode);
+            List<String> violations = new ArrayList<>();
+            for (String out : outputs) {
+                if (!expectedArtifacts.contains(out)) {
+                    violations.add(out);
+                }
+            }
+            if (!violations.isEmpty()) {
+                JsonNode receipt = buildStopHookReceipt(packet, agent, endpoint,
+                    "Outputs not in expected_artifacts: " + String.join(", ", violations),
+                    "unexpected-artifacts");
+                writeReceiptAndComment(issueId, packetId, receipt);
+                ctx.json(Map.of("receipt", receipt, "stopHook", true, "error", "Unexpected output paths"));
+                return;
+            }
+
+            writeReceiptAndComment(issueId, packetId, receiptNode);
+            ctx.json(Map.of("receipt", receiptNode, "stopHook", false));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
     }
 
     private void chiefRoute(Context ctx) {
@@ -403,6 +584,17 @@ public class ChatController implements Controller {
         return builder.toString().trim();
     }
 
+    private String buildTaskExecutionPrompt(String packetJson) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are executing a task packet. Return ONLY a Receipt JSON (v0.1) and nothing else.\n");
+        builder.append("Do not include prose, markdown, or any extra text.\n");
+        builder.append("If you cannot complete the task, still return a Receipt JSON with stop_hook.triggered=true.\n");
+        builder.append("Ensure outputs_produced only includes paths listed in the packet's output_contract.expected_artifacts.\n");
+        builder.append("\nTask Packet JSON:\n");
+        builder.append(packetJson);
+        return builder.toString().trim();
+    }
+
     private void ensureRequiredPacketShape(com.fasterxml.jackson.databind.node.ObjectNode obj, String message, String clarificationChoice) {
         if (obj == null) {
             return;
@@ -582,6 +774,188 @@ public class ChatController implements Controller {
         return obj;
     }
 
+    private List<String> readExpectedArtifacts(JsonNode packet) {
+        if (packet == null) {
+            return List.of();
+        }
+        JsonNode expected = packet.path("output_contract").path("expected_artifacts");
+        if (!expected.isArray()) {
+            return List.of();
+        }
+        List<String> artifacts = new ArrayList<>();
+        for (JsonNode item : expected) {
+            if (item != null && item.isTextual() && !item.asText().isBlank()) {
+                artifacts.add(item.asText());
+            }
+        }
+        return artifacts;
+    }
+
+    private List<String> readOutputsProduced(JsonNode receipt) {
+        if (receipt == null) {
+            return List.of();
+        }
+        JsonNode outputs = receipt.path("outputs_produced");
+        if (!outputs.isArray()) {
+            return List.of();
+        }
+        List<String> produced = new ArrayList<>();
+        for (JsonNode item : outputs) {
+            if (item != null && item.isTextual() && !item.asText().isBlank()) {
+                produced.add(item.asText());
+            }
+        }
+        return produced;
+    }
+
+    private JsonNode buildStopHookReceipt(JsonNode packet, Agent agent,
+                                          com.miniide.models.AgentEndpointConfig endpoint,
+                                          String detail, String hookType) {
+        var om = objectMapper;
+        var receipt = om.createObjectNode();
+        String packetId = packet.path("packet_id").asText("");
+        String issueId = packet.path("parent_issue_id").asText("");
+        receipt.put("receipt_id", "rcpt_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        receipt.put("packet_id", packetId);
+        receipt.put("issue_id", issueId);
+
+        var actor = om.createObjectNode();
+        actor.put("agent_id", agent != null ? safe(agent.getId()) : "unknown");
+        actor.put("provider", endpoint != null ? safe(endpoint.getProvider()) : "unknown");
+        actor.put("model", endpoint != null ? safe(endpoint.getModel()) : "unknown");
+        var decoding = om.createObjectNode();
+        var requested = buildDecodingParams(endpoint);
+        decoding.set("requested", requested == null ? om.nullNode() : requested);
+        decoding.set("effective", requested == null ? om.nullNode() : requested.deepCopy());
+        decoding.put("source", "unknown");
+        actor.set("decoding", decoding);
+        receipt.set("actor", actor);
+
+        String now = Instant.now().toString();
+        receipt.put("started_at", now);
+        receipt.put("finished_at", now);
+
+        var inputsUsed = om.createArrayNode();
+        JsonNode inputs = packet.path("inputs").path("files");
+        if (inputs.isArray()) {
+            for (JsonNode item : inputs) {
+                if (item != null && item.isTextual() && !item.asText().isBlank()) {
+                    inputsUsed.add(item.asText());
+                }
+            }
+        }
+        inputsUsed.add("task_packet");
+        receipt.set("inputs_used", inputsUsed);
+
+        receipt.set("outputs_produced", om.createArrayNode());
+        receipt.put("reasoning_summary", "Execution halted due to guardrail enforcement.");
+        var decisions = om.createArrayNode();
+        decisions.add("STOP_HOOK");
+        receipt.set("decisions", decisions);
+        var checks = om.createArrayNode();
+        checks.add("receipt_validation");
+        checks.add("expected_artifacts_check");
+        receipt.set("checks_performed", checks);
+        receipt.set("assumptions", om.createArrayNode());
+        receipt.set("risks", om.createArrayNode());
+        var next = om.createObjectNode();
+        next.put("intent", "clarify");
+        next.put("reason", "Guardrail triggered; user clarification or model adjustment required.");
+        receipt.set("next_recommended_action", next);
+        var stopHook = om.createObjectNode();
+        stopHook.put("triggered", true);
+        stopHook.put("type", hookType != null ? hookType : "guardrail");
+        stopHook.put("detail", detail != null ? detail : "");
+        receipt.set("stop_hook", stopHook);
+        receipt.set("citations", om.createArrayNode());
+        String excerpt = "Execution halted by guardrail enforcement. " +
+            (detail != null && !detail.isBlank()
+                ? detail + " Review the receipt detail and retry after fixing the issue."
+                : "Review the receipt detail and retry after fixing the issue.");
+        receipt.put("report_excerpt", excerpt);
+        return receipt;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode buildDecodingParams(com.miniide.models.AgentEndpointConfig endpoint) {
+        if (endpoint == null) {
+            return null;
+        }
+        var om = objectMapper;
+        var node = om.createObjectNode();
+        boolean hasAny = false;
+        if (endpoint.getTemperature() != null) {
+            node.put("temperature", endpoint.getTemperature());
+            hasAny = true;
+        }
+        if (endpoint.getTopP() != null) {
+            node.put("top_p", endpoint.getTopP());
+            hasAny = true;
+        }
+        if (endpoint.getTopK() != null) {
+            node.put("top_k", endpoint.getTopK());
+            hasAny = true;
+        }
+        if (endpoint.getMinP() != null) {
+            node.put("min_p", endpoint.getMinP());
+            hasAny = true;
+        }
+        if (endpoint.getRepeatPenalty() != null) {
+            node.put("repeat_penalty", endpoint.getRepeatPenalty());
+            hasAny = true;
+        }
+        if (endpoint.getMaxOutputTokens() != null) {
+            node.put("max_output_tokens", endpoint.getMaxOutputTokens());
+            hasAny = true;
+        }
+        if (endpoint.getTimeoutMs() != null) {
+            node.put("timeout_ms", endpoint.getTimeoutMs());
+            hasAny = true;
+        }
+        if (endpoint.getMaxRetries() != null) {
+            node.put("max_retries", endpoint.getMaxRetries());
+            hasAny = true;
+        }
+        if (endpoint.getUseProviderDefaults() != null) {
+            node.put("use_provider_defaults", endpoint.getUseProviderDefaults());
+            hasAny = true;
+        }
+        return hasAny ? node : null;
+    }
+
+    private void writeReceiptAndComment(String issueId, String packetId, JsonNode receipt) {
+        if (projectContext != null && projectContext.audit() != null) {
+            try {
+                projectContext.audit().writeReceipt(issueId, packetId, objectMapper.writeValueAsString(receipt));
+            } catch (Exception e) {
+                logger.warn("Failed to write receipt for packet " + packetId + ": " + e.getMessage());
+            }
+        }
+        maybeAddReceiptComment(issueId, packetId, receipt);
+    }
+
+    private void maybeAddReceiptComment(String issueId, String packetId, JsonNode receipt) {
+        if (issueService == null || issueId == null || issueId.isBlank() || receipt == null) {
+            return;
+        }
+        int numericId;
+        try {
+            numericId = Integer.parseInt(issueId);
+        } catch (NumberFormatException e) {
+            return;
+        }
+        String excerpt = receipt.path("report_excerpt").asText("");
+        if (excerpt.isBlank()) {
+            return;
+        }
+        String body = "Receipt saved for packet " + packetId + ".\n\n" + excerpt;
+        Comment.CommentAction action = new Comment.CommentAction("receipt", "audit");
+        try {
+            issueService.addComment(numericId, "system", body, action, "normal", null);
+        } catch (Exception e) {
+            logger.warn("Failed to append receipt comment: " + e.getMessage());
+        }
+    }
+
     private void maybeCreateChiefRouterWarning(String issueId, Agent chief, com.miniide.models.AgentEndpointConfig endpoint,
                                                String response) {
         if (issueService == null || issueId == null || issueId.isBlank()) {
@@ -629,6 +1003,20 @@ public class ChatController implements Controller {
             List.of("warning", "chief", tag),
             "normal"
         );
+    }
+
+    private static final class ReceiptAttempt {
+        private final boolean valid;
+        private final int attempts;
+        private final String response;
+        private final PromptValidationResult validation;
+
+        private ReceiptAttempt(boolean valid, int attempts, String response, PromptValidationResult validation) {
+            this.valid = valid;
+            this.attempts = attempts;
+            this.response = response;
+            this.validation = validation;
+        }
     }
 
     private boolean agentsUnlocked() {
