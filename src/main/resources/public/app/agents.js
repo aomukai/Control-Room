@@ -3777,6 +3777,10 @@
         const agenda = config?.agenda || '';
         const mutedIds = new Set();
         const chatLog = [];
+        const conferenceContext = {
+            isLoading: false,
+            text: ''
+        };
 
         const { panel, actions, body, close } = createWorkbenchPanelShell('Conference');
         panel.classList.add('conference-mode-modal');
@@ -3964,22 +3968,127 @@
             return slice.map(entry => `${entry.author}: ${entry.content}`).join('\n');
         };
 
-        const buildConferencePrompt = (agent, message) => {
+        const buildConferencePrompt = (agent, message, { retry = false } = {}) => {
             const agentName = agent?.name || 'Agent';
             const agentRole = agent?.role || 'role';
+            const roleFrame = buildRoleFrame(agentRole);
+            const evidenceRules = buildEvidenceRules();
+            const contextPrelude = conferenceContext.text ? `Grounding prelude:\n${conferenceContext.text}` : 'Grounding prelude: (no context loaded)';
             const lines = [
+                'You are in a creative project review for a fiction project (not a business standup).',
                 `Conference agenda: ${agenda || 'none'}`,
                 `Attendees: ${formatConferenceRoster()}`,
                 `Moderators: ${formatModerators()}`,
                 `You are ${agentName} (${agentRole}). Respond as this agent.`,
+                roleFrame,
+                evidenceRules,
+                contextPrelude,
                 'Conversation so far:',
                 formatChatLogForPrompt(),
                 'Latest message:',
                 message,
-                'Keep your reply concise and actionable.'
+                retry ? 'Your last response was rejected for missing or invalid evidence. Fix it now.' : 'Keep your reply concise and actionable.'
             ];
             const payload = lines.join('\n');
             return buildChatPrompt ? buildChatPrompt(payload, agent) : payload;
+        };
+
+        const buildRoleFrame = (role) => {
+            const normalized = (role || '').toLowerCase();
+            if (normalized.includes('planner')) {
+                return 'Role framing: Focus on outline structure, scene order, stakes, and story arc continuity. Avoid project management jargon unless asked.';
+            }
+            if (normalized.includes('writer')) {
+                return 'Role framing: Focus on prose quality, pacing, voice, and concrete scene execution. Avoid project management jargon unless asked.';
+            }
+            if (normalized.includes('editor')) {
+                return 'Role framing: Focus on line-level clarity, consistency, and tightening the draft. Avoid project management jargon unless asked.';
+            }
+            if (normalized.includes('critic')) {
+                return 'Role framing: Focus on critique of narrative choices and reader experience. Avoid meeting-meta feedback.';
+            }
+            if (normalized.includes('continuity')) {
+                return 'Role framing: Focus on canon consistency, timeline coherence, and named entities accuracy.';
+            }
+            if (normalized.includes('assistant') || normalized.includes('chief')) {
+                return 'Role framing: Synthesize grounded findings across agents and surface next steps tied to the text.';
+            }
+            return 'Role framing: Stay grounded in the fiction project and avoid business standup tropes.';
+        };
+
+        const buildEvidenceRules = () => {
+            return [
+                'Evidence line requirement (mandatory): include exactly one line starting with "Evidence:".',
+                'Valid formats:',
+                '✅ Evidence: I checked [file/memory tier] and found [specific thing].',
+                '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
+                '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
+                '❌ Missing evidence line or generic claims without checks will be rejected.'
+            ].join('\n');
+        };
+
+        const validateEvidenceLine = (content) => {
+            if (!content) return { ok: false, reason: 'empty' };
+            const lines = String(content).split('\n').map(line => line.trim()).filter(Boolean);
+            const evidenceLine = lines.find(line => line.toLowerCase().startsWith('evidence:'));
+            if (!evidenceLine) return { ok: false, reason: 'missing' };
+            const normalized = evidenceLine.toLowerCase();
+            const checkedFound = normalized.includes('i checked') && normalized.includes('and found');
+            const checkedFoundNo = normalized.includes('i checked') && (normalized.includes('found no') || normalized.includes('found nothing'));
+            const needCheck = normalized.includes('i need to check') && (normalized.includes('requesting') || normalized.includes('request'));
+            if (checkedFound || checkedFoundNo || needCheck) {
+                return { ok: true };
+            }
+            return { ok: false, reason: 'format' };
+        };
+
+        const loadConferenceContext = async () => {
+            if (conferenceContext.isLoading) return;
+            conferenceContext.isLoading = true;
+            const parts = [];
+            try {
+                if (window.workspaceApi) {
+                    const meta = await workspaceApi.metadata();
+                    if (meta && meta.displayName) {
+                        parts.push(`Project: ${meta.displayName}`);
+                    }
+                }
+            } catch (_) {
+                // ignore
+            }
+            try {
+                if (window.outlineApi) {
+                    const outline = await outlineApi.get();
+                    const scenes = outline && Array.isArray(outline.scenes) ? outline.scenes : [];
+                    if (scenes.length) {
+                        const sceneLines = scenes.slice(0, 5).map(scene => {
+                            const number = scene.number != null ? `#${scene.number}` : '';
+                            const title = scene.title || scene.name || 'Untitled';
+                            return `${number} ${title}`.trim();
+                        });
+                        parts.push(`Outline scenes (sample): ${sceneLines.join(' | ')}`);
+                    } else {
+                        parts.push('Outline scenes: none listed.');
+                    }
+                }
+            } catch (_) {
+                // ignore
+            }
+            try {
+                if (window.issueApi) {
+                    const issues = await issueApi.list({ status: 'open' });
+                    if (Array.isArray(issues) && issues.length) {
+                        const summaries = issues.slice(0, 5).map(item => `#${item.id} ${item.title || 'Untitled'}`);
+                        parts.push(`Open issues (sample): ${summaries.join(' | ')}`);
+                    } else {
+                        parts.push('Open issues: none.');
+                    }
+                }
+            } catch (_) {
+                // ignore
+            }
+            conferenceContext.text = parts.join('\n');
+            conferenceContext.isLoading = false;
         };
 
         const getActiveParticipants = () => {
@@ -4024,12 +4133,31 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ message: prompt, agentId: agent.id })
                     }), `Conference response from ${agent.name || 'agent'}`);
-                    const parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
-                    const reply = parsed.content || 'No response.';
-                    addChatMessage(agent.name || 'Agent', 'assistant', reply);
-                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, stopHook: parsed.stopHook });
-                    if (parsed.stopHook) {
-                        notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                    let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
+                    let reply = parsed.content || 'No response.';
+                    let evidenceCheck = validateEvidenceLine(reply);
+                    if (!evidenceCheck.ok) {
+                        const retryPrompt = buildConferencePrompt(agent, text, { retry: true });
+                        const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: retryPrompt, agentId: agent.id })
+                        }), `Conference retry for ${agent.name || 'agent'}`);
+                        parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
+                        reply = parsed.content || 'No response.';
+                        evidenceCheck = validateEvidenceLine(reply);
+                    }
+                    if (!evidenceCheck.ok) {
+                        const rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
+                        addChatMessage(agent.name || 'Agent', 'assistant', rejection);
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
+                        notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
+                    } else {
+                        addChatMessage(agent.name || 'Agent', 'assistant', reply);
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, stopHook: parsed.stopHook });
+                        if (parsed.stopHook) {
+                            notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                        }
                     }
                 } catch (err) {
                     const errorMessage = err && err.message ? err.message : 'Agent failed to respond.';
@@ -4042,6 +4170,8 @@
             chatInput.disabled = false;
             chatSend.disabled = false;
         };
+
+        void loadConferenceContext();
 
         chatSend.addEventListener('click', sendMessage);
         chatInput.addEventListener('keydown', (e) => {
