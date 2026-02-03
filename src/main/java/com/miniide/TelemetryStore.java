@@ -153,6 +153,13 @@ public class TelemetryStore {
         touch();
     }
 
+    public synchronized void recordTokens(String agentId, long tokensIn, long tokensOut, String conferenceId) {
+        recordTokens(agentId, tokensIn, tokensOut);
+        if (conferenceId != null && !conferenceId.isBlank()) {
+            recordConferenceTokens(conferenceId, agentId, tokensIn, tokensOut);
+        }
+    }
+
     public synchronized void recordError(String agentId) {
         if (!isEnabled()) {
             return;
@@ -165,6 +172,59 @@ public class TelemetryStore {
         }
         totals.getTotals().incrementErrors(1);
         currentSession.getTotals().incrementErrors(1);
+        touch();
+    }
+
+    public synchronized void recordConferenceEvent(String conferenceId, String agentId, String type) {
+        if (!isEnabled() || conferenceId == null || conferenceId.isBlank()) {
+            return;
+        }
+        TelemetryCounters sessionTotals = getConferenceTotals(currentSession, conferenceId);
+        TelemetryCounters totalTotals = getConferenceTotals(totals, conferenceId);
+        TelemetryCounters sessionAgent = getConferenceAgentCounters(currentSession, conferenceId, agentId);
+        TelemetryCounters totalAgent = getConferenceAgentCounters(totals, conferenceId, agentId);
+        incrementConferenceCounters(sessionTotals, type);
+        incrementConferenceCounters(totalTotals, type);
+        if (sessionAgent != null) {
+            incrementConferenceCounters(sessionAgent, type);
+        }
+        if (totalAgent != null) {
+            incrementConferenceCounters(totalAgent, type);
+        }
+        touch();
+    }
+
+    public synchronized void recordRejection(String conferenceId, String agentId, String reason) {
+        if (!isEnabled() || conferenceId == null || conferenceId.isBlank()) {
+            return;
+        }
+        String type = mapRejectionReason(reason);
+        if (type == null) {
+            return;
+        }
+        recordConferenceEvent(conferenceId, agentId, type);
+    }
+
+    private void recordConferenceTokens(String conferenceId, String agentId, long tokensIn, long tokensOut) {
+        if (!isEnabled() || conferenceId == null || conferenceId.isBlank()) {
+            return;
+        }
+        TelemetryCounters sessionTotals = getConferenceTotals(currentSession, conferenceId);
+        TelemetryCounters totalTotals = getConferenceTotals(totals, conferenceId);
+        sessionTotals.incrementTokensIn(tokensIn);
+        sessionTotals.incrementTokensOut(tokensOut);
+        totalTotals.incrementTokensIn(tokensIn);
+        totalTotals.incrementTokensOut(tokensOut);
+        TelemetryCounters sessionAgent = getConferenceAgentCounters(currentSession, conferenceId, agentId);
+        TelemetryCounters totalAgent = getConferenceAgentCounters(totals, conferenceId, agentId);
+        if (sessionAgent != null) {
+            sessionAgent.incrementTokensIn(tokensIn);
+            sessionAgent.incrementTokensOut(tokensOut);
+        }
+        if (totalAgent != null) {
+            totalAgent.incrementTokensIn(tokensIn);
+            totalAgent.incrementTokensOut(tokensOut);
+        }
         touch();
     }
 
@@ -252,6 +312,101 @@ public class TelemetryStore {
     private TelemetryCounters getAgentSession(String agentId) {
         Map<String, TelemetryCounters> agents = currentSession.getAgents();
         return agents.computeIfAbsent(agentId, key -> new TelemetryCounters());
+    }
+
+    private TelemetryCounters getConferenceTotals(TelemetrySession session, String conferenceId) {
+        if (session == null || conferenceId == null || conferenceId.isBlank()) {
+            return null;
+        }
+        Map<String, TelemetryCounters> conferences = session.getConferences();
+        return conferences.computeIfAbsent(conferenceId, key -> new TelemetryCounters());
+    }
+
+    private TelemetryCounters getConferenceTotals(TelemetryTotals totals, String conferenceId) {
+        if (totals == null || conferenceId == null || conferenceId.isBlank()) {
+            return null;
+        }
+        Map<String, TelemetryCounters> conferences = totals.getConferences();
+        return conferences.computeIfAbsent(conferenceId, key -> new TelemetryCounters());
+    }
+
+    private TelemetryCounters getConferenceAgentCounters(TelemetrySession session, String conferenceId, String agentId) {
+        if (session == null || conferenceId == null || conferenceId.isBlank() || agentId == null || agentId.isBlank()) {
+            return null;
+        }
+        Map<String, Map<String, TelemetryCounters>> conferenceAgents = session.getConferenceAgents();
+        Map<String, TelemetryCounters> agents = conferenceAgents.computeIfAbsent(conferenceId, key -> new ConcurrentHashMap<>());
+        return agents.computeIfAbsent(agentId, key -> new TelemetryCounters());
+    }
+
+    private TelemetryCounters getConferenceAgentCounters(TelemetryTotals totals, String conferenceId, String agentId) {
+        if (totals == null || conferenceId == null || conferenceId.isBlank() || agentId == null || agentId.isBlank()) {
+            return null;
+        }
+        Map<String, Map<String, TelemetryCounters>> conferenceAgents = totals.getConferenceAgents();
+        Map<String, TelemetryCounters> agents = conferenceAgents.computeIfAbsent(conferenceId, key -> new ConcurrentHashMap<>());
+        return agents.computeIfAbsent(agentId, key -> new TelemetryCounters());
+    }
+
+    private void incrementConferenceCounters(TelemetryCounters counters, String type) {
+        if (counters == null || type == null) {
+            return;
+        }
+        switch (type) {
+            case "evidence_invalid":
+            case "reject_evidence_missing_or_invalid":
+                counters.incrementRejectEvidenceMissingOrInvalid(1);
+                break;
+            case "quote_not_found":
+            case "reject_quote_not_found":
+                counters.incrementRejectQuoteNotFound(1);
+                break;
+            case "tool_syntax":
+            case "reject_tool_syntax_in_text":
+                counters.incrementRejectToolSyntaxInText(1);
+                break;
+            case "cot_leak":
+            case "cot_leak_detected":
+                counters.incrementCotLeakDetected(1);
+                break;
+            case "format_error":
+                counters.incrementFormatError(1);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private String mapRejectionReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        switch (reason) {
+            case "evidence_invalid":
+            case "quote_not_found":
+            case "tool_syntax":
+            case "cot_leak":
+            case "format_error":
+                return reason;
+            case "tool_call_invalid_format":
+            case "tool_call_unknown_tool":
+            case "tool_call_invalid_args":
+                return "tool_syntax";
+            case "tool_call_multiple":
+            case "tool_call_nonce_invalid":
+            case "tool_call_output_limit":
+                return "format_error";
+            case "reject_evidence_missing_or_invalid":
+                return "evidence_invalid";
+            case "reject_quote_not_found":
+                return "quote_not_found";
+            case "reject_tool_syntax_in_text":
+                return "tool_syntax";
+            case "cot_leak_detected":
+                return "cot_leak";
+            default:
+                return "evidence_invalid";
+        }
     }
 
     private void touch() {

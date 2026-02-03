@@ -316,6 +316,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload || {})
             });
+        },
+        async recordConferenceEvent(payload) {
+            return api('/api/telemetry/conference', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
         }
     };
 
@@ -599,6 +606,23 @@
                 throw new Error('Failed to fetch audit file');
             }
             return response.text();
+        },
+        async listSessionReceipts(sessionId) {
+            return api(`/api/audit/sessions/${encodeURIComponent(sessionId)}/receipts`);
+        },
+        async getSessionReceiptsFile(sessionId) {
+            const response = await fetch(`/api/audit/sessions/${encodeURIComponent(sessionId)}/tool-receipts`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch session receipts');
+            }
+            return response.text();
+        },
+        async linkSessionToIssue(sessionId, issueId) {
+            return api(`/api/audit/sessions/${encodeURIComponent(sessionId)}/link-issue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ issueId })
+            });
         }
     };
 

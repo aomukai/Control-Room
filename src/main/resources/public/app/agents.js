@@ -3779,7 +3779,8 @@
         const chatLog = [];
         const conferenceContext = {
             isLoading: false,
-            text: ''
+            text: '',
+            sessionId: null
         };
 
         const { panel, actions, body, close } = createWorkbenchPanelShell('Conference');
@@ -3807,7 +3808,7 @@
         btnCreateIssue.className = 'conference-action-btn';
         btnCreateIssue.textContent = 'Create Issue from Chat';
         btnCreateIssue.addEventListener('click', () => {
-            showComingSoonModal('Create Issue', 'Conference transcript -> issue creation is coming soon.');
+            createConferenceIssue();
         });
 
         const btnManage = document.createElement('button');
@@ -3952,6 +3953,53 @@
             chatHistory.scrollTop = chatHistory.scrollHeight;
         };
 
+        const formatConferenceTranscript = () => {
+            if (!chatLog.length) return 'No transcript available.';
+            return chatLog.map(entry => `[${entry.role}] ${entry.author}: ${entry.content}`).join('\n');
+        };
+
+        const createConferenceIssue = async () => {
+            if (!window.issueApi) {
+                notificationStore.warning('Issue API unavailable.', 'workbench');
+                return;
+            }
+            const title = prompt('Issue title for conference transcript:', `Conference ${conferenceContext.sessionId || ''}`) || 'Conference transcript';
+            const transcript = formatConferenceTranscript();
+            let receiptLine = 'Session receipts: none.';
+            try {
+                if (window.auditApi && conferenceContext.sessionId) {
+                    const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
+                    const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+                    receiptLine = receipts.length ? `Session receipts: ${receipts.join(', ')}` : 'Session receipts: none.';
+                }
+            } catch (_) {
+                receiptLine = 'Session receipts: unavailable.';
+            }
+            const body = [
+                `Conference session: ${conferenceContext.sessionId || 'unknown'}`,
+                receiptLine,
+                '',
+                'Transcript:',
+                transcript
+            ].join('\n');
+
+            try {
+                const issue = await issueApi.create({
+                    title,
+                    body,
+                    openedBy: 'conference',
+                    tags: ['conference-transcript']
+                });
+                if (issue?.id && window.auditApi && conferenceContext.sessionId) {
+                    await auditApi.linkSessionToIssue(conferenceContext.sessionId, issue.id);
+                }
+                notificationStore.issueCreated(issue.id, issue.title, issue.openedBy, issue.assignedTo);
+                await refreshIssueModal(issue.id);
+            } catch (err) {
+                notificationStore.warning(`Failed to create conference issue: ${err.message}`, 'workbench');
+            }
+        };
+
         const formatConferenceRoster = () => {
             const names = invited.map(agent => agent.name || 'Agent');
             return names.length > 0 ? names.join(', ') : 'none';
@@ -4022,23 +4070,104 @@
             return [
                 'Evidence line requirement (mandatory): include exactly one line starting with "Evidence:".',
                 'Evidence must reference story content (outline/scenes/canon/compendium) or explicitly request access to those.',
+                'Tools are executable. If you need a tool, respond with ONLY a JSON tool call object (no Evidence line in that message).',
+                'Tool calls must include the nonce from TOOL_NONCE and must be the only content in the message (no code fences).',
                 'Valid formats:',
                 '✅ Evidence: I checked [file/memory tier] and found [specific thing].',
                 '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
                 '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
+                '✅ Evidence: ACCESS_REQUEST — need [X] from [Y].',
+                'If you used a tool, include receipt_id: <id> in the Evidence line.',
                 '❌ Missing evidence line, issue-tracker-only evidence, or generic claims without checks will be rejected.'
             ].join('\n');
         };
 
+        const createConferenceSessionId = () => {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return window.crypto.randomUUID();
+            }
+            return `conf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        };
+
+        const detectToolSyntax = (content) => {
+            if (!content) return false;
+            const text = String(content);
+            const toolPattern = /\b(file_locator|task_router|canon_checker|outline_analyzer|search_issues)\s*\(/i;
+            if (toolPattern.test(text)) return true;
+            const trimmed = text.trim();
+            return trimmed.startsWith('{') && trimmed.includes('"tool"');
+        };
+
+        const detectCotLeak = (content) => {
+            if (!content) return false;
+            const lines = String(content).split('\n').map(line => line.trim()).filter(Boolean);
+            if (lines.length === 0) return false;
+            const first = lines[0].toLowerCase();
+            return (
+                first.startsWith('we need to') ||
+                first.startsWith('we must') ||
+                first.startsWith("let's ") ||
+                first.startsWith('i need to') ||
+                first.startsWith('i will') ||
+                first.startsWith('plan:') ||
+                first.startsWith('step 1') ||
+                first.startsWith('first,')
+            );
+        };
+
+        const createTurnId = (agentId) => {
+            const base = conferenceContext.sessionId || 'conf';
+            return `${base}-${agentId || 'agent'}-${Date.now()}`;
+        };
+
+        const detectToolClaim = (content) => {
+            if (!content) return false;
+            const lower = String(content).toLowerCase();
+            return (
+                lower.includes('file_locator') ||
+                lower.includes('outline_analyzer') ||
+                lower.includes('canon_checker') ||
+                lower.includes('task_router') ||
+                lower.includes('search_issues') ||
+                lower.includes('tool call') ||
+                lower.includes('tool result')
+            );
+        };
+
+        const extractReceiptId = (line) => {
+            if (!line) return null;
+            const match = String(line).match(/receipt[_-]?id\s*[:=]\s*([a-z0-9_-]+)/i);
+            return match ? match[1] : null;
+        };
+
+        const loadReceiptIds = async () => {
+            if (!window.auditApi || !conferenceContext.sessionId) return [];
+            try {
+                const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
+                return Array.isArray(res?.receipts) ? res.receipts : [];
+            } catch (_) {
+                return [];
+            }
+        };
+
         const validateEvidenceLine = async (content, agentRole) => {
             if (!content) return { ok: false, reason: 'empty' };
-            const lines = String(content).split('\n').map(line => line.trim()).filter(Boolean);
-            const evidenceLine = lines.find(line => line.toLowerCase().startsWith('evidence:'));
-            if (!evidenceLine) return { ok: false, reason: 'missing' };
-            const normalized = evidenceLine.toLowerCase();
+            if (detectToolSyntax(content)) return { ok: false, reason: 'tool-syntax' };
+            if (detectCotLeak(content)) return { ok: false, reason: 'cot-leak' };
+            const rawLines = String(content).split('\n');
+            const evidencePattern = /^\s*(?:\*\*|__)?\s*evidence:\s*(?:\*\*|__)?/i;
+            const evidenceLines = rawLines.filter(line => evidencePattern.test(line));
+            if (evidenceLines.length === 0) return { ok: false, reason: 'missing' };
+            if (evidenceLines.length > 1) return { ok: false, reason: 'multiple' };
+            const evidenceLine = evidenceLines[0].trim();
+            const cleanedEvidenceLine = evidenceLine.replace(/\*\*/g, '').replace(/__/g, '').trim();
+            const normalized = cleanedEvidenceLine.toLowerCase();
+            const lines = rawLines.map(line => line.trim()).filter(Boolean);
             const checkedFound = normalized.includes('i checked') && normalized.includes('and found');
             const checkedFoundNo = normalized.includes('i checked') && (normalized.includes('found no') || normalized.includes('found nothing'));
-            const needCheck = normalized.includes('i need to check') && (normalized.includes('requesting') || normalized.includes('request'));
+            const needCheck = (normalized.includes('i need to check') && (normalized.includes('requesting') || normalized.includes('request')))
+                || normalized.includes('access_request')
+                || normalized.includes('access request');
             const storyKeywords = [
                 'outline',
                 'scene',
@@ -4054,7 +4183,7 @@
             if ((checkedFound || checkedFoundNo) && mentionsIssueOnly) {
                 return { ok: false, reason: 'issue-only' };
             }
-            const hasQuote = /["“”'‘’][^"“”'‘’]{6,}["“”'‘’]/.test(evidenceLine);
+            const hasQuote = /["“”'‘’][^"“”'‘’]{6,}["“”'‘’]/.test(cleanedEvidenceLine);
             const hasLocation = normalized.includes('line') || normalized.includes('section') || normalized.includes('paragraph');
             const hasScope = normalized.includes('scene') || normalized.includes('.md') || normalized.includes('file') || normalized.includes('files');
             const hasContentClaims = lines.some(line => {
@@ -4066,13 +4195,22 @@
                 return { ok: false, reason: 'wrong-source' };
             }
 
+            if (detectToolClaim(content)) {
+                const receiptId = extractReceiptId(cleanedEvidenceLine);
+                if (!receiptId) return { ok: false, reason: 'missing-receipt' };
+                const receiptIds = await loadReceiptIds();
+                if (!receiptIds.includes(receiptId)) {
+                    return { ok: false, reason: 'missing-receipt' };
+                }
+            }
+
             if (checkedFoundNo && mentionsStorySource) {
                 if (!hasScope) return { ok: false, reason: 'missing-scope' };
                 return { ok: true };
             }
             if (checkedFound && mentionsStorySource) {
                 if (hasQuote) {
-                    const quoteCheck = await verifyQuoteInFile(evidenceLine);
+                    const quoteCheck = await verifyQuoteInFile(cleanedEvidenceLine);
                     if (!quoteCheck.ok) return quoteCheck;
                     return { ok: true };
                 }
@@ -4250,11 +4388,12 @@
 
             for (const agent of participants) {
                 try {
+                    const turnId = createTurnId(agent.id);
                     const prompt = buildConferencePrompt(agent, text);
                     const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: prompt, agentId: agent.id })
+                        body: JSON.stringify({ message: prompt, agentId: agent.id, conferenceId: conferenceContext.sessionId, turnId })
                     }), `Conference response from ${agent.name || 'agent'}`);
                     let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
                     let reply = parsed.content || 'No response.';
@@ -4264,7 +4403,7 @@
                         const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: retryPrompt, agentId: agent.id })
+                            body: JSON.stringify({ message: retryPrompt, agentId: agent.id, conferenceId: conferenceContext.sessionId, turnId })
                         }), `Conference retry for ${agent.name || 'agent'}`);
                         parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
                         reply = parsed.content || 'No response.';
@@ -4286,10 +4425,19 @@
                             rejection = 'Ungrounded response rejected. Quoted text was not found in the cited file.';
                         } else if (evidenceCheck.reason === 'missing-file' || evidenceCheck.reason === 'file-read-failed') {
                             rejection = 'Ungrounded response rejected. Evidence file could not be verified.';
+                        } else if (evidenceCheck.reason === 'multiple') {
+                            rejection = 'Ungrounded response rejected. Include exactly one Evidence line.';
+                    } else if (evidenceCheck.reason === 'tool-syntax') {
+                        rejection = 'Ungrounded response rejected. Tool calls must be strict JSON-only with nonce; no plain-text tool syntax.';
+                    } else if (evidenceCheck.reason === 'cot-leak') {
+                        rejection = 'Ungrounded response rejected. Remove planning/chain-of-thought preface and respond directly in role.';
+                    } else if (evidenceCheck.reason === 'missing-receipt') {
+                            rejection = 'Ungrounded response rejected. access_claim_without_stamp: include a valid receipt_id in Evidence.';
                         }
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
                         notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
+                        await recordConferenceTelemetry(evidenceCheck.reason, agent.id);
                     } else {
                         addChatMessage(agent.name || 'Agent', 'assistant', reply);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, stopHook: parsed.stopHook });
@@ -4309,7 +4457,35 @@
             chatSend.disabled = false;
         };
 
+        const recordConferenceTelemetry = async (reason, agentId) => {
+            if (!window.telemetryApi || !conferenceContext.sessionId) return;
+            const type = mapRejectionReasonToTelemetry(reason);
+            if (!type) return;
+            try {
+                await telemetryApi.recordConferenceEvent({
+                    conferenceId: conferenceContext.sessionId,
+                    agentId,
+                    type
+                });
+            } catch (_) {
+                // ignore telemetry failures
+            }
+        };
+
+        const mapRejectionReasonToTelemetry = (reason) => {
+            if (!reason) return null;
+            if (reason === 'quote-not-found') return 'quote_not_found';
+            if (reason === 'tool-syntax') return 'tool_syntax';
+            if (reason === 'cot-leak') return 'cot_leak';
+            if (reason === 'multiple' || reason === 'format') return 'format_error';
+            return 'evidence_invalid';
+        };
+
         void loadConferenceContext();
+
+        if (!conferenceContext.sessionId) {
+            conferenceContext.sessionId = createConferenceSessionId();
+        }
 
         chatSend.addEventListener('click', sendMessage);
         chatInput.addEventListener('keydown', (e) => {

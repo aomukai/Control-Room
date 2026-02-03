@@ -14,19 +14,19 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what’s still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Conference grounding: evidence format parser, structural claim enforcement, chain-of-thought blocking, and quote verification robustness.
+- Grounding + evidence enforcement across all contexts (conference chat is just the playground).
+- Tool execution + receipts + audit log: strict JSON tool-call protocol with nonce, schema validation, and signed receipts.
 - VFS alignment: outline content parity between VFS (Story/SCN-outline.md) and outline API.
-- Prompt tools baseline: file_locator/task_router/canon_checker/outline_analyzer prompts + usage expectations.
-- Telemetry: retention verified and log paths confirmed under `.control-room/telemetry/`; dev tools status/test/prune available (see docs/roadmap.md Telemetry + Issue Memory API sections).
+- Prompt tools baseline: file_locator/task_router/canon_checker/outline_analyzer prompts + JSON-only usage expectations.
+- Telemetry: rejection buckets + conference tags working and visible in dev tools.
 
 ## Working Notes
-- Conference grounding state machine + requirements tracked in docs/statemachine.md.
+- Grounding/tooling state machine + current status tracked in docs/statemachine.md.
 
 ## Next Session Plan
-1) Fix Evidence line parser to accept **Evidence:** while preserving single-line rule.
-2) Enforce structural claim evidence (line/section or outline entry).
-3) Add chain-of-thought rejection and plain-text tool-call rejection.
-4) Re-run a conference test and capture logs.
+1) Verify LM Studio JSON schema enforcement: tool call returns pure JSON with nonce on first try.
+2) Run single-agent conference test: tool call → receipt minted → Evidence line references receipt_id.
+3) If any JSON-only violations remain, adjust schema or provider parameters (no brute-force retries).
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.
@@ -35,4 +35,4 @@ Focus only on what’s still pending (see roadmap.md for authoritative status).
 Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.
 - Update roadmap/docs only when required to reflect completed work or resolve contradictions.
-- Prompt hygiene matters: design + test prompts for small/quirky local models (e.g., lfm2, gpt-oss), add validators/retries; if it works there, SOTA should follow.
+- Prompt hygiene matters: design + test prompts for small/quirky local models (e.g., lfm2, gpt-oss). Conference is only a test harness; all fixes must be platform-wide.

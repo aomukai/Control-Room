@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "id": "search-issues",
+      "name": "Search Issues",
+      "archetype": "Any",
+      "scope": "project",
+      "usageNotes": "Find issues by shared tags, assignment, or personal tags for the active agent.",
+      "goals": "Retrieve relevant issues quickly and avoid re-reading irrelevant threads.",
+      "guardrails": "Do not invent issues. Use only the filters provided.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"search_issues\",\"args\":{\"tags\":[\"tag\"],\"assignedTo\":\"agent\",\"status\":\"open\",\"priority\":\"normal\",\"personalTags\":[\"tag\"],\"personalAgent\":\"agentId\",\"excludePersonalTags\":[\"tag\"],\"minInterestLevel\":1},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- tags?: string[]\n- assignedTo?: string\n- status?: \"open\" | \"closed\" | \"all\"\n- priority?: \"low\" | \"normal\" | \"high\" | \"urgent\"\n- personalTags?: string[]\n- personalAgent?: string\n- excludePersonalTags?: string[]\n- minInterestLevel?: number\n\nNotes:\n- personalTags filters on the agent's personal tags; requires personalAgent (agentId).\n- excludePersonalTags can hide items marked irrelevant."
+    },
+    {
+      "id": "file-locator",
+      "name": "File Locator",
+      "archetype": "Any",
+      "scope": "project",
+      "usageNotes": "Use to find relevant files before analysis. Required first step for scenes, canon, or outline tasks.",
+      "goals": "Locate real project files, report metadata with confidence/match basis, and avoid assuming file contents.",
+      "guardrails": "Return actual file paths only. Never invent files. Include confidence and match_basis for each metadata field. If DEEP_SCAN exceeds safe context, warn and request confirmation.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"file_locator\",\"args\":{\"search_criteria\":\"Story/SCN-outline.md\",\"scan_mode\":\"FAST_SCAN\",\"max_results\":12,\"include_globs\":false,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- search_criteria: string (required)\n- scan_mode?: \"FAST_SCAN\" | \"DEEP_SCAN\"\n- max_results?: number\n- include_globs?: boolean\n- dry_run?: boolean\n\nSearch locations:\n- Story/Scenes/ (scene files)\n- Story/Compendium/ (canon/worldbuilding)\n- Story/SCN-outline.md (story structure, virtual)\n\nMetadata fields to return per file:\n- Type: scene/canon/outline\n- POV (if scene) with confidence and match_basis\n- Scene # (if applicable) with confidence and match_basis\n- Size: word count or file size\n- Modified: last modified timestamp\n- Keywords: list with confidence and match_basis\n\nMatch basis values: FILENAME_MATCH | CONTENT_MATCH | METADATA_MATCH\n\nIf scan_mode=DEEP_SCAN, estimate token usage before loading content:\nDEEP_SCAN requested on [N] files (estimated [TOKENS] tokens).\nWARNING if TOKENS > 30000. Recommend FAST_SCAN or reduce scope to <= 6 files.\nProceed anyway? [yes/no]\n\nIf dry_run=true, output what would be scanned and estimated token usage only."
+    },
+    {
+      "id": "task-router",
+      "name": "Task Router",
+      "archetype": "Chief",
+      "scope": "project",
+      "usageNotes": "Use when a user request needs routing to specialized agents or tools.",
+      "goals": "Classify task type, choose role(s), define evidence type, and specify required context.",
+      "guardrails": "Do not hardcode agent names. Route by role. If a role is unavailable, route to Chief with FALLBACK reason. If ambiguous, output CLARIFY questions before routing.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"task_router\",\"args\":{\"user_request\":\"...\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- user_request: string (required)\n- dry_run?: boolean\n\nAvailable roles:\n- planner (outline structure, scene ordering, stakes)\n- writer (prose drafting, scenes, dialogue)\n- editor (line editing, clarity, consistency)\n- critic (narrative impact, reader experience)\n- continuity (timeline, canon consistency, character tracking)\n- chief (router/moderator)\n\nOutput format (exact fields):\nROUTE: [role or roles]\nORDER: [sequential order if multiple]\nPARALLEL: [roles that can run together]\nCONTEXT: [files needed] or \"needs file_locator scan\"\nEXPECTED_OUTPUT: [what to produce]\nEVIDENCE_TYPE: QUOTE | LINE_REF | SCOPE_SCAN\nCOMPLEXITY: LOW | MEDIUM | HIGH\nESTIMATED_TIME: [e.g., 3-5 minutes]\nPRIORITY: LOW | NORMAL | HIGH\nFALLBACK: [reason if routing to chief]\n\nIf ambiguous, output: CLARIFY: [specific questions]\n\nIf dry_run=true, output a routing preview only (no final route)."
+    },
+    {
+      "id": "canon-checker",
+      "name": "Canon Checker",
+      "archetype": "Continuity",
+      "scope": "project",
+      "usageNotes": "Use when verifying scene content against canon files.",
+      "goals": "Ensure scenes do not contradict canon. Identify gaps explicitly.",
+      "guardrails": "Do not proceed without canon access. If canon files missing, output CANON_NEEDED and stop. Quote both canon and scene for any claim.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"canon_checker\",\"args\":{\"scene_path\":\"Story/Scenes/scene.md\",\"canon_paths\":[\"Story/Compendium/Canon.md\"],\"mode\":\"strict\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_path: string (required)\n- canon_paths: string[] (required)\n- mode?: string\n- dry_run?: boolean\n\nIf canon_paths are missing, output:\nCANON_NEEDED: [list of canon files]\nSTATUS: Cannot validate without canon\n\nOtherwise, verify character, location, technology, culture, and historical facts.\nReport format:\nScene: [filename]\nCanon: [filename]\nScene quote: \"...\"\nCanon quote: \"...\"\nStatus: Consistent | Inconsistent | Canon gap\nRecommendation: [Add to canon / Revise scene / Flag for review]\n\nIf dry_run=true, output which files would be checked."
+    },
+    {
+      "id": "outline-analyzer",
+      "name": "Outline Analyzer",
+      "archetype": "Planner",
+      "scope": "project",
+      "usageNotes": "Analyze story outline for structure, gaps, and stakes progression.",
+      "goals": "Identify structural issues with grounded references to outline text.",
+      "guardrails": "If outline path unknown, call file_locator first. Do not claim outline is missing without file_locator confirmation. Quote outline text for all structural claims.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"outline_analyzer\",\"args\":{\"outline_path\":\"Story/SCN-outline.md\",\"mode\":\"structure\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- outline_path?: string\n- mode?: string\n- dry_run?: boolean\n\nIf outline_path not provided, call file_locator for \"outline\" and report results.\nIf no outline file exists, output: No outline file found.\n\nAnalyze:\n1) Scene count and distribution\n2) Stakes progression\n3) Act structure (setup/confrontation/resolution)\n4) Gaps or missing transitions\n5) POV balance\n\nReport format:\nStructure Overview: ...\nProblem Identified: [quote + location]\nSuggested Fix: [actionable change]\n\nIf dry_run=true, output which outline file would be analyzed."
+    }
+  ]
+}

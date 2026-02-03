@@ -25,6 +25,7 @@ public class TelemetryController implements Controller {
         app.get("/api/telemetry/summary", this::getSummary);
         app.get("/api/telemetry/status", this::getStatus);
         app.post("/api/telemetry/test", this::runTest);
+        app.post("/api/telemetry/conference", this::recordConferenceEvent);
         app.post("/api/telemetry/prune", this::pruneNow);
         app.get("/api/telemetry/config", this::getConfig);
         app.put("/api/telemetry/config", this::updateConfig);
@@ -99,6 +100,38 @@ public class TelemetryController implements Controller {
         }
         int deleted = store.pruneNow();
         ctx.json(Map.of("deleted", deleted));
+    }
+
+    private void recordConferenceEvent(Context ctx) {
+        TelemetryStore store = store();
+        if (store == null) {
+            ctx.status(500).json(Map.of("error", "Telemetry store unavailable"));
+            return;
+        }
+        String conferenceId = null;
+        String agentId = null;
+        String type = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                com.fasterxml.jackson.databind.JsonNode json = objectMapper.readTree(ctx.body());
+                if (json.has("conferenceId")) {
+                    conferenceId = json.get("conferenceId").asText(null);
+                }
+                if (json.has("agentId")) {
+                    agentId = json.get("agentId").asText(null);
+                }
+                if (json.has("type")) {
+                    type = json.get("type").asText(null);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (conferenceId == null || conferenceId.isBlank() || type == null || type.isBlank()) {
+            ctx.status(400).json(Map.of("error", "conferenceId and type are required"));
+            return;
+        }
+        store.recordRejection(conferenceId, agentId, type);
+        ctx.json(Map.of("status", "ok"));
     }
 
     private void getConfig(Context ctx) {

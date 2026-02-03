@@ -24,4 +24,13 @@ public interface ChatProvider {
      */
     String chat(String apiKey, AgentEndpointConfig endpoint, String message)
         throws IOException, InterruptedException;
+
+    /**
+     * Send a chat message with an optional response_format payload (OpenAI-compatible).
+     */
+    default String chat(String apiKey, AgentEndpointConfig endpoint, String message,
+                        com.fasterxml.jackson.databind.JsonNode responseFormat)
+        throws IOException, InterruptedException {
+        return chat(apiKey, endpoint, message);
+    }
 }

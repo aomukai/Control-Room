@@ -16,6 +16,15 @@ import com.miniide.providers.ProviderChatService;
 import com.miniide.prompt.PromptJsonValidator;
 import com.miniide.prompt.PromptValidationResult;
 import com.miniide.settings.SettingsService;
+import com.miniide.tools.ToolCall;
+import com.miniide.tools.ToolCallParser;
+import com.miniide.tools.ToolCallParseResult;
+import com.miniide.tools.ToolExecutionContext;
+import com.miniide.tools.ToolExecutionResult;
+import com.miniide.tools.ToolExecutionService;
+import com.miniide.tools.ToolArgSpec;
+import com.miniide.tools.ToolSchema;
+import com.miniide.tools.ToolSchemaRegistry;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
@@ -24,6 +33,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Controller for AI chat operations.
@@ -38,6 +48,12 @@ public class ChatController implements Controller {
     private final IssueMemoryService issueService;
     private final ObjectMapper objectMapper;
     private final AppLogger logger;
+    private final ToolExecutionService toolExecutionService;
+    private final ToolCallParser toolCallParser;
+    private static final int MAX_TOOL_STEPS = 3;
+    private static final int MAX_TOOL_BYTES_PER_TURN = 6000;
+    private static final int MAX_TOOL_BYTES_PER_STEP = 2000;
+    private final ToolSchemaRegistry toolSchemaRegistry;
 
     public ChatController(ProjectContext projectContext,
                           SettingsService settingsService, ProviderChatService providerChatService,
@@ -49,6 +65,9 @@ public class ChatController implements Controller {
         this.issueService = issueService;
         this.objectMapper = objectMapper;
         this.logger = AppLogger.get();
+        this.toolExecutionService = new ToolExecutionService(projectContext, issueService, objectMapper);
+        this.toolSchemaRegistry = buildToolSchemas();
+        this.toolCallParser = new ToolCallParser(objectMapper, toolSchemaRegistry);
     }
 
     @Override
@@ -64,6 +83,9 @@ public class ChatController implements Controller {
             JsonNode json = objectMapper.readTree(ctx.body());
             String message = json.has("message") ? json.get("message").asText() : "";
             String agentId = json.has("agentId") ? json.get("agentId").asText() : null;
+            String conferenceId = json.has("conferenceId") ? json.get("conferenceId").asText(null) : null;
+            String taskId = json.has("taskId") ? json.get("taskId").asText(null) : null;
+            String turnId = json.has("turnId") ? json.get("turnId").asText(null) : null;
             String expectSchema = json.has("expectSchema") ? json.get("expectSchema").asText(null) : null;
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
@@ -146,11 +168,16 @@ public class ChatController implements Controller {
                     prompt = grounding + "\n\n" + (prompt != null ? prompt : "");
                 }
                 final String finalPrompt = prompt;
-                String response = runWithValidation(providerName, keyRef, agentEndpoint, finalPrompt, expectSchema);
-                if (projectContext != null && projectContext.telemetry() != null) {
-                    long tokensIn = TelemetryStore.estimateTokens(finalPrompt);
-                    long tokensOut = TelemetryStore.estimateTokens(response);
-                    projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut);
+                ToolExecutionContext toolContext = new ToolExecutionContext(conferenceId, taskId, turnId, agentId);
+                String response = runWithValidation(providerName, keyRef, agentEndpoint, finalPrompt, expectSchema, toolContext);
+            if (projectContext != null && projectContext.telemetry() != null) {
+                long tokensIn = TelemetryStore.estimateTokens(finalPrompt);
+                long tokensOut = TelemetryStore.estimateTokens(response);
+                    if (conferenceId != null && !conferenceId.isBlank()) {
+                        projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut, conferenceId);
+                    } else {
+                        projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut);
+                    }
                 }
                 ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
                 return;
@@ -174,11 +201,10 @@ public class ChatController implements Controller {
     }
 
     private String runWithValidation(String providerName, String apiKey, com.miniide.models.AgentEndpointConfig agentEndpoint,
-                                     String prompt, String expectSchema) {
+                                     String prompt, String expectSchema, ToolExecutionContext toolContext) {
         final String finalPrompt = prompt;
         if (expectSchema == null || expectSchema.isBlank()) {
-            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, finalPrompt);
-            return stripThinkingTags(response);
+            return runWithTools(providerName, apiKey, agentEndpoint, finalPrompt, toolContext);
         }
 
         int maxAttempts = 3;
@@ -186,8 +212,7 @@ public class ChatController implements Controller {
         PromptValidationResult lastResult = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             final String promptToSend = currentPrompt;
-            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, promptToSend);
-            response = stripThinkingTags(response);
+            String response = runWithTools(providerName, apiKey, agentEndpoint, promptToSend, toolContext);
             lastResult = validateBySchema(expectSchema, response);
             if (lastResult.isValid()) {
                 return response;
@@ -205,14 +230,13 @@ public class ChatController implements Controller {
 
     private ReceiptAttempt runReceiptWithValidation(String providerName, String apiKey,
                                                     com.miniide.models.AgentEndpointConfig agentEndpoint,
-                                                    String prompt) {
+                                                    String prompt, ToolExecutionContext toolContext) {
         int maxAttempts = 3;
         String currentPrompt = prompt;
         PromptValidationResult lastResult = null;
         String lastResponse = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            String response = callAgentWithGate(providerName, apiKey, agentEndpoint, currentPrompt);
-            response = stripThinkingTags(response);
+            String response = runWithTools(providerName, apiKey, agentEndpoint, currentPrompt, toolContext);
             lastResponse = response;
             lastResult = PromptJsonValidator.validateReceipt(response);
             if (lastResult.isValid()) {
@@ -223,6 +247,277 @@ public class ChatController implements Controller {
             }
         }
         return new ReceiptAttempt(false, maxAttempts, lastResponse, lastResult);
+    }
+
+    private String runWithTools(String providerName, String apiKey,
+                                com.miniide.models.AgentEndpointConfig agentEndpoint,
+                                String prompt, ToolExecutionContext toolContext) {
+        String nonce = generateToolNonce();
+        boolean requireToolCall = shouldRequireToolCall(prompt);
+        String currentPrompt = appendToolProtocol(prompt, nonce, requireToolCall);
+        String response = null;
+        int injectedBytes = 0;
+        for (int step = 0; step < MAX_TOOL_STEPS; step++) {
+            com.fasterxml.jackson.databind.JsonNode responseFormat =
+                (step == 0 && requireToolCall) ? buildToolCallResponseFormat(nonce) : null;
+            response = callAgentWithGate(providerName, apiKey, agentEndpoint, currentPrompt, responseFormat);
+            response = stripThinkingTags(response);
+            ToolCallParseResult parsed = toolCallParser.parseStrict(response, nonce);
+            if (parsed.isToolCall()) {
+                ToolCall call = parsed.getCall();
+                ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
+                ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes);
+                currentPrompt = append.prompt;
+                injectedBytes = append.injectedBytes;
+                requireToolCall = false;
+                if (append.exceededLimit) {
+                    return handleToolCallRejection(toolContext, "tool_call_output_limit", "tool output limit exceeded");
+                }
+                continue;
+            }
+            if (parsed.getErrorCode() != null) {
+                return handleToolCallRejection(toolContext, parsed.getErrorCode(), parsed.getErrorDetail());
+            }
+            if (looksLikeToolCallAttempt(response)) {
+                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "tool call must be strict JSON");
+            }
+            return response;
+        }
+        return response != null ? response : "";
+    }
+
+    private ToolAppendResult appendToolResult(String prompt, ToolCall call, ToolExecutionResult result,
+                                              String nonce, int injectedBytes) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(prompt != null ? prompt : "");
+        builder.append("\n\nTool call detected:\n");
+        builder.append(call.getRaw() != null ? call.getRaw() : call.getName());
+        builder.append("\n\nTool result:\n");
+        String output = result != null ? result.getOutput() : null;
+        int injectedThisStep = 0;
+        if (output == null) {
+            builder.append("Tool returned no output.");
+        } else {
+            String truncated = truncateToolOutput(output);
+            builder.append(truncated);
+            injectedThisStep = truncated.length();
+        }
+        if (result != null && !result.isOk()) {
+            builder.append("\n\nTool error: ").append(result.getError() != null ? result.getError() : "unknown");
+        }
+        if (result != null && result.getReceiptId() != null) {
+            builder.append("\n\nReceipt: ").append(result.getReceiptId());
+        }
+        builder.append("\n\nIf you need another tool, respond with ONLY a JSON tool call object. Otherwise respond normally.");
+        builder.append("\nTool call format: {\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"").append(nonce).append("\"}");
+        int total = injectedBytes + injectedThisStep;
+        boolean exceeded = total > MAX_TOOL_BYTES_PER_TURN;
+        return new ToolAppendResult(builder.toString(), total, exceeded);
+    }
+
+    private String truncateToolOutput(String output) {
+        if (output == null) return "";
+        int max = MAX_TOOL_BYTES_PER_STEP;
+        if (output.length() <= max) {
+            return output;
+        }
+        String excerpt = output.substring(0, max);
+        String hash = sha256(excerpt);
+        return excerpt + "\n\n[truncated: " + output.length() + " chars, sha256=" + hash + "]";
+    }
+
+    private String handleToolCallRejection(ToolExecutionContext context, String code, String detail) {
+        if (projectContext != null && projectContext.telemetry() != null
+            && context != null && context.getSessionId() != null && context.getAgentId() != null) {
+            projectContext.telemetry().recordRejection(context.getSessionId(), context.getAgentId(), code);
+        }
+        return buildToolCallRejection(code, detail);
+    }
+
+    private String buildToolCallRejection(String code, String detail) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("STOP_HOOK: tool_call_rejected\n");
+        builder.append("Reason: ").append(code != null ? code : "tool_call_invalid_format");
+        if (detail != null && !detail.isBlank()) {
+            builder.append(" (").append(detail).append(")");
+        }
+        return builder.toString();
+    }
+
+    private boolean looksLikeToolCallAttempt(String response) {
+        if (response == null) return false;
+        String trimmed = response.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("```")) {
+            return true;
+        }
+        String lower = trimmed.toLowerCase();
+        return lower.contains("file_locator(")
+            || lower.contains("outline_analyzer(")
+            || lower.contains("canon_checker(")
+            || lower.contains("task_router(")
+            || lower.contains("search_issues(")
+            || lower.contains("\"tool\"")
+            || lower.contains("'tool'");
+    }
+
+    private String appendToolProtocol(String prompt, String nonce, boolean requireToolCall) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(prompt != null ? prompt : "");
+        builder.append("\n\nTool Call Protocol (STRICT JSON ONLY):\n");
+        builder.append("If you need a tool, respond with ONLY a JSON object. No prose, no markdown, no code fences.\n");
+        builder.append("Format: {\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"").append(nonce).append("\"}\n");
+        if (requireToolCall) {
+            builder.append("TOOL_CALL_REQUIRED: true\n");
+        }
+        builder.append("If you do not need a tool, respond normally with Evidence line as required.\n");
+        builder.append("TOOL_NONCE: ").append(nonce);
+        return builder.toString();
+    }
+
+    private String generateToolNonce() {
+        return java.util.UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private boolean shouldRequireToolCall(String prompt) {
+        if (prompt == null) return false;
+        String lower = prompt.toLowerCase();
+        return lower.contains("use the file_locator tool first")
+            || lower.contains("use file_locator tool first")
+            || lower.contains("must use file_locator")
+            || lower.contains("tool_call_required")
+            || lower.contains("return only the json tool call")
+            || lower.contains("only the json tool call object")
+            || lower.contains("respond with only a json tool call")
+            || lower.contains("respond with exactly one json object");
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode buildToolCallResponseFormat(String nonce) {
+        com.fasterxml.jackson.databind.node.ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        com.fasterxml.jackson.databind.node.ObjectNode schemaWrapper = responseFormat.putObject("json_schema");
+        schemaWrapper.put("name", "tool_call_envelope");
+        com.fasterxml.jackson.databind.node.ObjectNode schema = schemaWrapper.putObject("schema");
+        schema.put("type", "object");
+        schema.putArray("required").add("tool").add("args").add("nonce");
+        schema.put("additionalProperties", false);
+        com.fasterxml.jackson.databind.node.ArrayNode oneOf = schema.putArray("oneOf");
+        java.util.Set<String> toolIds = toolSchemaRegistry != null ? toolSchemaRegistry.getToolIds() : java.util.Set.of();
+        for (String toolId : toolIds) {
+            ToolSchema toolSchema = toolSchemaRegistry.getSchema(toolId);
+            com.fasterxml.jackson.databind.node.ObjectNode variant = oneOf.addObject();
+            variant.put("type", "object");
+            variant.put("additionalProperties", false);
+            variant.putArray("required").add("tool").add("args").add("nonce");
+            com.fasterxml.jackson.databind.node.ObjectNode properties = variant.putObject("properties");
+            com.fasterxml.jackson.databind.node.ObjectNode toolNode = properties.putObject("tool");
+            toolNode.put("const", toolId);
+            com.fasterxml.jackson.databind.node.ObjectNode nonceNode = properties.putObject("nonce");
+            nonceNode.put("const", nonce);
+            com.fasterxml.jackson.databind.node.ObjectNode argsNode = properties.putObject("args");
+            argsNode.put("type", "object");
+            argsNode.put("additionalProperties", false);
+            com.fasterxml.jackson.databind.node.ArrayNode requiredArgs = argsNode.putArray("required");
+            com.fasterxml.jackson.databind.node.ObjectNode argProps = argsNode.putObject("properties");
+            if (toolSchema != null) {
+                for (java.util.Map.Entry<String, ToolArgSpec> argEntry : toolSchema.getArgSpecs().entrySet()) {
+                    String argName = argEntry.getKey();
+                    ToolArgSpec spec = argEntry.getValue();
+                    com.fasterxml.jackson.databind.node.ObjectNode argSchema = argProps.putObject(argName);
+                    switch (spec.getType()) {
+                        case STRING:
+                            argSchema.put("type", "string");
+                            if (!spec.getAllowedValues().isEmpty()) {
+                                com.fasterxml.jackson.databind.node.ArrayNode enums = argSchema.putArray("enum");
+                                for (String value : spec.getAllowedValues()) {
+                                    enums.add(value);
+                                }
+                            }
+                            break;
+                        case INT:
+                            argSchema.put("type", "integer");
+                            break;
+                        case BOOLEAN:
+                            argSchema.put("type", "boolean");
+                            break;
+                        case STRING_ARRAY:
+                            argSchema.put("type", "array");
+                            argSchema.putObject("items").put("type", "string");
+                            break;
+                        default:
+                            argSchema.put("type", "string");
+                            break;
+                    }
+                    if (spec.isRequired()) {
+                        requiredArgs.add(argName);
+                    }
+                }
+            }
+        }
+        return responseFormat;
+    }
+
+    private ToolSchemaRegistry buildToolSchemas() {
+        ToolSchemaRegistry registry = new ToolSchemaRegistry();
+        registry.register(new ToolSchema("file_locator")
+            .arg("search_criteria", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("scan_mode", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("FAST_SCAN", "DEEP_SCAN"))
+            .arg("max_results", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("include_globs", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("outline_analyzer")
+            .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("mode", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("canon_checker")
+            .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("canon_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, true)
+            .arg("mode", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("task_router")
+            .arg("user_request", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("search_issues")
+            .arg("tags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
+            .arg("assignedTo", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("status", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("open", "closed", "all"))
+            .arg("priority", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("low", "normal", "high", "urgent"))
+            .arg("personalTags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
+            .arg("personalAgent", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("excludePersonalTags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
+            .arg("minInterestLevel", com.miniide.tools.ToolArgSpec.Type.INT, false)
+        );
+        return registry;
+    }
+
+    private static class ToolAppendResult {
+        private final String prompt;
+        private final int injectedBytes;
+        private final boolean exceededLimit;
+
+        private ToolAppendResult(String prompt, int injectedBytes, boolean exceededLimit) {
+            this.prompt = prompt;
+            this.injectedBytes = injectedBytes;
+            this.exceededLimit = exceededLimit;
+        }
+    }
+
+    private String sha256(String value) {
+        if (value == null) return "";
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private TaskExecutionResult executeTaskPacketInternal(JsonNode packet, String agentId, boolean skipToolCatalog,
@@ -301,7 +596,8 @@ public class ChatController implements Controller {
             prompt = grounding + "\n\n" + prompt;
         }
 
-        ReceiptAttempt attempt = runReceiptWithValidation(provider, apiKey, endpoint, prompt);
+        ToolExecutionContext toolContext = new ToolExecutionContext(null, packetId, packetId, agentId);
+        ReceiptAttempt attempt = runReceiptWithValidation(provider, apiKey, endpoint, prompt, toolContext);
         if (!attempt.valid) {
             String detail = attempt.validation != null && !attempt.validation.getErrors().isEmpty()
                 ? String.join(", ", attempt.validation.getErrors())
@@ -345,9 +641,10 @@ public class ChatController implements Controller {
 
     private String callAgentWithGate(String providerName, String apiKey,
                                      com.miniide.models.AgentEndpointConfig agentEndpoint,
-                                     String prompt) {
+                                     String prompt,
+                                     com.fasterxml.jackson.databind.JsonNode responseFormat) {
         try {
-            return AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, apiKey, agentEndpoint, prompt));
+            return AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, apiKey, agentEndpoint, prompt, responseFormat));
         } catch (Exception e) {
             throw new RuntimeException("Agent chat failed", e);
         }
@@ -553,7 +850,8 @@ public class ChatController implements Controller {
             if (grounding != null && !grounding.isBlank()) {
                 prompt = grounding + "\n\n" + prompt;
             }
-            String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet");
+            ToolExecutionContext toolContext = new ToolExecutionContext(null, issueId, parentPacketId, chief.getId());
+            String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext);
             if (response != null && response.startsWith("STOP_HOOK")) {
                 JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
                 String packetId = fallback.path("packet_id").asText("");
@@ -722,7 +1020,8 @@ public class ChatController implements Controller {
             prompt = grounding + "\n\n" + prompt;
         }
 
-        String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet");
+        ToolExecutionContext toolContext = new ToolExecutionContext(null, issueId, parentPacketId, chief.getId());
+        String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext);
         if (response != null && response.startsWith("STOP_HOOK")) {
             JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
             return new ChiefPacketResult(fallback, true);

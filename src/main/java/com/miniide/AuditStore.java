@@ -4,17 +4,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.miniide.models.AuditIndexEntry;
 import com.miniide.models.AuditIndexFile;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class AuditStore {
     private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS")
@@ -22,15 +29,106 @@ public class AuditStore {
         .withZone(ZoneOffset.UTC);
 
     private final ObjectMapper objectMapper;
+    private final Path auditBaseRoot;
     private final Path auditRoot;
+    private final Path sessionsRoot;
+    private final Path secretPath;
+    private byte[] secretKey;
 
     public AuditStore(Path workspaceRoot, ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        this.auditRoot = workspaceRoot.resolve(".control-room").resolve("audit").resolve("issues");
+        this.auditBaseRoot = workspaceRoot.resolve(".control-room").resolve("audit");
+        this.auditRoot = auditBaseRoot.resolve("issues");
+        this.sessionsRoot = auditBaseRoot.resolve("sessions");
+        this.secretPath = auditBaseRoot.resolve("secret.key");
+        this.secretKey = loadOrCreateSecret();
     }
 
     public Path getAuditRoot() {
         return auditRoot;
+    }
+
+    public Path getSessionsRoot() {
+        return sessionsRoot;
+    }
+
+    public String signPayload(String payload) throws IOException {
+        if (payload == null) {
+            payload = "";
+        }
+        byte[] key = secretKey != null ? secretKey : loadOrCreateSecret();
+        if (key == null) {
+            throw new IOException("Audit secret unavailable");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            byte[] digest = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            return bytesToHex(digest);
+        } catch (Exception e) {
+            throw new IOException("Failed to sign payload: " + e.getMessage(), e);
+        }
+    }
+
+    public void appendSessionToolReceipt(String sessionId, String jsonLine) throws IOException {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IOException("sessionId required");
+        }
+        Path sessionDir = sessionsRoot.resolve(sanitizeSegment(sessionId));
+        Files.createDirectories(sessionDir);
+        Path target = sessionDir.resolve("tool_receipts.jsonl");
+        try (BufferedWriter writer = Files.newBufferedWriter(
+            target,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.APPEND
+        )) {
+            writer.write(jsonLine == null ? "" : jsonLine);
+            writer.newLine();
+        }
+    }
+
+    public List<String> listSessionReceiptIds(String sessionId) throws IOException {
+        if (sessionId == null || sessionId.isBlank()) {
+            return List.of();
+        }
+        Path target = sessionsRoot.resolve(sanitizeSegment(sessionId)).resolve("tool_receipts.jsonl");
+        if (!Files.exists(target)) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        List<String> lines = Files.readAllLines(target, StandardCharsets.UTF_8);
+        for (String line : lines) {
+            if (line == null || line.isBlank()) continue;
+            try {
+                Map<?, ?> node = objectMapper.readValue(line, Map.class);
+                Object id = node.get("receipt_id");
+                if (id != null) {
+                    ids.add(id.toString());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return ids;
+    }
+
+    public AuditEntry linkSessionToIssue(String sessionId, String issueId) throws IOException {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IOException("sessionId required");
+        }
+        if (issueId == null || issueId.isBlank()) {
+            throw new IOException("issueId required");
+        }
+        Path sessionFile = sessionsRoot.resolve(sanitizeSegment(sessionId)).resolve("tool_receipts.jsonl");
+        if (!Files.exists(sessionFile)) {
+            throw new IOException("Session receipts not found");
+        }
+        String content = Files.readString(sessionFile, StandardCharsets.UTF_8);
+        AuditEntry entry = writeEntry(issueId, sessionId, "session-receipts", "jsonl", content);
+        String ref = "{\"session_id\":\"" + sessionId + "\",\"source\":\"" + sessionFile + "\"}";
+        writeEntry(issueId, sessionId, "session-receipts-ref", "json", ref);
+        return entry;
     }
 
     public AuditEntry writePacket(String issueId, String packetId, String json) throws IOException {
@@ -103,6 +201,34 @@ public class AuditStore {
             return "";
         }
         return trimmed.replaceAll("[^a-zA-Z0-9._-]+", "_");
+    }
+
+    private byte[] loadOrCreateSecret() {
+        try {
+            Files.createDirectories(auditBaseRoot);
+            if (Files.exists(secretPath)) {
+                String encoded = Files.readString(secretPath, StandardCharsets.UTF_8).trim();
+                if (!encoded.isBlank()) {
+                    return Base64.getDecoder().decode(encoded);
+                }
+            }
+            byte[] secret = new byte[32];
+            new SecureRandom().nextBytes(secret);
+            String encoded = Base64.getEncoder().encodeToString(secret);
+            Files.writeString(secretPath, encoded, StandardCharsets.UTF_8);
+            return secret;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        if (bytes == null) return "";
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
     private AuditEntry parseEntry(Path path) {

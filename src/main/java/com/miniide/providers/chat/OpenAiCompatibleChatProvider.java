@@ -38,6 +38,12 @@ public class OpenAiCompatibleChatProvider extends AbstractChatProvider {
     @Override
     public String chat(String apiKey, AgentEndpointConfig endpoint, String message)
         throws IOException, InterruptedException {
+        return chat(apiKey, endpoint, message, null);
+    }
+
+    @Override
+    public String chat(String apiKey, AgentEndpointConfig endpoint, String message, JsonNode responseFormat)
+        throws IOException, InterruptedException {
         String url = normalizeOpenAiBaseUrl(endpoint.getBaseUrl(), defaultOpenAiBase(providerName)) + "/v1/chat/completions";
 
         ObjectNode payload = mapper.createObjectNode();
@@ -47,6 +53,10 @@ public class OpenAiCompatibleChatProvider extends AbstractChatProvider {
         ObjectNode msg = messages.addObject();
         msg.put("role", "user");
         msg.put("content", message);
+
+        if (responseFormat != null && !responseFormat.isNull()) {
+            payload.set("response_format", responseFormat);
+        }
 
         if (endpoint.getUseProviderDefaults() == null || !endpoint.getUseProviderDefaults()) {
             if (endpoint.getTemperature() != null) {

@@ -20,6 +20,9 @@ public class AuditController implements Controller {
     public void registerRoutes(Javalin app) {
         app.get("/api/audit/issues/{id}", this::listIssueAudit);
         app.get("/api/audit/issues/{id}/files/{filename}", this::getIssueAuditFile);
+        app.get("/api/audit/sessions/{id}/receipts", this::listSessionReceipts);
+        app.get("/api/audit/sessions/{id}/tool-receipts", this::getSessionReceiptFile);
+        app.post("/api/audit/sessions/{id}/link-issue", this::linkSessionToIssue);
     }
 
     private void listIssueAudit(Context ctx) {
@@ -82,6 +85,73 @@ public class AuditController implements Controller {
                 ctx.contentType("text/plain; charset=utf-8");
             }
             ctx.result(content);
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void listSessionReceipts(Context ctx) {
+        if (projectContext == null || projectContext.audit() == null) {
+            ctx.status(500).json(Map.of("error", "Audit store unavailable"));
+            return;
+        }
+        String sessionId = ctx.pathParam("id");
+        try {
+            List<String> receipts = projectContext.audit().listSessionReceiptIds(sessionId);
+            ctx.json(Map.of("sessionId", sessionId, "receipts", receipts));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void getSessionReceiptFile(Context ctx) {
+        if (projectContext == null || projectContext.audit() == null) {
+            ctx.status(500).json(Map.of("error", "Audit store unavailable"));
+            return;
+        }
+        String sessionId = ctx.pathParam("id");
+        try {
+            java.nio.file.Path sessionDir = projectContext.audit().getSessionsRoot()
+                .resolve(sessionId.replaceAll("[^a-zA-Z0-9._-]+", "_"));
+            java.nio.file.Path target = sessionDir.resolve("tool_receipts.jsonl").normalize();
+            if (!target.startsWith(sessionDir)) {
+                ctx.status(400).json(Map.of("error", "invalid session"));
+                return;
+            }
+            if (!java.nio.file.Files.exists(target) || !java.nio.file.Files.isRegularFile(target)) {
+                ctx.status(404).json(Map.of("error", "file not found"));
+                return;
+            }
+            String content = java.nio.file.Files.readString(target, java.nio.charset.StandardCharsets.UTF_8);
+            ctx.contentType("text/plain; charset=utf-8").result(content);
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void linkSessionToIssue(Context ctx) {
+        if (projectContext == null || projectContext.audit() == null) {
+            ctx.status(500).json(Map.of("error", "Audit store unavailable"));
+            return;
+        }
+        String sessionId = ctx.pathParam("id");
+        String issueId = null;
+        try {
+            if (ctx.body() != null && !ctx.body().isBlank()) {
+                var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(ctx.body());
+                if (json.has("issueId")) {
+                    issueId = json.get("issueId").asText(null);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (issueId == null || issueId.isBlank()) {
+            ctx.status(400).json(Map.of("error", "issueId required"));
+            return;
+        }
+        try {
+            projectContext.audit().linkSessionToIssue(sessionId, issueId);
+            ctx.json(Map.of("status", "ok"));
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }

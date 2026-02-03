@@ -7,6 +7,11 @@ public class TelemetryCounters {
     private long issueAccesses;
     private long issueDemotions;
     private long errors;
+    private long rejectEvidenceMissingOrInvalid;
+    private long rejectQuoteNotFound;
+    private long rejectToolSyntaxInText;
+    private long cotLeakDetected;
+    private long formatError;
 
     public long getActivations() {
         return activations;
@@ -56,6 +61,46 @@ public class TelemetryCounters {
         this.errors = errors;
     }
 
+    public long getRejectEvidenceMissingOrInvalid() {
+        return rejectEvidenceMissingOrInvalid;
+    }
+
+    public void setRejectEvidenceMissingOrInvalid(long rejectEvidenceMissingOrInvalid) {
+        this.rejectEvidenceMissingOrInvalid = rejectEvidenceMissingOrInvalid;
+    }
+
+    public long getRejectQuoteNotFound() {
+        return rejectQuoteNotFound;
+    }
+
+    public void setRejectQuoteNotFound(long rejectQuoteNotFound) {
+        this.rejectQuoteNotFound = rejectQuoteNotFound;
+    }
+
+    public long getRejectToolSyntaxInText() {
+        return rejectToolSyntaxInText;
+    }
+
+    public void setRejectToolSyntaxInText(long rejectToolSyntaxInText) {
+        this.rejectToolSyntaxInText = rejectToolSyntaxInText;
+    }
+
+    public long getCotLeakDetected() {
+        return cotLeakDetected;
+    }
+
+    public void setCotLeakDetected(long cotLeakDetected) {
+        this.cotLeakDetected = cotLeakDetected;
+    }
+
+    public long getFormatError() {
+        return formatError;
+    }
+
+    public void setFormatError(long formatError) {
+        this.formatError = formatError;
+    }
+
     public void incrementActivations(long count) {
         activations += Math.max(0, count);
     }
@@ -78,5 +123,25 @@ public class TelemetryCounters {
 
     public void incrementErrors(long count) {
         errors += Math.max(0, count);
+    }
+
+    public void incrementRejectEvidenceMissingOrInvalid(long count) {
+        rejectEvidenceMissingOrInvalid += Math.max(0, count);
+    }
+
+    public void incrementRejectQuoteNotFound(long count) {
+        rejectQuoteNotFound += Math.max(0, count);
+    }
+
+    public void incrementRejectToolSyntaxInText(long count) {
+        rejectToolSyntaxInText += Math.max(0, count);
+    }
+
+    public void incrementCotLeakDetected(long count) {
+        cotLeakDetected += Math.max(0, count);
+    }
+
+    public void incrementFormatError(long count) {
+        formatError += Math.max(0, count);
     }
 }

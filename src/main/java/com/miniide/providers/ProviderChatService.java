@@ -44,4 +44,22 @@ public class ProviderChatService {
         ChatProvider chatProvider = providerFactory.getProvider(provider);
         return chatProvider.chat(apiKey, endpoint, message);
     }
+
+    public String chat(String provider, String apiKey, AgentEndpointConfig endpoint, String message,
+                       com.fasterxml.jackson.databind.JsonNode responseFormat)
+        throws IOException, InterruptedException {
+
+        if (provider == null || provider.isBlank()) {
+            throw new IOException("Provider is required.");
+        }
+        if (endpoint == null) {
+            throw new IOException("Endpoint configuration is required.");
+        }
+        if (endpoint.getModel() == null || endpoint.getModel().isBlank()) {
+            throw new IOException("Model is required.");
+        }
+
+        ChatProvider chatProvider = providerFactory.getProvider(provider);
+        return chatProvider.chat(apiKey, endpoint, message, responseFormat);
+    }
 }

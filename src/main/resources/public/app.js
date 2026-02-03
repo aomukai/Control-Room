@@ -9087,6 +9087,104 @@ async function showWorkspaceSwitcher() {
         telemetryRow.appendChild(telemetryStatus);
         telemetrySection.appendChild(telemetryRow);
 
+        const receiptsSection = document.createElement('div');
+        receiptsSection.className = 'dev-tools-section';
+        const receiptsTitle = document.createElement('div');
+        receiptsTitle.className = 'dev-tools-section-title';
+        receiptsTitle.textContent = 'Tool Receipts';
+        receiptsSection.appendChild(receiptsTitle);
+
+        const receiptsIntro = document.createElement('div');
+        receiptsIntro.className = 'dev-tools-item-desc';
+        receiptsIntro.textContent = 'List tool receipts for a session.';
+        receiptsSection.appendChild(receiptsIntro);
+
+        const receiptsRow = document.createElement('div');
+        receiptsRow.className = 'dev-tools-row dev-tools-row-stack';
+
+        const receiptsControls = document.createElement('div');
+        receiptsControls.className = 'dev-tools-controls';
+
+        const receiptsSessionLabel = document.createElement('label');
+        receiptsSessionLabel.className = 'modal-label';
+        receiptsSessionLabel.textContent = 'Session ID';
+        const receiptsSessionInput = document.createElement('input');
+        receiptsSessionInput.type = 'text';
+        receiptsSessionInput.className = 'modal-input dev-tools-input';
+        receiptsSessionInput.placeholder = 'conference/session id';
+
+        const receiptsButtons = document.createElement('div');
+        receiptsButtons.className = 'dev-tools-controls';
+
+        const receiptsListBtn = document.createElement('button');
+        receiptsListBtn.type = 'button';
+        receiptsListBtn.className = 'modal-btn modal-btn-secondary';
+        receiptsListBtn.textContent = 'List receipts';
+
+        const receiptsFetchBtn = document.createElement('button');
+        receiptsFetchBtn.type = 'button';
+        receiptsFetchBtn.className = 'modal-btn modal-btn-secondary';
+        receiptsFetchBtn.textContent = 'Fetch JSONL';
+
+        const receiptsStatus = document.createElement('div');
+        receiptsStatus.className = 'dev-tools-status';
+
+        receiptsListBtn.addEventListener('click', async () => {
+            receiptsListBtn.disabled = true;
+            receiptsStatus.textContent = 'Fetching receipts...';
+            receiptsStatus.dataset.level = 'info';
+            try {
+                const sessionId = receiptsSessionInput.value.trim();
+                if (!sessionId) {
+                    receiptsStatus.textContent = 'Session ID required.';
+                    receiptsStatus.dataset.level = 'warning';
+                } else {
+                    const res = await auditApi.listSessionReceipts(sessionId);
+                    const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+                    receiptsStatus.textContent = receipts.length
+                        ? `Receipts (${receipts.length}): ${receipts.join(', ')}`
+                        : 'No receipts found.';
+                    receiptsStatus.dataset.level = 'success';
+                }
+            } catch (err) {
+                receiptsStatus.textContent = `Receipt list failed: ${err.message}`;
+                receiptsStatus.dataset.level = 'error';
+            } finally {
+                receiptsListBtn.disabled = false;
+            }
+        });
+
+        receiptsFetchBtn.addEventListener('click', async () => {
+            receiptsFetchBtn.disabled = true;
+            receiptsStatus.textContent = 'Fetching JSONL...';
+            receiptsStatus.dataset.level = 'info';
+            try {
+                const sessionId = receiptsSessionInput.value.trim();
+                if (!sessionId) {
+                    receiptsStatus.textContent = 'Session ID required.';
+                    receiptsStatus.dataset.level = 'warning';
+                } else {
+                    const content = await auditApi.getSessionReceiptsFile(sessionId);
+                    receiptsStatus.textContent = content ? `JSONL loaded (${content.length} chars).` : 'No content.';
+                    receiptsStatus.dataset.level = 'success';
+                }
+            } catch (err) {
+                receiptsStatus.textContent = `Fetch JSONL failed: ${err.message}`;
+                receiptsStatus.dataset.level = 'error';
+            } finally {
+                receiptsFetchBtn.disabled = false;
+            }
+        });
+
+        receiptsControls.appendChild(receiptsSessionLabel);
+        receiptsControls.appendChild(receiptsSessionInput);
+        receiptsButtons.appendChild(receiptsListBtn);
+        receiptsButtons.appendChild(receiptsFetchBtn);
+        receiptsRow.appendChild(receiptsControls);
+        receiptsRow.appendChild(receiptsButtons);
+        receiptsRow.appendChild(receiptsStatus);
+        receiptsSection.appendChild(receiptsRow);
+
         const assistedSection = document.createElement('div');
         assistedSection.className = 'dev-tools-section';
         const assistedTitle = document.createElement('div');
@@ -9355,6 +9453,7 @@ async function showWorkspaceSwitcher() {
         body.appendChild(issueMemorySection);
         body.appendChild(localSection);
         body.appendChild(telemetrySection);
+        body.appendChild(receiptsSection);
         body.appendChild(assistedSection);
         body.appendChild(plannerSection);
         const isDevMode = state.workspace && state.workspace.devMode;
