@@ -133,8 +133,8 @@ This section is the full source of truth for how grounding + tools + receipts wo
 
 ## Tool Execution Loop (Backend)
 - Entry point: `src/main/java/com/miniide/controllers/ChatController.java`
-- Flow: prompt → (tool call?) → execute → append result → repeat max 3 tool steps.
-- Max tool calls per turn: 3.
+- Flow: prompt → (tool call?) → execute → append result → repeat up to the tier-based tool budget.
+- Max tool calls per turn: derived from tier caps (fallback to 3 if tier info unavailable).
 - Tool output injected into prompt is truncated and hashed. Max injected per step: 2000 chars. Max per turn: 6000 chars.
 - Tool call is executed only if strict JSON envelope passes parse + schema + nonce.
 - After any tool result, the model must send a **decision JSON** (strict, no extra text):
@@ -145,10 +145,9 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - Tool call retries are not brute-forced; malformed calls are rejected immediately.
 - Optional `toolPolicy` can be supplied to `/api/ai/chat` to constrain tools per request:
   - `allowedTools`: list of allowed tool IDs (schema + execution enforced)
-  - `maxToolSteps`: per-request tool budget (defaults to `MAX_TOOL_STEPS`)
   - `requireTool`: force a tool call on the first step (bypasses heuristic)
 - Agent turns are serialized by `AgentTurnGate` to avoid parallel tool loops.
-- Constants: `MAX_TOOL_STEPS=3`, `MAX_TOOL_BYTES_PER_STEP=2000`, `MAX_TOOL_BYTES_PER_TURN=6000`.
+- Constants: `MAX_TOOL_STEPS=3` (fallback), `MAX_TOOL_BYTES_PER_STEP=2000`, `MAX_TOOL_BYTES_PER_TURN=6000`.
 
 ## LM Studio Structured Output (JSON Schema Enforcement)
 - Provider: `src/main/java/com/miniide/providers/chat/OpenAiCompatibleChatProvider.java`

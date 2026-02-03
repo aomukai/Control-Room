@@ -248,7 +248,6 @@ public class AgentController implements Controller {
                 defaults.setTemplate("balanced");
                 defaults.setFreedomLevel("semi-autonomous");
                 defaults.setNotifyUserOn(List.of("question", "conflict", "completion", "error"));
-                defaults.setMaxActionsPerSession(10);
                 defaults.setRoleCharter("");
                 defaults.setCollaborationGuidance("");
                 defaults.setToolAndSafetyNotes("");

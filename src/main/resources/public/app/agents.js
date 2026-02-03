@@ -2166,7 +2166,6 @@
                 completion: existingSettings?.notifyUserOn?.includes('completion') ?? defaultTemplate.notifyOn.completion,
                 error: existingSettings?.notifyUserOn?.includes('error') ?? defaultTemplate.notifyOn.error
             },
-            maxActionsPerSession: existingSettings?.maxActionsPerSession ?? defaultTemplate.maxActionsPerSession,
             roleCharter: existingSettings?.roleCharter || DEFAULT_ROLE_CHARTERS[roleKey] || DEFAULT_ROLE_CHARTERS.default,
             collaborationGuidance: existingSettings?.collaborationGuidance || defaultTemplate.collaborationGuidance,
             toolAndSafetyNotes: existingSettings?.toolAndSafetyNotes || defaultTemplate.toolAndSafetyNotes
@@ -2285,46 +2284,6 @@
         notifySection.appendChild(notifyGrid);
         body.appendChild(notifySection);
 
-        // =============== MAX ACTIONS ===============
-        const actionsSection = document.createElement('div');
-        actionsSection.className = 'modal-section';
-
-        const actionsLabel = document.createElement('label');
-        actionsLabel.className = 'modal-label';
-        actionsLabel.textContent = 'Max Actions Per Session';
-        actionsSection.appendChild(actionsLabel);
-
-        const actionsRow = document.createElement('div');
-        actionsRow.className = 'actions-input-row';
-
-        const actionsInput = document.createElement('input');
-        actionsInput.type = 'number';
-        actionsInput.className = 'modal-input actions-input';
-        actionsInput.min = '1';
-        actionsInput.max = '100';
-        actionsInput.value = localState.maxActionsPerSession ?? '';
-        actionsInput.placeholder = 'Unlimited';
-        actionsInput.addEventListener('input', () => {
-            const val = actionsInput.value.trim();
-            localState.maxActionsPerSession = val ? parseInt(val, 10) : null;
-            markCustom();
-        });
-
-        const unlimitedBtn = document.createElement('button');
-        unlimitedBtn.type = 'button';
-        unlimitedBtn.className = 'modal-btn modal-btn-secondary';
-        unlimitedBtn.textContent = 'Unlimited';
-        unlimitedBtn.addEventListener('click', () => {
-            actionsInput.value = '';
-            localState.maxActionsPerSession = null;
-            markCustom();
-        });
-
-        actionsRow.appendChild(actionsInput);
-        actionsRow.appendChild(unlimitedBtn);
-        actionsSection.appendChild(actionsRow);
-        body.appendChild(actionsSection);
-
         // =============== ROLE CHARTER ===============
         const charterSection = document.createElement('div');
         charterSection.className = 'modal-section';
@@ -2430,9 +2389,6 @@
                 });
             }
 
-            localState.maxActionsPerSession = tmpl.maxActionsPerSession;
-            actionsInput.value = tmpl.maxActionsPerSession ?? '';
-
             if (tmpl.collaborationGuidance) {
                 localState.collaborationGuidance = tmpl.collaborationGuidance;
                 collabTextarea.value = tmpl.collaborationGuidance;
@@ -2465,16 +2421,6 @@
             confirmBtn.textContent = 'Saving...';
             errorHint.style.display = 'none';
 
-            // Validate maxActionsPerSession
-            if (localState.maxActionsPerSession !== null &&
-                (isNaN(localState.maxActionsPerSession) || localState.maxActionsPerSession < 1)) {
-                errorHint.textContent = 'Max actions must be a positive number or unlimited.';
-                errorHint.style.display = 'block';
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Save';
-                return;
-            }
-
             // Build notifyUserOn array from checkboxes
             const notifyUserOn = Object.entries(localState.notifyOn)
                 .filter(([_, checked]) => checked)
@@ -2485,7 +2431,6 @@
                 template: localState.template,
                 freedomLevel: localState.freedomLevel,
                 notifyUserOn,
-                maxActionsPerSession: localState.maxActionsPerSession,
                 requireApprovalFor: [],
                 roleCharter: localState.roleCharter,
                 collaborationGuidance: localState.collaborationGuidance,
@@ -3873,12 +3818,6 @@
         policyAllowedInput.className = 'modal-input';
         policyAllowedInput.placeholder = 'Allowed tools (comma-separated)';
 
-        const policyMaxStepsInput = document.createElement('input');
-        policyMaxStepsInput.type = 'number';
-        policyMaxStepsInput.min = '1';
-        policyMaxStepsInput.className = 'modal-input';
-        policyMaxStepsInput.placeholder = 'Max tool steps';
-
         const policyRequireRow = document.createElement('label');
         policyRequireRow.className = 'modal-checkbox-row';
         const policyRequireCheckbox = document.createElement('input');
@@ -3889,7 +3828,6 @@
         policyRequireRow.appendChild(policyRequireText);
 
         policyFields.appendChild(policyAllowedInput);
-        policyFields.appendChild(policyMaxStepsInput);
         policyFields.appendChild(policyRequireRow);
         policyWrap.appendChild(policyFields);
 
@@ -4436,7 +4374,7 @@
                 try {
                     const turnId = createTurnId(agent.id);
                     const prompt = buildConferencePrompt(agent, text);
-                    const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyMaxStepsInput, policyRequireCheckbox);
+                const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
                     const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -4942,22 +4880,17 @@
         workbenchChats.delete(agentId);
     }
 
-    function buildToolPolicyPayload(allowedInput, maxStepsInput, requireCheckbox) {
+    function buildToolPolicyPayload(allowedInput, requireCheckbox) {
         const allowedRaw = allowedInput ? allowedInput.value : '';
         const allowedTools = allowedRaw
             .split(/[,\\s]+/)
             .map((value) => value.trim())
             .filter(Boolean);
-        const maxRaw = maxStepsInput ? maxStepsInput.value : '';
-        const maxToolSteps = maxRaw ? Number.parseInt(maxRaw, 10) : null;
         const requireTool = requireCheckbox ? Boolean(requireCheckbox.checked) : false;
 
         const payload = {};
         if (allowedTools.length) {
             payload.allowedTools = allowedTools;
-        }
-        if (Number.isFinite(maxToolSteps)) {
-            payload.maxToolSteps = maxToolSteps;
         }
         if (requireTool) {
             payload.requireTool = true;
@@ -5084,12 +5017,6 @@
         allowedInput.className = 'modal-input';
         allowedInput.placeholder = 'Allowed tools (comma-separated)';
 
-        const maxStepsInput = document.createElement('input');
-        maxStepsInput.type = 'number';
-        maxStepsInput.min = '1';
-        maxStepsInput.className = 'modal-input';
-        maxStepsInput.placeholder = 'Max tool steps';
-
         const requireRow = document.createElement('label');
         requireRow.className = 'modal-checkbox-row';
         const requireCheckbox = document.createElement('input');
@@ -5100,7 +5027,6 @@
         requireRow.appendChild(requireText);
 
         policyFields.appendChild(allowedInput);
-        policyFields.appendChild(maxStepsInput);
         policyFields.appendChild(requireRow);
         policyWrap.appendChild(policyFields);
         body.appendChild(policyWrap);
@@ -5152,7 +5078,7 @@
 
             try {
                 const requestMessage = buildChatPrompt ? buildChatPrompt(message, agent) : message;
-                const toolPolicy = buildToolPolicyPayload(allowedInput, maxStepsInput, requireCheckbox);
+                const toolPolicy = buildToolPolicyPayload(allowedInput, requireCheckbox);
                 const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

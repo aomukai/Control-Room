@@ -751,7 +751,7 @@ public class AgentRegistry {
 
         List<RoleFreedomSettings> roles = new ArrayList<>();
         roles.add(new RoleFreedomSettings("planner", "semi-autonomous",
-            List.of("question", "conflict", "completion"), null, null));
+            List.of("question", "conflict", "completion"), null));
         file.setRoleSettings(roles);
 
         return file;

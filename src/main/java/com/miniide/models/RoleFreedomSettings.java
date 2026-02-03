@@ -12,7 +12,6 @@ public class RoleFreedomSettings {
     private String template;                  // "autonomous" | "balanced" | "verbose" | "custom"
     private String freedomLevel;
     private List<String> notifyUserOn = new ArrayList<>();
-    private Integer maxActionsPerSession;
     private List<String> requireApprovalFor = new ArrayList<>();
     private String roleCharter;               // Job description text
     private String collaborationGuidance;     // How to collaborate/escalate
@@ -22,11 +21,10 @@ public class RoleFreedomSettings {
     }
 
     public RoleFreedomSettings(String role, String freedomLevel, List<String> notifyUserOn,
-                               Integer maxActionsPerSession, List<String> requireApprovalFor) {
+                               List<String> requireApprovalFor) {
         this.role = role;
         this.freedomLevel = freedomLevel;
         this.notifyUserOn = notifyUserOn != null ? new ArrayList<>(notifyUserOn) : new ArrayList<>();
-        this.maxActionsPerSession = maxActionsPerSession;
         this.requireApprovalFor = requireApprovalFor != null ? new ArrayList<>(requireApprovalFor) : new ArrayList<>();
     }
 
@@ -52,14 +50,6 @@ public class RoleFreedomSettings {
 
     public void setNotifyUserOn(List<String> notifyUserOn) {
         this.notifyUserOn = notifyUserOn != null ? new ArrayList<>(notifyUserOn) : new ArrayList<>();
-    }
-
-    public Integer getMaxActionsPerSession() {
-        return maxActionsPerSession;
-    }
-
-    public void setMaxActionsPerSession(Integer maxActionsPerSession) {
-        this.maxActionsPerSession = maxActionsPerSession;
     }
 
     public List<String> getRequireApprovalFor() {

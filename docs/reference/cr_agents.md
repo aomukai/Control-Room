@@ -183,7 +183,6 @@ interface RoleSettings {
   template: RoleBehaviorTemplate;         // Quick preset selector
   freedomLevel: AgenticFreedomLevel;
   notifyUserOn: ("start" | "question" | "conflict" | "completion" | "error")[];
-  maxActionsPerSession?: number | null;   // null = unlimited
   requireApprovalFor?: AgentToolId[];     // specific tools need approval
 
   // Free-text guidance fields (injected into system prompts)
@@ -195,16 +194,18 @@ interface RoleSettings {
 
 **Key design principle:** Role Settings provide *guidance*, not routing rules. The `collaborationGuidance` text tells the agent how to choose collaborators, but the agent picks actual helpers from the roster at runtime based on the situation.
 
+**Action/tool budgets are governed by the tiering system**, not per-role settings. Tier caps define the blast radius and are enforced by the system.
+
 ### 4.3 Behavior Templates
 
 Three built-in templates provide sensible defaults:
 
-| Template | Freedom | Notifications | Max Actions | Style |
-|----------|---------|---------------|-------------|-------|
-| **Autonomous** | autonomous | conflict, completion, error | unlimited | Work independently, escalate only for blockers |
-| **Balanced** | semi-autonomous | question, conflict, completion, error | 10 | Collaborate on significant changes |
-| **Verbose** | supervised | all events | 5 | Report frequently, ask before changing |
-| **Custom** | user-defined | user-defined | user-defined | Manual configuration |
+| Template | Freedom | Notifications | Style |
+|----------|---------|---------------|-------|
+| **Autonomous** | autonomous | conflict, completion, error | Work independently, escalate only for blockers |
+| **Balanced** | semi-autonomous | question, conflict, completion, error | Collaborate on significant changes |
+| **Verbose** | supervised | all events | Report frequently, ask before changing |
+| **Custom** | user-defined | user-defined | Manual configuration |
 
 When the user selects a template, all fields are pre-filled. Editing any field automatically switches to "Custom".
 
@@ -216,7 +217,6 @@ The modal includes:
 - **Template selector** (4-button grid)
 - **Freedom level** dropdown
 - **Notify user on** checkboxes (5 options)
-- **Max actions per session** input + "Unlimited" button
 - **Role Charter** textarea (job description)
 - **Collaboration Guidance** textarea (how to escalate)
 - **Tool & Safety Notes** textarea (constraints)
@@ -236,7 +236,7 @@ Stop hooks prevent runaway execution. An agent **must stop and wait** when:
 | `scope-exceeded` | Task requires work outside agent's defined scope |
 | `approval-required` | Action requires human sign-off (per freedom settings) |
 | `error` | Endpoint failure, unexpected state |
-| `budget-limit` | Session action limit reached |
+| `budget-limit` | Tier-based action/tool budget reached |
 
 Without proper stop hooks, a system could run for days and rack up massive costs. **This is not optional.**
 
@@ -691,7 +691,6 @@ settings/
       "template": "balanced",
       "freedomLevel": "semi-autonomous",
       "notifyUserOn": ["question", "conflict", "completion", "error"],
-      "maxActionsPerSession": 10,
       "roleCharter": "Owns the narrative roadmap and scene status tags (Idea -> Plan -> Draft -> Polished); focuses on structure and pacing, not team coordination.",
       "collaborationGuidance": "Think through problems yourself first. For medium-to-large decisions, consult relevant agents or the user.",
       "toolAndSafetyNotes": "Standard tool access. Confirm before bulk operations."
@@ -896,7 +895,5 @@ This design turns the agent layer into a proper writer's room simulation:
 - **Memory integration** – per-agent retention and focus
 
 The system scales from a simple 1-writer setup to a whole swarm of specialized helpers, without breaking the underlying Issue/Memory/Notification architecture.
-
-
 
 

@@ -104,7 +104,6 @@
             description: 'Minimal oversight, high independence',
             freedomLevel: 'autonomous',
             notifyOn: { start: false, question: false, conflict: true, completion: true, error: true },
-            maxActionsPerSession: null,
             collaborationGuidance: 'Work independently and make decisions within your domain. Only escalate to the user or other agents when you encounter a genuine blocker, or when a decision has significant cross-domain impact. Trust your expertise and batch updates when possible to minimize interruptions.',
             toolAndSafetyNotes: 'Full access to all tools. Use discretion for destructive or large-scale operations. Prefer minimal, reversible changes.'
         },
@@ -113,7 +112,6 @@
             description: 'Moderate oversight, shared decisions',
             freedomLevel: 'semi-autonomous',
             notifyOn: { start: false, question: true, conflict: true, completion: true, error: true },
-            maxActionsPerSession: 10,
             collaborationGuidance: 'Think through problems yourself first. For medium-to-large decisions, consult relevant agents or the user. When you are unsure, look at the roster and pick agents best suited to help based on their role and skills. Summarize progress at milestones.',
             toolAndSafetyNotes: 'Standard tool access. Confirm with the user before bulk operations, deletions, or changes that significantly alter the author\'s voice.'
         },
@@ -122,7 +120,6 @@
             description: 'High oversight, detailed reporting',
             freedomLevel: 'supervised',
             notifyOn: { start: true, question: true, conflict: true, completion: true, error: true },
-            maxActionsPerSession: 5,
             collaborationGuidance: 'Report frequently and check in before making changes. When in doubt, ask the user. Document your reasoning for each decision. Prefer to propose rather than act unilaterally.',
             toolAndSafetyNotes: 'Request explicit approval for any file modifications, external calls, or changes beyond minor edits.'
         },

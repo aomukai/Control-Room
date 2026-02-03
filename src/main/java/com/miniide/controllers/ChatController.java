@@ -12,6 +12,8 @@ import com.miniide.models.Agent;
 import com.miniide.models.Comment;
 import com.miniide.models.Issue;
 import com.miniide.models.MemoryItem;
+import com.miniide.models.TierAgentSnapshot;
+import com.miniide.models.TierPolicy;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.prompt.PromptJsonValidator;
 import com.miniide.prompt.PromptValidationResult;
@@ -264,9 +266,8 @@ public class ChatController implements Controller {
             ? toolPolicy.getRequireTool()
             : shouldRequireToolCall(prompt);
         boolean decisionMode = false;
-        int maxToolSteps = toolPolicy != null && toolPolicy.getMaxToolSteps() != null
-            ? Math.max(1, toolPolicy.getMaxToolSteps())
-            : MAX_TOOL_STEPS;
+        int tierMaxToolSteps = resolveTierMaxToolSteps(agentEndpoint, toolContext);
+        int maxToolSteps = tierMaxToolSteps;
         java.util.Set<String> allowedTools = toolPolicy != null ? toolPolicy.getAllowedTools() : null;
         String currentPrompt = appendToolProtocol(prompt, nonce, requireToolCall, toolPolicy, maxToolSteps);
         String response = null;
@@ -359,6 +360,34 @@ public class ChatController implements Controller {
             return response;
         }
         return response != null ? response : "";
+    }
+
+    private int resolveTierMaxToolSteps(com.miniide.models.AgentEndpointConfig agentEndpoint,
+                                        ToolExecutionContext toolContext) {
+        int fallback = MAX_TOOL_STEPS;
+        if (projectContext == null || projectContext.tiering() == null) {
+            return fallback;
+        }
+        if (toolContext == null || toolContext.getAgentId() == null || toolContext.getAgentId().isBlank()) {
+            return fallback;
+        }
+        if (agentEndpoint == null || agentEndpoint.getModel() == null || agentEndpoint.getModel().isBlank()) {
+            return fallback;
+        }
+        TierAgentSnapshot snapshot = projectContext.tiering()
+            .getAgentSnapshot(toolContext.getAgentId(), agentEndpoint.getModel());
+        if (snapshot == null || snapshot.getEffectiveCaps() == null) {
+            return fallback;
+        }
+        int maxToolActions = snapshot.getEffectiveCaps().getMaxToolActions();
+        if (maxToolActions <= 0) {
+            return fallback;
+        }
+        TierPolicy policy = projectContext.tiering().getPolicy();
+        if (policy != null && policy.getMaxToolActionsPerIssue() != null && policy.getMaxToolActionsPerIssue() > 0) {
+            maxToolActions = Math.min(maxToolActions, policy.getMaxToolActionsPerIssue());
+        }
+        return Math.max(1, maxToolActions);
     }
 
     private ToolAppendResult appendToolResult(String prompt, ToolCall call, ToolExecutionResult result,
@@ -642,7 +671,6 @@ public class ChatController implements Controller {
             return null;
         }
         java.util.LinkedHashSet<String> allowedTools = null;
-        Integer maxToolSteps = null;
         Boolean requireTool = null;
 
         JsonNode allowedNode = node.get("allowedTools");
@@ -669,21 +697,16 @@ public class ChatController implements Controller {
             }
         }
 
-        JsonNode maxStepsNode = node.get("maxToolSteps");
-        if (maxStepsNode != null && maxStepsNode.isNumber()) {
-            maxToolSteps = maxStepsNode.asInt();
-        }
-
         JsonNode requireToolNode = node.get("requireTool");
         if (requireToolNode != null && requireToolNode.isBoolean()) {
             requireTool = requireToolNode.asBoolean();
         }
 
-        if (allowedTools == null && maxToolSteps == null && requireTool == null) {
+        if (allowedTools == null && requireTool == null) {
             return null;
         }
 
-        return new ToolPolicy(allowedTools, maxToolSteps, requireTool);
+        return new ToolPolicy(allowedTools, requireTool);
     }
 
     private ToolDecisionParseResult parseToolDecision(String content, String expectedNonce) {
@@ -832,23 +855,17 @@ public class ChatController implements Controller {
 
     private static class ToolPolicy {
         private final java.util.Set<String> allowedTools;
-        private final Integer maxToolSteps;
         private final Boolean requireTool;
 
-        private ToolPolicy(java.util.Set<String> allowedTools, Integer maxToolSteps, Boolean requireTool) {
+        private ToolPolicy(java.util.Set<String> allowedTools, Boolean requireTool) {
             this.allowedTools = allowedTools != null
                 ? java.util.Collections.unmodifiableSet(allowedTools)
                 : null;
-            this.maxToolSteps = maxToolSteps;
             this.requireTool = requireTool;
         }
 
         private java.util.Set<String> getAllowedTools() {
             return allowedTools;
-        }
-
-        private Integer getMaxToolSteps() {
-            return maxToolSteps;
         }
 
         private Boolean getRequireTool() {

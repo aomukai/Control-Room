@@ -120,7 +120,6 @@ Note: some features shipped out of order in the last two days; the lists below r
   - Behavior template selector (Autonomous / Balanced / Verbose / Custom)
   - Freedom level dropdown (supervised / semi-autonomous / autonomous)
   - Notification preferences (5 checkboxes)
-  - Max actions per session input
   - Role Charter textarea (job description)
   - Collaboration Guidance textarea (escalation rules)
   - Tool & Safety Notes textarea (constraints)
