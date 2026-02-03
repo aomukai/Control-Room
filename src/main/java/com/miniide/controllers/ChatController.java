@@ -95,6 +95,13 @@ public class ChatController implements Controller {
             boolean includeExpired = json.has("includeExpired") && json.get("includeExpired").asBoolean();
             boolean needMore = message != null && message.toUpperCase().contains("NEED_MORE_CONTEXT");
             boolean requestMore = reroll || needMore || "more".equalsIgnoreCase(levelParam);
+            ToolPolicy toolPolicy = null;
+            try {
+                toolPolicy = parseToolPolicy(json.get("toolPolicy"));
+            } catch (IllegalArgumentException e) {
+                ctx.status(400).json(Map.of("error", e.getMessage()));
+                return;
+            }
 
             MemoryService.MemoryResult memoryResult = null;
             MemoryItem memoryItem = null;
@@ -169,7 +176,7 @@ public class ChatController implements Controller {
                 }
                 final String finalPrompt = prompt;
                 ToolExecutionContext toolContext = new ToolExecutionContext(conferenceId, taskId, turnId, agentId);
-                String response = runWithValidation(providerName, keyRef, agentEndpoint, finalPrompt, expectSchema, toolContext);
+                String response = runWithValidation(providerName, keyRef, agentEndpoint, finalPrompt, expectSchema, toolContext, toolPolicy);
             if (projectContext != null && projectContext.telemetry() != null) {
                 long tokensIn = TelemetryStore.estimateTokens(finalPrompt);
                 long tokensOut = TelemetryStore.estimateTokens(response);
@@ -201,10 +208,10 @@ public class ChatController implements Controller {
     }
 
     private String runWithValidation(String providerName, String apiKey, com.miniide.models.AgentEndpointConfig agentEndpoint,
-                                     String prompt, String expectSchema, ToolExecutionContext toolContext) {
+                                     String prompt, String expectSchema, ToolExecutionContext toolContext, ToolPolicy toolPolicy) {
         final String finalPrompt = prompt;
         if (expectSchema == null || expectSchema.isBlank()) {
-            return runWithTools(providerName, apiKey, agentEndpoint, finalPrompt, toolContext);
+            return runWithTools(providerName, apiKey, agentEndpoint, finalPrompt, toolContext, toolPolicy);
         }
 
         int maxAttempts = 3;
@@ -212,7 +219,7 @@ public class ChatController implements Controller {
         PromptValidationResult lastResult = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             final String promptToSend = currentPrompt;
-            String response = runWithTools(providerName, apiKey, agentEndpoint, promptToSend, toolContext);
+            String response = runWithTools(providerName, apiKey, agentEndpoint, promptToSend, toolContext, toolPolicy);
             lastResult = validateBySchema(expectSchema, response);
             if (lastResult.isValid()) {
                 return response;
@@ -236,7 +243,7 @@ public class ChatController implements Controller {
         PromptValidationResult lastResult = null;
         String lastResponse = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            String response = runWithTools(providerName, apiKey, agentEndpoint, currentPrompt, toolContext);
+            String response = runWithTools(providerName, apiKey, agentEndpoint, currentPrompt, toolContext, null);
             lastResponse = response;
             lastResult = PromptJsonValidator.validateReceipt(response);
             if (lastResult.isValid()) {
@@ -251,32 +258,100 @@ public class ChatController implements Controller {
 
     private String runWithTools(String providerName, String apiKey,
                                 com.miniide.models.AgentEndpointConfig agentEndpoint,
-                                String prompt, ToolExecutionContext toolContext) {
+                                String prompt, ToolExecutionContext toolContext, ToolPolicy toolPolicy) {
         String nonce = generateToolNonce();
-        boolean requireToolCall = shouldRequireToolCall(prompt);
-        String currentPrompt = appendToolProtocol(prompt, nonce, requireToolCall);
+        boolean requireToolCall = toolPolicy != null && toolPolicy.getRequireTool() != null
+            ? toolPolicy.getRequireTool()
+            : shouldRequireToolCall(prompt);
+        boolean decisionMode = false;
+        int maxToolSteps = toolPolicy != null && toolPolicy.getMaxToolSteps() != null
+            ? Math.max(1, toolPolicy.getMaxToolSteps())
+            : MAX_TOOL_STEPS;
+        java.util.Set<String> allowedTools = toolPolicy != null ? toolPolicy.getAllowedTools() : null;
+        String currentPrompt = appendToolProtocol(prompt, nonce, requireToolCall, toolPolicy, maxToolSteps);
         String response = null;
         int injectedBytes = 0;
-        for (int step = 0; step < MAX_TOOL_STEPS; step++) {
-            com.fasterxml.jackson.databind.JsonNode responseFormat =
-                (step == 0 && requireToolCall) ? buildToolCallResponseFormat(nonce) : null;
+        int toolCalls = 0;
+        int maxTurns = maxToolSteps * 2 + 2;
+        for (int turn = 0; turn < maxTurns; turn++) {
+            com.fasterxml.jackson.databind.JsonNode responseFormat = null;
+            if (decisionMode) {
+                responseFormat = buildToolDecisionResponseFormat(nonce, allowedTools);
+            } else if (requireToolCall) {
+                responseFormat = buildToolCallResponseFormat(nonce, allowedTools);
+            }
             response = callAgentWithGate(providerName, apiKey, agentEndpoint, currentPrompt, responseFormat);
             response = stripThinkingTags(response);
-            ToolCallParseResult parsed = toolCallParser.parseStrict(response, nonce);
-            if (parsed.isToolCall()) {
-                ToolCall call = parsed.getCall();
+
+            if (decisionMode) {
+                ToolDecisionParseResult decision = parseToolDecision(response, nonce);
+                if (decision.getErrorCode() != null) {
+                    return handleToolCallRejection(toolContext, decision.getErrorCode(), decision.getErrorDetail());
+                }
+                if (decision.isFinal()) {
+                    String finalPrompt = appendFinalResponseProtocol(currentPrompt);
+                    String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, finalPrompt, null);
+                    finalResponse = stripThinkingTags(finalResponse);
+                    if (looksLikeToolCallAttempt(finalResponse)) {
+                        return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                            "tool call must be strict JSON");
+                    }
+                    return finalResponse;
+                }
+                if (toolCalls >= maxToolSteps) {
+                    String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                        + "\nTool step limit reached. Respond now without any tool calls.";
+                    String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                    finalResponse = stripThinkingTags(finalResponse);
+                    if (looksLikeToolCallAttempt(finalResponse)) {
+                        return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                            "tool call must be strict JSON");
+                    }
+                    return finalResponse;
+                }
+                ToolCall call = decision.getCall();
+                if (call == null) {
+                    return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "decision missing tool");
+                }
+                if (allowedTools != null && !allowedTools.isEmpty() && !allowedTools.contains(call.getName())) {
+                    return handleToolCallRejection(toolContext, ToolCallParser.ERR_UNKNOWN_TOOL, "tool not allowed");
+                }
                 ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
-                ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes);
+                ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
+                    toolPolicy, maxToolSteps - toolCalls - 1);
                 currentPrompt = append.prompt;
                 injectedBytes = append.injectedBytes;
-                requireToolCall = false;
                 if (append.exceededLimit) {
                     return handleToolCallRejection(toolContext, "tool_call_output_limit", "tool output limit exceeded");
                 }
+                toolCalls++;
+                continue;
+            }
+
+            ToolCallParseResult parsed = toolCallParser.parseStrict(response, nonce);
+            if (parsed.isToolCall()) {
+                ToolCall call = parsed.getCall();
+                if (allowedTools != null && !allowedTools.isEmpty() && !allowedTools.contains(call.getName())) {
+                    return handleToolCallRejection(toolContext, ToolCallParser.ERR_UNKNOWN_TOOL, "tool not allowed");
+                }
+                ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
+                ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
+                    toolPolicy, maxToolSteps - toolCalls - 1);
+                currentPrompt = append.prompt;
+                injectedBytes = append.injectedBytes;
+                requireToolCall = false;
+                decisionMode = true;
+                if (append.exceededLimit) {
+                    return handleToolCallRejection(toolContext, "tool_call_output_limit", "tool output limit exceeded");
+                }
+                toolCalls++;
                 continue;
             }
             if (parsed.getErrorCode() != null) {
                 return handleToolCallRejection(toolContext, parsed.getErrorCode(), parsed.getErrorDetail());
+            }
+            if (requireToolCall) {
+                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "tool call required");
             }
             if (looksLikeToolCallAttempt(response)) {
                 return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "tool call must be strict JSON");
@@ -287,7 +362,8 @@ public class ChatController implements Controller {
     }
 
     private ToolAppendResult appendToolResult(String prompt, ToolCall call, ToolExecutionResult result,
-                                              String nonce, int injectedBytes) {
+                                              String nonce, int injectedBytes, ToolPolicy toolPolicy,
+                                              int remainingSteps) {
         StringBuilder builder = new StringBuilder();
         builder.append(prompt != null ? prompt : "");
         builder.append("\n\nTool call detected:\n");
@@ -308,11 +384,30 @@ public class ChatController implements Controller {
         if (result != null && result.getReceiptId() != null) {
             builder.append("\n\nReceipt: ").append(result.getReceiptId());
         }
-        builder.append("\n\nIf you need another tool, respond with ONLY a JSON tool call object. Otherwise respond normally.");
-        builder.append("\nTool call format: {\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"").append(nonce).append("\"}");
+        builder.append("\n\nDecision rules: choose action=final if the user request is satisfied. ");
+        builder.append("Choose action=tool only if another tool is required for the user request. ");
+        builder.append("Do not call unrelated tools.\n");
+        if (toolPolicy != null && toolPolicy.getAllowedTools() != null && !toolPolicy.getAllowedTools().isEmpty()) {
+            builder.append("Allowed tools: ").append(String.join(", ", toolPolicy.getAllowedTools())).append("\n");
+        }
+        if (remainingSteps >= 0) {
+            builder.append("Tool steps remaining: ").append(remainingSteps).append("\n");
+        }
+        builder.append("Next step (STRICT JSON ONLY): respond with a decision object. No prose, no markdown.\n");
+        builder.append("- Another tool: {\"action\":\"tool\",\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"")
+            .append(nonce).append("\"}\n");
+        builder.append("- Finish: {\"action\":\"final\",\"nonce\":\"").append(nonce).append("\"}");
         int total = injectedBytes + injectedThisStep;
         boolean exceeded = total > MAX_TOOL_BYTES_PER_TURN;
         return new ToolAppendResult(builder.toString(), total, exceeded);
+    }
+
+    private String appendFinalResponseProtocol(String prompt) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(prompt != null ? prompt : "");
+        builder.append("\n\nFINAL RESPONSE REQUIRED:\n");
+        builder.append("Respond normally (no tools). Follow Evidence line rules exactly.");
+        return builder.toString();
     }
 
     private String truncateToolOutput(String output) {
@@ -360,12 +455,19 @@ public class ChatController implements Controller {
             || lower.contains("'tool'");
     }
 
-    private String appendToolProtocol(String prompt, String nonce, boolean requireToolCall) {
+    private String appendToolProtocol(String prompt, String nonce, boolean requireToolCall,
+                                      ToolPolicy toolPolicy, int maxToolSteps) {
         StringBuilder builder = new StringBuilder();
         builder.append(prompt != null ? prompt : "");
         builder.append("\n\nTool Call Protocol (STRICT JSON ONLY):\n");
         builder.append("If you need a tool, respond with ONLY a JSON object. No prose, no markdown, no code fences.\n");
         builder.append("Format: {\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"").append(nonce).append("\"}\n");
+        if (toolPolicy != null && toolPolicy.getAllowedTools() != null && !toolPolicy.getAllowedTools().isEmpty()) {
+            builder.append("Allowed tools: ").append(String.join(", ", toolPolicy.getAllowedTools())).append("\n");
+        }
+        if (maxToolSteps > 0) {
+            builder.append("Max tool steps: ").append(maxToolSteps).append("\n");
+        }
         if (requireToolCall) {
             builder.append("TOOL_CALL_REQUIRED: true\n");
         }
@@ -391,7 +493,7 @@ public class ChatController implements Controller {
             || lower.contains("respond with exactly one json object");
     }
 
-    private com.fasterxml.jackson.databind.JsonNode buildToolCallResponseFormat(String nonce) {
+    private com.fasterxml.jackson.databind.JsonNode buildToolCallResponseFormat(String nonce, java.util.Set<String> allowedTools) {
         com.fasterxml.jackson.databind.node.ObjectNode responseFormat = objectMapper.createObjectNode();
         responseFormat.put("type", "json_schema");
         com.fasterxml.jackson.databind.node.ObjectNode schemaWrapper = responseFormat.putObject("json_schema");
@@ -401,7 +503,9 @@ public class ChatController implements Controller {
         schema.putArray("required").add("tool").add("args").add("nonce");
         schema.put("additionalProperties", false);
         com.fasterxml.jackson.databind.node.ArrayNode oneOf = schema.putArray("oneOf");
-        java.util.Set<String> toolIds = toolSchemaRegistry != null ? toolSchemaRegistry.getToolIds() : java.util.Set.of();
+        java.util.Set<String> toolIds = allowedTools != null && !allowedTools.isEmpty()
+            ? allowedTools
+            : (toolSchemaRegistry != null ? toolSchemaRegistry.getToolIds() : java.util.Set.of());
         for (String toolId : toolIds) {
             ToolSchema toolSchema = toolSchemaRegistry.getSchema(toolId);
             com.fasterxml.jackson.databind.node.ObjectNode variant = oneOf.addObject();
@@ -456,6 +560,227 @@ public class ChatController implements Controller {
         return responseFormat;
     }
 
+    private com.fasterxml.jackson.databind.JsonNode buildToolDecisionResponseFormat(String nonce, java.util.Set<String> allowedTools) {
+        com.fasterxml.jackson.databind.node.ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        com.fasterxml.jackson.databind.node.ObjectNode schemaWrapper = responseFormat.putObject("json_schema");
+        schemaWrapper.put("name", "tool_decision_envelope");
+        com.fasterxml.jackson.databind.node.ObjectNode schema = schemaWrapper.putObject("schema");
+        schema.put("type", "object");
+        schema.putArray("required").add("action").add("nonce");
+        schema.put("additionalProperties", false);
+        com.fasterxml.jackson.databind.node.ArrayNode oneOf = schema.putArray("oneOf");
+
+        // Final decision variant
+        com.fasterxml.jackson.databind.node.ObjectNode finalVariant = oneOf.addObject();
+        finalVariant.put("type", "object");
+        finalVariant.put("additionalProperties", false);
+        finalVariant.putArray("required").add("action").add("nonce");
+        com.fasterxml.jackson.databind.node.ObjectNode finalProps = finalVariant.putObject("properties");
+        finalProps.putObject("action").put("const", "final");
+        finalProps.putObject("nonce").put("const", nonce);
+
+        // Tool decision variants
+        java.util.Set<String> toolIds = allowedTools != null && !allowedTools.isEmpty()
+            ? allowedTools
+            : (toolSchemaRegistry != null ? toolSchemaRegistry.getToolIds() : java.util.Set.of());
+        for (String toolId : toolIds) {
+            ToolSchema toolSchema = toolSchemaRegistry.getSchema(toolId);
+            com.fasterxml.jackson.databind.node.ObjectNode variant = oneOf.addObject();
+            variant.put("type", "object");
+            variant.put("additionalProperties", false);
+            variant.putArray("required").add("action").add("tool").add("args").add("nonce");
+            com.fasterxml.jackson.databind.node.ObjectNode properties = variant.putObject("properties");
+            properties.putObject("action").put("const", "tool");
+            properties.putObject("tool").put("const", toolId);
+            properties.putObject("nonce").put("const", nonce);
+            com.fasterxml.jackson.databind.node.ObjectNode argsNode = properties.putObject("args");
+            argsNode.put("type", "object");
+            argsNode.put("additionalProperties", false);
+            com.fasterxml.jackson.databind.node.ArrayNode requiredArgs = argsNode.putArray("required");
+            com.fasterxml.jackson.databind.node.ObjectNode argProps = argsNode.putObject("properties");
+            if (toolSchema != null) {
+                for (java.util.Map.Entry<String, ToolArgSpec> argEntry : toolSchema.getArgSpecs().entrySet()) {
+                    String argName = argEntry.getKey();
+                    ToolArgSpec spec = argEntry.getValue();
+                    com.fasterxml.jackson.databind.node.ObjectNode argSchema = argProps.putObject(argName);
+                    switch (spec.getType()) {
+                        case STRING:
+                            argSchema.put("type", "string");
+                            if (!spec.getAllowedValues().isEmpty()) {
+                                com.fasterxml.jackson.databind.node.ArrayNode enums = argSchema.putArray("enum");
+                                for (String value : spec.getAllowedValues()) {
+                                    enums.add(value);
+                                }
+                            }
+                            break;
+                        case INT:
+                            argSchema.put("type", "integer");
+                            break;
+                        case BOOLEAN:
+                            argSchema.put("type", "boolean");
+                            break;
+                        case STRING_ARRAY:
+                            argSchema.put("type", "array");
+                            argSchema.putObject("items").put("type", "string");
+                            break;
+                        default:
+                            argSchema.put("type", "string");
+                            break;
+                    }
+                    if (spec.isRequired()) {
+                        requiredArgs.add(argName);
+                    }
+                }
+            }
+        }
+        return responseFormat;
+    }
+
+    private ToolPolicy parseToolPolicy(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        java.util.LinkedHashSet<String> allowedTools = null;
+        Integer maxToolSteps = null;
+        Boolean requireTool = null;
+
+        JsonNode allowedNode = node.get("allowedTools");
+        if (allowedNode != null && !allowedNode.isNull()) {
+            if (!allowedNode.isArray()) {
+                throw new IllegalArgumentException("toolPolicy.allowedTools must be an array");
+            }
+            allowedTools = new java.util.LinkedHashSet<>();
+            for (JsonNode entry : allowedNode) {
+                if (entry == null || !entry.isTextual()) {
+                    continue;
+                }
+                String tool = entry.asText();
+                if (tool == null || tool.isBlank()) {
+                    continue;
+                }
+                if (toolSchemaRegistry != null && !toolSchemaRegistry.hasTool(tool)) {
+                    throw new IllegalArgumentException("toolPolicy.allowedTools includes unknown tool: " + tool);
+                }
+                allowedTools.add(tool);
+            }
+            if (allowedTools.isEmpty()) {
+                throw new IllegalArgumentException("toolPolicy.allowedTools must include at least one known tool");
+            }
+        }
+
+        JsonNode maxStepsNode = node.get("maxToolSteps");
+        if (maxStepsNode != null && maxStepsNode.isNumber()) {
+            maxToolSteps = maxStepsNode.asInt();
+        }
+
+        JsonNode requireToolNode = node.get("requireTool");
+        if (requireToolNode != null && requireToolNode.isBoolean()) {
+            requireTool = requireToolNode.asBoolean();
+        }
+
+        if (allowedTools == null && maxToolSteps == null && requireTool == null) {
+            return null;
+        }
+
+        return new ToolPolicy(allowedTools, maxToolSteps, requireTool);
+    }
+
+    private ToolDecisionParseResult parseToolDecision(String content, String expectedNonce) {
+        if (content == null) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "empty");
+        }
+        String trimmed = content.trim();
+        if (trimmed.isEmpty()) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "empty");
+        }
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "not-json-object");
+        }
+        if (containsMultipleJsonObjects(trimmed)) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_MULTIPLE, null);
+        }
+        JsonNode node;
+        try {
+            node = objectMapper.readTree(trimmed);
+        } catch (Exception e) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "parse-error");
+        }
+        if (node == null || !node.isObject()) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "not-object");
+        }
+        JsonNode actionNode = node.get("action");
+        JsonNode nonceNode = node.get("nonce");
+        if (actionNode == null || !actionNode.isTextual()) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "missing-action");
+        }
+        String action = actionNode.asText();
+        String nonce = nonceNode != null && nonceNode.isTextual() ? nonceNode.asText() : null;
+        if (expectedNonce != null && !expectedNonce.isBlank()) {
+            if (nonce == null || !expectedNonce.equals(nonce)) {
+                return ToolDecisionParseResult.error(ToolCallParser.ERR_NONCE_INVALID, null);
+            }
+        }
+        if ("final".equals(action)) {
+            java.util.Iterator<String> fields = node.fieldNames();
+            while (fields.hasNext()) {
+                String field = fields.next();
+                if (!"action".equals(field) && !"nonce".equals(field)) {
+                    return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "unknown-field:" + field);
+                }
+            }
+            return ToolDecisionParseResult.finalDecision();
+        }
+        if (!"tool".equals(action)) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "invalid-action:" + action);
+        }
+        JsonNode toolNode = node.get("tool");
+        JsonNode argsNode = node.get("args");
+        if (toolNode == null || !toolNode.isTextual() || argsNode == null || !argsNode.isObject()) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "missing-tool-or-args");
+        }
+        java.util.Iterator<String> fields = node.fieldNames();
+        while (fields.hasNext()) {
+            String field = fields.next();
+            if (!"action".equals(field) && !"tool".equals(field) && !"args".equals(field) && !"nonce".equals(field)) {
+                return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "unknown-field:" + field);
+            }
+        }
+        String tool = toolNode.asText();
+        if (toolSchemaRegistry == null || !toolSchemaRegistry.hasTool(tool)) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_UNKNOWN_TOOL, null);
+        }
+        ToolSchema schema = toolSchemaRegistry.getSchema(tool);
+        String validationError = schema != null ? schema.validate(argsNode) : null;
+        if (validationError != null) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_ARGS, validationError);
+        }
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> args = objectMapper.convertValue(argsNode, java.util.Map.class);
+        ToolCall call = new ToolCall(tool, args, trimmed, nonce);
+        return ToolDecisionParseResult.tool(call);
+    }
+
+    private boolean containsMultipleJsonObjects(String trimmed) {
+        int depth = 0;
+        boolean seenObject = false;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c == '{') {
+                depth++;
+                if (depth == 1 && seenObject) {
+                    return true;
+                }
+            } else if (c == '}') {
+                depth = Math.max(0, depth - 1);
+                if (depth == 0) {
+                    seenObject = true;
+                }
+            }
+        }
+        return false;
+    }
+
     private ToolSchemaRegistry buildToolSchemas() {
         ToolSchemaRegistry registry = new ToolSchemaRegistry();
         registry.register(new ToolSchema("file_locator")
@@ -502,6 +827,74 @@ public class ChatController implements Controller {
             this.prompt = prompt;
             this.injectedBytes = injectedBytes;
             this.exceededLimit = exceededLimit;
+        }
+    }
+
+    private static class ToolPolicy {
+        private final java.util.Set<String> allowedTools;
+        private final Integer maxToolSteps;
+        private final Boolean requireTool;
+
+        private ToolPolicy(java.util.Set<String> allowedTools, Integer maxToolSteps, Boolean requireTool) {
+            this.allowedTools = allowedTools != null
+                ? java.util.Collections.unmodifiableSet(allowedTools)
+                : null;
+            this.maxToolSteps = maxToolSteps;
+            this.requireTool = requireTool;
+        }
+
+        private java.util.Set<String> getAllowedTools() {
+            return allowedTools;
+        }
+
+        private Integer getMaxToolSteps() {
+            return maxToolSteps;
+        }
+
+        private Boolean getRequireTool() {
+            return requireTool;
+        }
+    }
+
+    private static class ToolDecisionParseResult {
+        private final ToolCall call;
+        private final boolean isFinal;
+        private final String errorCode;
+        private final String errorDetail;
+
+        private ToolDecisionParseResult(ToolCall call, boolean isFinal, String errorCode, String errorDetail) {
+            this.call = call;
+            this.isFinal = isFinal;
+            this.errorCode = errorCode;
+            this.errorDetail = errorDetail;
+        }
+
+        static ToolDecisionParseResult tool(ToolCall call) {
+            return new ToolDecisionParseResult(call, false, null, null);
+        }
+
+        static ToolDecisionParseResult finalDecision() {
+            return new ToolDecisionParseResult(null, true, null, null);
+        }
+
+        static ToolDecisionParseResult error(String code, String detail) {
+            return new ToolDecisionParseResult(null, false, code, detail);
+        }
+
+        ToolCall getCall() {
+            return call;
+        }
+
+        boolean isFinal() {
+            return isFinal;
+        }
+
+        String getErrorCode() {
+            return errorCode;
+        }
+
+        String getErrorDetail() {
+            return errorDetail;
         }
     }
 
@@ -851,7 +1244,7 @@ public class ChatController implements Controller {
                 prompt = grounding + "\n\n" + prompt;
             }
             ToolExecutionContext toolContext = new ToolExecutionContext(null, issueId, parentPacketId, chief.getId());
-            String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext);
+            String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext, null);
             if (response != null && response.startsWith("STOP_HOOK")) {
                 JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
                 String packetId = fallback.path("packet_id").asText("");
@@ -1021,7 +1414,7 @@ public class ChatController implements Controller {
         }
 
         ToolExecutionContext toolContext = new ToolExecutionContext(null, issueId, parentPacketId, chief.getId());
-        String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext);
+        String response = runWithValidation(provider, apiKey, endpoint, prompt, "task_packet", toolContext, null);
         if (response != null && response.startsWith("STOP_HOOK")) {
             JsonNode fallback = buildFallbackPacket(message, issueId, parentPacketId, clarificationChoice);
             return new ChiefPacketResult(fallback, true);

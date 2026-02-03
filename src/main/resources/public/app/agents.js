@@ -3858,6 +3858,41 @@
         chatHint.className = 'conference-chat-hint';
         chatHint.textContent = 'Messages are routed to invited agents (muted agents are skipped).';
 
+        const policyWrap = document.createElement('div');
+        policyWrap.className = 'modal-row';
+        const policyLabel = document.createElement('label');
+        policyLabel.className = 'modal-label';
+        policyLabel.textContent = 'Tool Policy (optional)';
+        policyWrap.appendChild(policyLabel);
+
+        const policyFields = document.createElement('div');
+        policyFields.className = 'modal-input-group';
+
+        const policyAllowedInput = document.createElement('input');
+        policyAllowedInput.type = 'text';
+        policyAllowedInput.className = 'modal-input';
+        policyAllowedInput.placeholder = 'Allowed tools (comma-separated)';
+
+        const policyMaxStepsInput = document.createElement('input');
+        policyMaxStepsInput.type = 'number';
+        policyMaxStepsInput.min = '1';
+        policyMaxStepsInput.className = 'modal-input';
+        policyMaxStepsInput.placeholder = 'Max tool steps';
+
+        const policyRequireRow = document.createElement('label');
+        policyRequireRow.className = 'modal-checkbox-row';
+        const policyRequireCheckbox = document.createElement('input');
+        policyRequireCheckbox.type = 'checkbox';
+        const policyRequireText = document.createElement('span');
+        policyRequireText.textContent = 'Require tool on first step';
+        policyRequireRow.appendChild(policyRequireCheckbox);
+        policyRequireRow.appendChild(policyRequireText);
+
+        policyFields.appendChild(policyAllowedInput);
+        policyFields.appendChild(policyMaxStepsInput);
+        policyFields.appendChild(policyRequireRow);
+        policyWrap.appendChild(policyFields);
+
         const chatInputRow = document.createElement('div');
         chatInputRow.className = 'conference-chat-input-row';
         const chatInput = document.createElement('textarea');
@@ -3873,6 +3908,7 @@
 
         chatPane.appendChild(chatHistory);
         chatPane.appendChild(chatHint);
+        chatPane.appendChild(policyWrap);
         chatPane.appendChild(chatInputRow);
 
         layout.appendChild(attendeesPane);
@@ -4077,6 +4113,7 @@
                 '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
                 '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
                 '✅ Evidence: ACCESS_REQUEST — need [X] from [Y].',
+                '✅ Evidence: Story/SCN-outline.md line 12: "..."',
                 'If you used a tool, include receipt_id: <id> in the Evidence line.',
                 '❌ Missing evidence line, issue-tracker-only evidence, or generic claims without checks will be rejected.'
             ].join('\n');
@@ -4209,6 +4246,15 @@
                 return { ok: true };
             }
             if (checkedFound && mentionsStorySource) {
+                if (hasQuote) {
+                    const quoteCheck = await verifyQuoteInFile(cleanedEvidenceLine);
+                    if (!quoteCheck.ok) return quoteCheck;
+                    return { ok: true };
+                }
+                if (hasLocation && !hasContentClaims) return { ok: true };
+                return { ok: false, reason: hasContentClaims ? 'missing-quote' : 'missing-location' };
+            }
+            if (!checkedFound && !checkedFoundNo && !needCheck && mentionsStorySource) {
                 if (hasQuote) {
                     const quoteCheck = await verifyQuoteInFile(cleanedEvidenceLine);
                     if (!quoteCheck.ok) return quoteCheck;
@@ -4390,12 +4436,27 @@
                 try {
                     const turnId = createTurnId(agent.id);
                     const prompt = buildConferencePrompt(agent, text);
+                    const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyMaxStepsInput, policyRequireCheckbox);
                     const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: prompt, agentId: agent.id, conferenceId: conferenceContext.sessionId, turnId })
+                        body: JSON.stringify({
+                            message: prompt,
+                            agentId: agent.id,
+                            conferenceId: conferenceContext.sessionId,
+                            turnId,
+                            toolPolicy
+                        })
                     }), `Conference response from ${agent.name || 'agent'}`);
-                    let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null };
+                    let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
+                    if (parsed.stopHook) {
+                        const detail = parsed.stopHookDetail || parsed.content;
+                        const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
+                        addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, stopHookDetail: parsed.stopHookDetail });
+                        notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                        continue;
+                    }
                     let reply = parsed.content || 'No response.';
                     let evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     if (!evidenceCheck.ok) {
@@ -4403,9 +4464,23 @@
                         const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: retryPrompt, agentId: agent.id, conferenceId: conferenceContext.sessionId, turnId })
+                            body: JSON.stringify({
+                                message: retryPrompt,
+                                agentId: agent.id,
+                                conferenceId: conferenceContext.sessionId,
+                                turnId,
+                                toolPolicy
+                            })
                         }), `Conference retry for ${agent.name || 'agent'}`);
-                        parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
+                        parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null, stopHookDetail: '' };
+                        if (parsed.stopHook) {
+                            const detail = parsed.stopHookDetail || parsed.content;
+                            const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
+                            addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
+                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, stopHookDetail: parsed.stopHookDetail });
+                            notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                            continue;
+                        }
                         reply = parsed.content || 'No response.';
                         evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     }
@@ -4862,6 +4937,34 @@
         return workbenchChats.get(agentId);
     }
 
+    function clearWorkbenchChatLog(agentId) {
+        if (!agentId) return;
+        workbenchChats.delete(agentId);
+    }
+
+    function buildToolPolicyPayload(allowedInput, maxStepsInput, requireCheckbox) {
+        const allowedRaw = allowedInput ? allowedInput.value : '';
+        const allowedTools = allowedRaw
+            .split(/[,\\s]+/)
+            .map((value) => value.trim())
+            .filter(Boolean);
+        const maxRaw = maxStepsInput ? maxStepsInput.value : '';
+        const maxToolSteps = maxRaw ? Number.parseInt(maxRaw, 10) : null;
+        const requireTool = requireCheckbox ? Boolean(requireCheckbox.checked) : false;
+
+        const payload = {};
+        if (allowedTools.length) {
+            payload.allowedTools = allowedTools;
+        }
+        if (Number.isFinite(maxToolSteps)) {
+            payload.maxToolSteps = maxToolSteps;
+        }
+        if (requireTool) {
+            payload.requireTool = true;
+        }
+        return Object.keys(payload).length ? payload : null;
+    }
+
     function appendWorkbenchChatMessage(container, role, content, agentName, meta = {}) {
         const msg = document.createElement('div');
         msg.className = `workbench-chat-message ${role}`;
@@ -4897,7 +5000,11 @@
 
         window.setSelectedAgentId(agent.id);
         setAgentActivityState(agent.id, 'reading', `Reading chat for ${agent.name || 'agent'}`);
-        const closeWithActivity = () => setAgentActivityState(agent.id, 'idle');
+        const clearChatState = () => clearWorkbenchChatLog(agent.id);
+        const closeWithActivity = () => {
+            clearChatState();
+            setAgentActivityState(agent.id, 'idle');
+        };
 
         const { modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             `${agent.name || 'Agent'}`,
@@ -4905,7 +5012,10 @@
             null,
             { closeOnCancel: false, closeOnConfirm: false, onClose: closeWithActivity }
         );
-        const closeChatModal = close;
+        const closeChatModal = () => {
+            clearChatState();
+            close();
+        };
 
         modal.classList.add('workbench-chat-modal');
 
@@ -4958,6 +5068,43 @@
         agentMeta.appendChild(agentInfo);
         body.appendChild(agentMeta);
 
+        // Tool policy controls (dev)
+        const policyWrap = document.createElement('div');
+        policyWrap.className = 'modal-row';
+        const policyLabel = document.createElement('label');
+        policyLabel.className = 'modal-label';
+        policyLabel.textContent = 'Tool Policy (optional)';
+        policyWrap.appendChild(policyLabel);
+
+        const policyFields = document.createElement('div');
+        policyFields.className = 'modal-input-group';
+
+        const allowedInput = document.createElement('input');
+        allowedInput.type = 'text';
+        allowedInput.className = 'modal-input';
+        allowedInput.placeholder = 'Allowed tools (comma-separated)';
+
+        const maxStepsInput = document.createElement('input');
+        maxStepsInput.type = 'number';
+        maxStepsInput.min = '1';
+        maxStepsInput.className = 'modal-input';
+        maxStepsInput.placeholder = 'Max tool steps';
+
+        const requireRow = document.createElement('label');
+        requireRow.className = 'modal-checkbox-row';
+        const requireCheckbox = document.createElement('input');
+        requireCheckbox.type = 'checkbox';
+        const requireText = document.createElement('span');
+        requireText.textContent = 'Require tool on first step';
+        requireRow.appendChild(requireCheckbox);
+        requireRow.appendChild(requireText);
+
+        policyFields.appendChild(allowedInput);
+        policyFields.appendChild(maxStepsInput);
+        policyFields.appendChild(requireRow);
+        policyWrap.appendChild(policyFields);
+        body.appendChild(policyWrap);
+
         // Chat body
         const chatBody = document.createElement('div');
         chatBody.className = 'workbench-chat-body';
@@ -5005,10 +5152,15 @@
 
             try {
                 const requestMessage = buildChatPrompt ? buildChatPrompt(message, agent) : message;
+                const toolPolicy = buildToolPolicyPayload(allowedInput, maxStepsInput, requireCheckbox);
                 const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: requestMessage, agentId: agent.id })
+                    body: JSON.stringify({
+                        message: requestMessage,
+                        agentId: agent.id,
+                        toolPolicy
+                    })
                 }), `Responding to ${agent.name || 'agent'} chat`);
                 const parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
                 const reply = parsed.content || 'No response.';

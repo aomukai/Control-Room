@@ -137,7 +137,16 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - Max tool calls per turn: 3.
 - Tool output injected into prompt is truncated and hashed. Max injected per step: 2000 chars. Max per turn: 6000 chars.
 - Tool call is executed only if strict JSON envelope passes parse + schema + nonce.
+- After any tool result, the model must send a **decision JSON** (strict, no extra text):
+  - Another tool: `{"action":"tool","tool":"<id>","args":{...},"nonce":"<server nonce>"}`
+  - Finish: `{"action":"final","nonce":"<server nonce>"}`
+- Decision JSON is schema‑enforced to prevent chain‑of‑thought and partial tool calls.
+- If the tool step limit is reached, the system **forces a final response** (no additional tools).
 - Tool call retries are not brute-forced; malformed calls are rejected immediately.
+- Optional `toolPolicy` can be supplied to `/api/ai/chat` to constrain tools per request:
+  - `allowedTools`: list of allowed tool IDs (schema + execution enforced)
+  - `maxToolSteps`: per-request tool budget (defaults to `MAX_TOOL_STEPS`)
+  - `requireTool`: force a tool call on the first step (bypasses heuristic)
 - Agent turns are serialized by `AgentTurnGate` to avoid parallel tool loops.
 - Constants: `MAX_TOOL_STEPS=3`, `MAX_TOOL_BYTES_PER_STEP=2000`, `MAX_TOOL_BYTES_PER_TURN=6000`.
 
@@ -146,6 +155,7 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - When a prompt implies tool call required, we add `response_format` with `json_schema`.
 - This is how we force JSON-only output (no chain-of-thought preface).
 - The schema enforces the `{ tool, args, nonce }` envelope with correct types and required fields.
+- After any tool result, we also enforce a **decision JSON** schema (`action: tool|final`) to avoid mixed prose/tool output.
 - Applied via `ChatController` by passing `response_format` into provider chat calls.
 
 ## Tool Schema Registry
