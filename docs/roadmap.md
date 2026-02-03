@@ -256,10 +256,10 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
   - [x] Role framing + evidence rules injected per agent.
   - [x] Quote verification against VFS file content.
   - [x] VFS outline path exposed + outline content mapped to API output.
-  - [ ] Evidence parser accepts **Evidence:** (bold) format.
-  - [ ] Structural claims require line/section or outline entry reference.
-  - [ ] Block chain-of-thought leakage in conference replies.
-  - [ ] Reject plain-text tool calls (tools are prompt-only).
+  - [x] Evidence parser accepts **Evidence:** (bold) format.
+  - [x] Structural claims require line/section or outline entry reference.
+  - [x] Block chain-of-thought leakage in conference replies.
+  - [x] Reject plain-text tool calls (tools are prompt-only).
 
 ### Medium Term
 
