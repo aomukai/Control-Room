@@ -479,7 +479,7 @@
 
             const role = document.createElement('div');
             role.className = 'agent-card-role';
-            role.textContent = agent.role || 'role';
+            role.textContent = isAssistantAgent(agent) ? 'Chief of Staff' : (agent.role || 'role');
 
             info.appendChild(nameRow);
             info.appendChild(role);
@@ -816,9 +816,9 @@
         const templates = [
             {
                 id: 'assistant',
-                label: 'Assistant',
+                label: 'Chief of Staff',
                 role: 'assistant',
-                description: 'Chief of Staff who coordinates the rest of the team.',
+                description: 'Coordinates the rest of the team. There can only be one.',
                 skills: ['coordination', 'pacing', 'system health'],
                 goals: ['maintain team cadence', 'enforce guardrails'],
                 instructions: 'Coordinate the team and manage pacing. Avoid authoring creative canon unless asked.'
@@ -880,7 +880,9 @@
         ];
 
         const hasAssistant = (state.agents.list || []).some(agent => isAssistantAgent(agent));
-        const availableTemplates = templates;
+        const availableTemplates = hasAssistant
+            ? templates.filter(t => t.id !== 'assistant')
+            : templates;
 
         const providers = [
             'openai', 'anthropic', 'gemini', 'grok', 'openrouter', 'nanogpt', 'togetherai',
@@ -914,7 +916,7 @@
             avatar: ''
         };
 
-        const assistantTemplate = templates.find(template => template.id === 'assistant');
+        const assistantTemplate = availableTemplates.find(template => template.id === 'assistant');
         if (!hasAssistant && assistantTemplate) {
             formState.templateId = assistantTemplate.id;
             formState.role = assistantTemplate.role;
@@ -5170,7 +5172,7 @@
 
         const label = document.createElement('div');
         label.className = 'workbench-chat-message-label';
-        label.textContent = role === 'user' ? 'You' : (agentName || 'Assistant');
+        label.textContent = role === 'user' ? 'You' : (agentName || 'Agent');
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'workbench-chat-message-content';
@@ -5546,7 +5548,7 @@
                 const { wrapper, input } = createToggleSwitch(agent.assisted);
                 if (isAssistant) {
                     input.disabled = true;
-                    wrapper.title = 'Assistant cannot be assisted.';
+                    wrapper.title = 'Chief of Staff cannot be assisted.';
                 }
 
                 const reasonSelect = document.createElement('select');
@@ -5585,7 +5587,7 @@
 
                 const applyAssistedState = async () => {
                     if (isAssistant) {
-                        notificationStore.warning('Assistant cannot be set to assisted mode.', 'workbench');
+                        notificationStore.warning('Chief of Staff cannot be set to assisted mode.', 'workbench');
                         input.checked = false;
                         return;
                     }

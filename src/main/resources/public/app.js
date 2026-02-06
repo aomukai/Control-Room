@@ -4219,7 +4219,7 @@ async function showWorkspaceSwitcher() {
                                             </label>
                                             <select id="prompt-tool-archetype" class="settings-control settings-control-wide">
                                                 <option value="">Any</option>
-                                                <option value="assistant">Assistant</option>
+                                                <option value="assistant">Chief of Staff</option>
                                                 <option value="planner">Planner</option>
                                                 <option value="writer">Writer</option>
                                                 <option value="editor">Editor</option>
