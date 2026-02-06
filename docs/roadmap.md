@@ -216,6 +216,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **Patch Review Modal UX Overhaul** - Prose-style diff view (side-by-side Original/Proposed blocks instead of line-by-line), persistent patch list in both Editor/Diff modes, global view toggle, compact refresh icon, fixed modal height (85vh) for consistent sizing, improved file pills (filename with tooltip), overflow menu for secondary actions, dimmed applied/rejected patches, enhanced agent header.
 - [x] **Issue Modal UI/UX Overhaul** - Wider modal (900px, fixed 85vh height), agent avatar chips for author/assignee, reorganized meta section with grid layout and inline dropdowns (status/assignee/roadmap), functional comment form with Ctrl+Enter support, close/reopen issue buttons, comment avatars with hover states (refs: docs/ideas/issue_modal_polish.md)
 - [x] **Editor UI Cleanup** - Removed dead buttons (Reveal File, Open Folder, Terminal, File System, status bar), moved New Issue and File History to sidebar, toolbar now tabs-only, project badge moved to chat panel header (refs: docs/ideas/editor_ui_rework.md)
+- [x] **Markdown rendering in all chat views** - Agent messages rendered with headers, bold, italic, lists, code blocks via `renderSimpleMarkdown()`; user messages stay plain text
 
 ---
 
