@@ -14,7 +14,7 @@ Control Room has a clear architectural split:
 - **Editor** – tactical layer (hands-on writing, patch review, AI actions)
 - **Memory/Issues** – long-term institutional memory of the project
 
-In baseline setups, agents may be represented as a fixed set: Assistant (Team Leader), Planner, Writer, Editor, Critic, Continuity. This document defines how to evolve this into a **dynamic agent workforce**:
+In baseline setups, agents may be represented as a fixed set: Chief of Staff (Team Leader), Planner, Writer, Editor, Critic, Continuity. This document defines how to evolve this into a **dynamic agent workforce**:
 
 - Default team = recommended template, not a hard limit
 - Users can **hire** new agents (Beta Reader A, Lore Specialist, Sensitivity Reader)
@@ -261,11 +261,14 @@ The primary agent:
 - Represents the role in cross-team discussions
 
 <a id="agent-team-leader"></a>
-### 5.2 Team Leader (Assistant) Role
+### 5.2 Team Leader (Chief of Staff) Role
 
-The **Assistant** is the mandatory Team Leader archetype for **Team Mode**. There must be
-exactly one active Assistant when Team Mode runs; no Assistant means Team Mode is blocked.
+The **Chief of Staff** is the mandatory Team Leader archetype for **Team Mode**. There must be
+exactly one active Chief of Staff when Team Mode runs; no Chief of Staff means Team Mode is blocked.
 This is a full-time coordination role responsible for task slicing, pacing, and system health.
+
+**Highlander rule:** Only one Chief of Staff can exist. The creation wizard hides the Chief of Staff
+template when one already exists. The internal role value remains `"assistant"` for backward compatibility.
 
 ```ts
 interface Agent {
@@ -273,14 +276,14 @@ interface Agent {
 }
 ```
 
-Assistant Team Leaders can:
+Chief of Staff Team Leaders can:
 - Arbitrate when agents disagree
 - Decide between conflicting patches
 - Escalate to user when needed
 - Manage task dosage control and Assisted Mode when agents struggle
 - Convert Planner roadmaps into executable microtasks with clear DoD
 
-**Voice preservation:** The Assistant defines constraints and slices; the Writer/Doer
+**Voice preservation:** The Chief of Staff defines constraints and slices; the Writer/Doer
 retains creative authorship of the content.
 
 The leader is given **suggestions, not hardcoded rules**:
@@ -295,7 +298,7 @@ Modern models are smart enough to choose appropriately.
 When agents disagree:
 
 1. **Detection** – conflicting proposals, contradictory feedback
-2. **Escalation** – routed to the Assistant Team Leader or user
+2. **Escalation** – routed to the Chief of Staff or user
 3. **Resolution options**:
    - **Vote** – agents vote, majority wins
    - **Defer to primary** – primary agent decides
@@ -745,11 +748,11 @@ POST   /api/ai/chat                    # chat using agent endpoint when agentId 
 
 ## 11) Default Team Template
 
-On project init, create a default 6-agent team (Team Mode requires exactly one Assistant):
+On project init, create a default 6-agent team (Team Mode requires exactly one Chief of Staff):
 
 | Agent | Role | Focus | Memory |
 |-------|------|-------|--------|
-| **Assistant (Team Leader)** | assistant | coordination, pacing, system health | strong, pins allowed |
+| **Chief of Staff (Team Leader)** | assistant | coordination, pacing, system health | strong, pins allowed |
 | **Planner** | planner | narrative roadmap, scene tags, structure | strong, pins allowed |
 | **Writer** | writer | prose, voice, scene flow | normal |
 | **Editor** | editor | clarity, grammar, pacing | normal |
@@ -757,7 +760,7 @@ On project init, create a default 6-agent team (Team Mode requires exactly one A
 | **Continuity** | continuity | lore, canon, consistency | strong, pins allowed |
 
 Planner owns the Narrative Roadmap and Scene Tags (`Idea` -> `Plan` -> `Draft` -> `Polished`).
-The Assistant handles coordination and task slicing; the Writer/Doer remains the creative author.
+The Chief of Staff handles coordination and task slicing; the Writer/Doer remains the creative author.
 These are fully editable. Users can modify, disable, or delete them.
 
 ---

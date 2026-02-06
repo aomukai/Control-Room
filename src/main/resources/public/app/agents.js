@@ -479,7 +479,7 @@
 
             const role = document.createElement('div');
             role.className = 'agent-card-role';
-            role.textContent = isAssistantAgent(agent) ? 'Chief of Staff' : (agent.role || 'role');
+            role.textContent = isAssistantAgent(agent) ? 'chief of staff' : (agent.role || 'role');
 
             info.appendChild(nameRow);
             info.appendChild(role);

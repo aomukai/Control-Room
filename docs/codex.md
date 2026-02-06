@@ -10,23 +10,31 @@ Any claim like “file not found” must be verified with ls/test -f/direct open
 ## Authority & Navigation
 roadmap.md is the sole source of truth for implementation status and sequencing. index.md is a router to find the right reference docs and anchors; use it for navigation only.
 
-## What’s Next
-Focus only on what’s still pending (see roadmap.md for authoritative status).
+## What's Next
+Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Grounding + evidence enforcement across all contexts (conference chat is just the playground).
-- Tool execution + receipts + audit log: strict JSON tool-call protocol with nonce, schema validation, and signed receipts.
-- VFS alignment: outline content parity between VFS (Story/SCN-outline.md) and outline API.
-- Prompt tools baseline: file_locator/task_router/canon_checker/outline_analyzer prompts + JSON-only usage expectations.
-- Telemetry: rejection buckets + conference tags working and visible in dev tools.
+- Tool suite expansion: implement remaining tools (prose_analyzer, line_editor, scene_impact_analyzer, etc.) from basic_tool_suite.md.
+- Canon index UX: polish indexing flow, handle edge cases (model failure mid-index, re-index trigger).
+- Conference grounding hardening: remaining gaps from statemachine.md.
+
+### Recently Completed
+- Canon Index boot sequence: mandatory LLM-driven indexing of all canon files when CoS is first wired. Frontend-driven loop with progress log. Canon.md served via VFS.
+- `skipTools` flag on `/api/ai/chat`: bypasses tool catalog, grounding header, and tool loop for raw LLM calls (used by canon indexing).
+- Highlander rule: only one Chief of Staff allowed; template hidden from creation wizard when one exists.
+- "Assistant" → "Chief of Staff" rename across all user-facing UI (agent cards, wizards, tooltips, archetype dropdown).
+- Context-sensitive agent card clicks: red=model modal, yellow=toast, green(no index)=indexing popup, green(indexed)=1:1 chat.
+- Agent creation blocked until canon index is built.
 
 ## Working Notes
 - Grounding/tooling state machine + current status tracked in docs/statemachine.md.
+- Canon index design tracked in memory/canon-index-design.md.
+- Tool implementation progress tracked in memory/tool-implementation.md.
 
 ## Next Session Plan
-1) Verify LM Studio JSON schema enforcement: tool call returns pure JSON with nonce on first try.
-2) Run single-agent conference test: tool call → receipt minted → Evidence line references receipt_id.
-3) If any JSON-only violations remain, adjust schema or provider parameters (no brute-force retries).
+1) Test canon index end-to-end with a fresh project (create → prep → wire CoS → index → verify Canon.md in VFS).
+2) Begin implementing next tool from the suite (prose_analyzer or line_editor).
+3) Address any remaining agent card mouseover cursor issues.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

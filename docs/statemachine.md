@@ -28,6 +28,7 @@ We are hardening agent responses so agents:
 - File discovery via VFS tree only (no hardcoded paths).
 - Outline content must be accessible in VFS (Story/SCN-outline.md or discovered path).
 - VFS view must match outline API content.
+- Canon.md served in VFS root (alongside Story/ and Compendium/) — backed by `.control-room/canon/canon-index.md`.
 
 ## Prompt Tool Contract (baseline)
 - Tools are real and executable (no prompt-only fake tools).
@@ -50,6 +51,10 @@ We are hardening agent responses so agents:
 - [x] LM Studio JSON schema enforcement for tool-call turns.
 - [x] VFS outline path exposed in tree (Story/SCN-outline.md).
 - [x] Outline VFS content mapped to outline API output.
+- [x] Canon Index boot sequence: LLM-driven extraction → deterministic Canon.md compilation.
+- [x] Canon.md served via VFS (PreparedWorkspaceService readFile + getTree).
+- [x] `skipTools` bypass on `/api/ai/chat` for raw LLM calls.
+- [x] Canon index endpoints: `GET /api/canon/index/status`, `POST /api/canon/index`.
 
 ## Current Gaps
 - LM Studio model still emits chain-of-thought unless JSON schema is applied; confirm schema enforcement works end-to-end.
@@ -146,6 +151,7 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - Optional `toolPolicy` can be supplied to `/api/ai/chat` to constrain tools per request:
   - `allowedTools`: list of allowed tool IDs (schema + execution enforced)
   - `requireTool`: force a tool call on the first step (bypasses heuristic)
+- **`skipTools` bypass**: When `skipTools: true` is passed to `/api/ai/chat`, the entire tool machinery is bypassed — no tool catalog prepended, no grounding header, no tool protocol appended, no tool loop. The prompt is sent directly to the model via `callAgentWithGate()`. Used by canon indexing for raw LLM extraction calls.
 - Agent turns are serialized by `AgentTurnGate` to avoid parallel tool loops.
 - Constants: `MAX_TOOL_STEPS=3` (fallback), `MAX_TOOL_BYTES_PER_STEP=2000`, `MAX_TOOL_BYTES_PER_TURN=6000`.
 
@@ -453,6 +459,8 @@ This is the full map of everything connected to grounding + tool execution. If i
 - Agents: `workspace/<project>/.control-room/agents/agents.json`
 - Agent endpoints: `workspace/<project>/.control-room/agents/agent-endpoints.json`
 - Prompt registry (project): `workspace/<project>/.control-room/prompts/prompts.json`
+- Canon index: `workspace/<project>/.control-room/canon/canon-index.md`
+- Canon metadata: `workspace/<project>/.control-room/canon/canon-meta.json`
 
 ## REST Endpoints (Relevant to Grounding + Tools)
 - `POST /api/ai/chat` (conference + normal chat)
@@ -462,6 +470,8 @@ This is the full map of everything connected to grounding + tool execution. If i
 - `GET /api/audit/sessions/{id}/receipts`
 - `GET /api/audit/sessions/{id}/tool-receipts`
 - `POST /api/telemetry/conference`
+- `GET /api/canon/index/status`
+- `POST /api/canon/index`
 
 ## Prompt Tools (JSON-Only Example Formats)
 - `file_locator` example:

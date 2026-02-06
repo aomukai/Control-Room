@@ -88,7 +88,9 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] Retired Agents modal (disable/reactivate) (refs: docs/reference/cr_agents.md#agent-lifecycle)
 - [x] Workbench agent UX polish (context menu clamped, retire modal closes immediately, nursing home refresh) (refs: docs/reference/cr_workbench.md)
 - [x] Assisted Mode modal + per-agent controls (Workbench sidebar) (refs: docs/reference/cr_assistant_assisted_mode.md)
-- [x] Assistant cannot be set to assisted mode (frontend + backend guard) (refs: docs/reference/cr_assistant_assisted_mode.md)
+- [x] Chief of Staff cannot be set to assisted mode (frontend + backend guard) (refs: docs/reference/cr_assistant_assisted_mode.md)
+- [x] Highlander rule: only one Chief of Staff allowed; template hidden when one exists (refs: docs/reference/cr_agents.md)
+- [x] "Assistant" → "Chief of Staff" rename across all user-facing UI (agent cards, wizards, tooltips, archetype dropdown)
 
 #### Agent Profile System
 - [x] **Agent Profile Modal** - Full character sheet UI (refs: docs/reference/cr_agents.md)
@@ -173,6 +175,8 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] Recent-project quick chips in switcher (refs: docs/reference/cr_editor.md)
 - [x] Project Preparation Wizard + ingest (canonical manifests, evidence receipts, prep gating) (refs: docs/reference/project_preparation.md)
 - [x] Prepared mode scene reindex endpoint + metadata (hooks-index-based; on-demand) (refs: docs/reference/project_preparation.md)
+- [x] Canon Index boot sequence: mandatory LLM-driven indexing when CoS is wired; frontend progress loop; Canon.md served via VFS (refs: docs/reference/project_preparation.md)
+- [x] `skipTools` flag on `/api/ai/chat`: bypasses tool catalog/grounding/tool loop for raw LLM calls
 
 #### UI Integration
 - [x] **Global Issue Detail Modal** - Shared modal accessible from anywhere (refs: docs/reference/cr_workbench.md#workbench-shared-issue-modal, docs/reference/cr_memory.md#memory-issue-board-panel)
@@ -319,10 +323,12 @@ notificationStore.issueCommentAdded(id, author)
 
 ## REST API Summary
 
-### Preparation
+### Preparation & Canon Index
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/preparation/reindex/scene` | Reindex scene hooks into derived metadata |
+| GET | `/api/canon/index/status` | Get canon index status (indexed, fileCount, indexedAt) |
+| POST | `/api/canon/index` | Compile canon index from LLM-extracted entries |
 
 ### Issues
 | Method | Endpoint | Description |
@@ -404,7 +410,7 @@ notificationStore.issueCommentAdded(id, author)
 ### AI Chat
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/ai/chat` | Chat using an agent endpoint when `agentId` is supplied |
+| POST | `/api/ai/chat` | Chat using an agent endpoint when `agentId` is supplied. Supports `skipTools: true` to bypass tool catalog/grounding/tool loop for raw LLM calls. |
 
 ### Telemetry
 | Method | Endpoint | Description |
