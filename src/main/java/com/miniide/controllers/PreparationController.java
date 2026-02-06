@@ -12,8 +12,11 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.UploadedFile;
 
+import com.miniide.ProjectPreparationService.CanonIndexEntry;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -67,6 +70,8 @@ public class PreparationController implements Controller {
         app.post("/api/preparation/empty", this::prepareEmpty);
         app.post("/api/preparation/ingest", this::prepareIngest);
         app.post("/api/preparation/ingest-supplemental", this::prepareSupplementalIngest);
+        app.get("/api/canon/index/status", this::getCanonIndexStatus);
+        app.post("/api/canon/index", this::compileCanonIndex);
     }
 
     private void getStatus(Context ctx) {
@@ -81,6 +86,7 @@ public class PreparationController implements Controller {
             response.put("preparedAt", meta != null ? meta.getPreparedAt() : null);
             response.put("canonStatus", canon != null ? canon.getStatus() : null);
             response.put("canonReviewedAt", canon != null ? canon.getReviewedAt() : null);
+            response.put("canonIndexedAt", canon != null ? canon.getIndexedAt() : null);
             ctx.json(response);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
@@ -204,6 +210,42 @@ public class PreparationController implements Controller {
             ctx.json(result);
         } catch (IllegalArgumentException e) {
             ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void getCanonIndexStatus(Context ctx) {
+        try {
+            var canon = preparationService().loadCanonManifest();
+            boolean indexed = canon != null && "indexed".equals(canon.getStatus());
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("indexed", indexed);
+            response.put("fileCount", canon != null ? canon.getCardCount() : 0);
+            response.put("indexedAt", canon != null ? canon.getIndexedAt() : null);
+            ctx.json(response);
+        } catch (Exception e) {
+            ctx.status(500).json(Controller.errorBody(e));
+        }
+    }
+
+    private void compileCanonIndex(Context ctx) {
+        try {
+            if (preparationService() == null) {
+                ctx.status(400).json(Map.of("error", "No prepared project."));
+                return;
+            }
+            com.fasterxml.jackson.databind.JsonNode json = objectMapper.readTree(ctx.body());
+            com.fasterxml.jackson.databind.JsonNode entriesNode = json.get("entries");
+            List<CanonIndexEntry> entries = new ArrayList<>();
+            if (entriesNode != null && entriesNode.isArray()) {
+                for (com.fasterxml.jackson.databind.JsonNode node : entriesNode) {
+                    CanonIndexEntry entry = objectMapper.treeToValue(node, CanonIndexEntry.class);
+                    entries.add(entry);
+                }
+            }
+            var result = preparationService().compileCanonIndex(entries);
+            ctx.json(result);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));
         }

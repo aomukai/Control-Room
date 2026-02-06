@@ -6,6 +6,7 @@ public class CanonManifest {
     private int cardCount;
     private String status;
     private String reviewedAt;
+    private String indexedAt;
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -45,5 +46,13 @@ public class CanonManifest {
 
     public void setReviewedAt(String reviewedAt) {
         this.reviewedAt = reviewedAt;
+    }
+
+    public String getIndexedAt() {
+        return indexedAt;
+    }
+
+    public void setIndexedAt(String indexedAt) {
+        this.indexedAt = indexedAt;
     }
 }

@@ -11978,3 +11978,64 @@ body.no-project #editor-placeholder .placeholder-text p {
     color: var(--text-primary);
     line-height: 1.6;
 }
+
+/* ── Canon Indexing Popup ─────────────────────── */
+
+.canon-indexing-modal {
+    min-width: 480px;
+    max-width: 600px;
+}
+
+.canon-indexing-message {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.canon-indexing-avatar {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+}
+
+.canon-indexing-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.canon-indexing-text {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+.canon-indexing-text strong {
+    color: var(--text-bright);
+}
+
+.canon-indexing-log {
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px 12px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.canon-indexing-log-line {
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.canon-indexing-log-line:last-child {
+    color: var(--text-primary);
+}

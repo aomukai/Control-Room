@@ -849,6 +849,149 @@ public class ProjectPreparationService {
         saveCanonManifest(manifest);
     }
 
+    public CanonIndexResult compileCanonIndex(List<CanonIndexEntry> entries) throws IOException {
+        if (entries == null || entries.isEmpty()) {
+            entries = List.of();
+        }
+        String now = nowIso();
+
+        // Save canon-meta.json
+        Path metaPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("canon-meta.json");
+        Files.createDirectories(metaPath.getParent());
+        mapper.writerWithDefaultPrettyPrinter().writeValue(metaPath.toFile(), entries);
+
+        // Render Canon.md deterministically
+        String canonMd = renderCanonIndex(entries);
+        Path indexPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("canon-index.md");
+        Files.writeString(indexPath, canonMd, StandardCharsets.UTF_8);
+
+        // Update manifest status
+        CanonManifest manifest = loadCanonManifest();
+        if (manifest == null) {
+            manifest = new CanonManifest();
+            manifest.setSchemaVersion(1);
+            manifest.setPreparedAt(now);
+        }
+        manifest.setStatus("indexed");
+        manifest.setIndexedAt(now);
+        saveCanonManifest(manifest);
+
+        // Collect unique categories
+        List<String> categories = entries.stream()
+            .map(e -> e.type != null ? e.type : "unknown")
+            .distinct()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+
+        CanonIndexResult result = new CanonIndexResult();
+        result.status = "indexed";
+        result.fileCount = entries.size();
+        result.categories = categories;
+        result.indexedAt = now;
+        return result;
+    }
+
+    public boolean isCanonIndexed() throws IOException {
+        CanonManifest manifest = loadCanonManifest();
+        return manifest != null && "indexed".equals(manifest.getStatus());
+    }
+
+    public String readCanonIndex() throws IOException {
+        Path indexPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("canon-index.md");
+        if (!Files.exists(indexPath)) return null;
+        return Files.readString(indexPath, StandardCharsets.UTF_8);
+    }
+
+    private String renderCanonIndex(List<CanonIndexEntry> entries) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Canon Index\n");
+        sb.append("> Auto-generated. Maps topics to canon files for agent reference.\n\n");
+
+        // Routing table — group by type
+        java.util.Map<String, List<CanonIndexEntry>> byType = new java.util.LinkedHashMap<>();
+        for (CanonIndexEntry e : entries) {
+            String type = e.type != null ? e.type : "misc";
+            byType.computeIfAbsent(type, k -> new ArrayList<>()).add(e);
+        }
+
+        sb.append("## Routing Table\n");
+        for (java.util.Map.Entry<String, List<CanonIndexEntry>> group : byType.entrySet()) {
+            String type = group.getKey();
+            int count = group.getValue().size();
+            sb.append("- **").append(capitalize(type)).append("** (").append(count)
+              .append(count == 1 ? " file" : " files").append(")\n");
+        }
+        sb.append("\n");
+
+        // Topics index — collect all topics with their source files
+        java.util.Map<String, List<String>> topicToFiles = new java.util.LinkedHashMap<>();
+        for (CanonIndexEntry e : entries) {
+            if (e.topics != null) {
+                for (String topic : e.topics) {
+                    topicToFiles.computeIfAbsent(topic.toLowerCase(java.util.Locale.ROOT),
+                        k -> new ArrayList<>()).add(e.path);
+                }
+            }
+        }
+        if (!topicToFiles.isEmpty()) {
+            sb.append("## Topics\n");
+            List<String> sortedTopics = new ArrayList<>(topicToFiles.keySet());
+            java.util.Collections.sort(sortedTopics);
+            for (String topic : sortedTopics) {
+                List<String> files = topicToFiles.get(topic);
+                sb.append("- **").append(topic).append("**: ");
+                sb.append(String.join(", ", files)).append("\n");
+            }
+            sb.append("\n");
+        }
+
+        // File catalogue
+        sb.append("## File Catalogue\n");
+        sb.append("| Path | Type | Scope | Hardness | Key Terms | Summary |\n");
+        sb.append("|------|------|-------|----------|-----------|--------|\n");
+        for (CanonIndexEntry e : entries) {
+            String path = e.path != null ? e.path : "";
+            String type = e.type != null ? e.type : "";
+            String scope = e.scope != null ? String.join("/", e.scope) : "";
+            String hardness = e.hardness != null ? e.hardness : "";
+            String terms = "";
+            if (e.defines != null && !e.defines.isEmpty()) {
+                terms = String.join(", ", e.defines);
+            } else if (e.topics != null && !e.topics.isEmpty()) {
+                terms = String.join(", ", e.topics);
+            }
+            String summary = e.summary != null ? e.summary : "";
+            sb.append("| ").append(path).append(" | ").append(type)
+              .append(" | ").append(scope).append(" | ").append(hardness)
+              .append(" | ").append(terms).append(" | ").append(summary).append(" |\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        return s.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + s.substring(1);
+    }
+
+    public static class CanonIndexEntry {
+        public String path;
+        public String type;
+        public List<String> scope;
+        public String hardness;
+        public List<String> topics;
+        public List<String> defines;
+        public List<String> constraints;
+        public String summary;
+    }
+
+    public static class CanonIndexResult {
+        public String status;
+        public int fileCount;
+        public List<String> categories;
+        public String indexedAt;
+    }
+
     public CanonManifest loadCanonManifest() throws IOException {
         Path manifestPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("manifest.json");
         if (!Files.exists(manifestPath)) {

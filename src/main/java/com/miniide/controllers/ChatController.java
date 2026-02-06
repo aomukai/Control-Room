@@ -92,6 +92,7 @@ public class ChatController implements Controller {
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
             boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
+            boolean skipTools = json.has("skipTools") && json.get("skipTools").asBoolean();
             String levelParam = json.has("level") ? json.get("level").asText() : null;
             boolean includeArchived = json.has("includeArchived") && json.get("includeArchived").asBoolean();
             boolean includeExpired = json.has("includeExpired") && json.get("includeExpired").asBoolean();
@@ -162,6 +163,25 @@ public class ChatController implements Controller {
                 final String keyRef = apiKey;
                 final var agentEndpoint = endpoint;
                 String prompt = message;
+
+                // skipTools: bypass tool catalog, grounding, and tool loop entirely (for raw LLM calls like metadata extraction)
+                if (skipTools) {
+                    final String rawPrompt = prompt;
+                    String response = callAgentWithGate(providerName, keyRef, agentEndpoint, rawPrompt, null);
+                    response = stripThinkingTags(response);
+                    if (projectContext != null && projectContext.telemetry() != null) {
+                        long tokensIn = TelemetryStore.estimateTokens(rawPrompt);
+                        long tokensOut = TelemetryStore.estimateTokens(response);
+                        if (conferenceId != null && !conferenceId.isBlank()) {
+                            projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut, conferenceId);
+                        } else {
+                            projectContext.telemetry().recordTokens(agentId, tokensIn, tokensOut);
+                        }
+                    }
+                    ctx.json(buildResponse(response, memoryResult, memoryId, requestMore, memoryItem, memoryExcluded));
+                    return;
+                }
+
                 if (skipToolCatalog) {
                     logger.info("Skipping prompt tool catalog (skipToolCatalog=true).");
                 } else {

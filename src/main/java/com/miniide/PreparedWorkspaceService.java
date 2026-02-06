@@ -60,6 +60,13 @@ public class PreparedWorkspaceService {
 
         root.addChild(story);
         root.addChild(compendium);
+
+        // Add Canon.md index file at root if it exists
+        Path canonIndexPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("canon-index.md");
+        if (Files.exists(canonIndexPath)) {
+            root.addChild(new FileNode("Canon.md", "Canon.md", "file"));
+        }
+
         return root;
     }
 
@@ -71,6 +78,13 @@ public class PreparedWorkspaceService {
         String normalized = relativePath != null ? relativePath.replace('\\', '/') : "";
         if ("Story/SCN-outline.md".equalsIgnoreCase(normalized)) {
             return readOutlineMarkdown();
+        }
+        if ("Canon.md".equalsIgnoreCase(normalized)) {
+            Path canonIndexPath = workspaceRoot.resolve(".control-room").resolve("canon").resolve("canon-index.md");
+            if (Files.exists(canonIndexPath)) {
+                return Files.readString(canonIndexPath, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            throw new FileNotFoundException("Canon index not built yet.");
         }
         CanonPath path = CanonPath.parse(relativePath);
         if (path == null) {

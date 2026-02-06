@@ -243,7 +243,10 @@
     function updateAgentLockState() {
         const prepLocked = window.canAddAgents ? !window.canAddAgents() : false;
         state.agents.prepLocked = prepLocked;
-        state.agents.locked = prepLocked || !hasExactlyOneAssistant();
+        // Block if: prep locked, no CoS, OR CoS exists but canon not indexed yet
+        const hasChief = countAssistantAgents() >= 1;
+        const canonNotIndexed = hasChief && state.workspace.canonStatus !== 'indexed';
+        state.agents.locked = prepLocked || !hasExactlyOneAssistant() || canonNotIndexed;
     }
 
     function showPreparationRequiredModal(actionLabel) {
@@ -555,6 +558,26 @@
             item.appendChild(statusBar);
 
             item.addEventListener('click', () => {
+                const agentStatus = state.agents.statusById[agent.id] || 'unknown';
+                const isChief = isAssistantAgent(agent);
+                const canonIndexed = state.workspace.canonStatus === 'indexed';
+
+                // Red: open model wiring modal
+                if (agentStatus === 'unconfigured' || agentStatus === 'incomplete') {
+                    showAgentSettingsModal(agent);
+                    return;
+                }
+                // Yellow: toast
+                if (agentStatus === 'unreachable') {
+                    notificationStore.warning('Endpoint not reachable. Check your model provider.', 'workbench');
+                    return;
+                }
+                // Green but no canon index: show indexing popup (CoS only)
+                if (isChief && !canonIndexed) {
+                    showCanonIndexingPopup(agent);
+                    return;
+                }
+                // Normal: open chat
                 if (!ensureChiefOfStaff('Agent chat')) {
                     return;
                 }
@@ -1404,8 +1427,20 @@
                 showPostCreateProfilePrompt(created);
                 window.loadAgents().catch(err => log(`Failed to refresh agents: ${err.message}`, 'warning'));
                 if (wiredNow) {
-                    createAgentIntroIssue(created, endpointSnapshot, 'initial wiring')
-                        .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                    // CoS boot sequence: index canon instead of self-intro if not yet indexed
+                    if (isAssistantAgent(created)) {
+                        isCanonIndexed().then(indexed => {
+                            if (!indexed) {
+                                showCanonIndexingPopup(created);
+                            } else {
+                                createAgentIntroIssue(created, endpointSnapshot, 'initial wiring')
+                                    .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                            }
+                        });
+                    } else {
+                        createAgentIntroIssue(created, endpointSnapshot, 'initial wiring')
+                            .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                    }
                 }
             } catch (err) {
                 log(`Failed to create agent: ${err.message}`, 'error');
@@ -3367,7 +3402,19 @@
                         'agents'
                     );
                     closeWithCallback({ saved: true });
-                    void createAgentIntroIssue(agent || { name }, endpointSnapshot, reason);
+                    // CoS boot sequence: index canon instead of self-intro if not yet indexed
+                    const resolvedAgent = agent || { name, id: agentId };
+                    if (isAssistantAgent(resolvedAgent)) {
+                        isCanonIndexed().then(indexed => {
+                            if (!indexed) {
+                                showCanonIndexingPopup(resolvedAgent);
+                            } else {
+                                void createAgentIntroIssue(resolvedAgent, endpointSnapshot, reason);
+                            }
+                        });
+                    } else {
+                        void createAgentIntroIssue(resolvedAgent, endpointSnapshot, reason);
+                    }
                     return;
                 } else {
                     notificationStore.success(`Saved endpoint settings for ${name}`, 'workbench');
@@ -3398,6 +3445,225 @@
             loadInitialData();
         }
     }
+
+    // ── Canon Index Boot Sequence ──────────────────────────────────────
+    async function isCanonIndexed() {
+        try {
+            const status = await api('/api/canon/index/status');
+            return Boolean(status && status.indexed);
+        } catch {
+            return false;
+        }
+    }
+
+    function showCanonIndexingPopup(agent) {
+        const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
+            'Canon Index',
+            'Begin',
+            null,
+            { closeOnCancel: false, closeOnConfirm: false }
+        );
+        if (cancelBtn) cancelBtn.remove();
+
+        modal.classList.add('canon-indexing-modal');
+
+        const messageArea = document.createElement('div');
+        messageArea.className = 'canon-indexing-message';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'canon-indexing-avatar';
+        if (agent && agent.avatar) {
+            const img = document.createElement('img');
+            img.src = agent.avatar;
+            img.alt = agent.name || 'Chief of Staff';
+            avatar.appendChild(img);
+        }
+
+        const text = document.createElement('div');
+        text.className = 'canon-indexing-text';
+        text.innerHTML = [
+            '<strong>Chief of Staff online.</strong>',
+            'Before the team can operate, I need to index your canon files so everyone knows where things live.',
+            'This takes a moment and can\'t be skipped.'
+        ].join('<br>');
+
+        messageArea.appendChild(avatar);
+        messageArea.appendChild(text);
+        body.appendChild(messageArea);
+
+        confirmBtn.addEventListener('click', async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Indexing...';
+            await runCanonIndexing(agent, body, close);
+        });
+    }
+
+    async function runCanonIndexing(agent, modalBody, closeModal) {
+        // Replace modal body with progress log
+        const logContainer = document.createElement('div');
+        logContainer.className = 'canon-indexing-log';
+        modalBody.innerHTML = '';
+        modalBody.appendChild(logContainer);
+
+        const appendLog = (msg) => {
+            const line = document.createElement('div');
+            line.className = 'canon-indexing-log-line';
+            line.textContent = msg;
+            logContainer.appendChild(line);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        };
+
+        try {
+            // Step 1: Get canon file list
+            appendLog('Loading canon file list...');
+            const review = await api('/api/preparation/canon-review');
+            const cards = review && review.cards ? review.cards : [];
+
+            if (cards.length === 0) {
+                appendLog('No canon files found. Creating empty index.');
+                await api('/api/canon/index', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ agentId: agent.id, entries: [] })
+                });
+                appendLog('Done. Canon index created (empty).');
+                state.workspace.canonStatus = 'indexed';
+                setTimeout(() => {
+                    closeModal();
+                    createAgentIntroIssue(agent, null, 'initial wiring')
+                        .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                }, 1500);
+                return;
+            }
+
+            appendLog(`Found ${cards.length} canon files.`);
+
+            // Step 2: For each card, send to LLM for metadata extraction
+            const entries = [];
+            for (let i = 0; i < cards.length; i++) {
+                const card = cards[i];
+                const cardPath = card.path || card.displayId || `Card ${i + 1}`;
+                appendLog(`Reading ${cardPath}...`);
+
+                const extractionPrompt = buildCanonExtractionPrompt(card);
+                try {
+                    const reply = await api('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: extractionPrompt,
+                            agentId: agent.id,
+                            skipTools: true
+                        })
+                    });
+
+                    const metadata = parseCanonMetadata(reply, card);
+                    entries.push(metadata);
+                    const topicCount = metadata.topics ? metadata.topics.length : 0;
+                    appendLog(`Extracted ${topicCount} topics from ${card.title || cardPath}.`);
+                } catch (err) {
+                    appendLog(`Warning: Failed to extract from ${cardPath}: ${err.message}`);
+                    // Add a minimal entry so the file is still catalogued
+                    entries.push({
+                        path: cardPath,
+                        type: card.type || 'misc',
+                        scope: ['unknown'],
+                        hardness: 'soft',
+                        topics: [],
+                        defines: [],
+                        constraints: [],
+                        summary: card.title || ''
+                    });
+                }
+            }
+
+            // Step 3: Compile Canon.md
+            appendLog('Writing Canon.md...');
+            const result = await api('/api/canon/index', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agentId: agent.id, entries })
+            });
+
+            const categoryCount = result && result.categories ? result.categories.length : 0;
+            appendLog(`Done. ${entries.length} files indexed across ${categoryCount} categories.`);
+            state.workspace.canonStatus = 'indexed';
+
+            // Step 4: Trigger CoS first real message after short delay
+            setTimeout(() => {
+                closeModal();
+                if (window.loadAgentStatuses) window.loadAgentStatuses();
+                createAgentIntroIssue(agent, null, 'initial wiring')
+                    .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+            }, 2000);
+
+        } catch (err) {
+            appendLog(`Error: ${err.message}`);
+            appendLog('Canon indexing failed. Please try again by clicking the Chief of Staff card.');
+            log(`Canon indexing failed: ${err.message}`, 'error');
+        }
+    }
+
+    function buildCanonExtractionPrompt(card) {
+        const content = card.content || '';
+        const path = card.path || card.displayId || '';
+        return [
+            'Extract metadata from this canon file. Return ONLY valid JSON, no other text.',
+            'Do not include markdown formatting, code blocks, or any text before or after the JSON.',
+            '',
+            '{',
+            '  "type": "biology|technology|culture|character|theme|faction|glossary|event|misc",',
+            '  "scope": ["aelyth", "humans", or "both"],',
+            '  "hardness": "hard|soft",',
+            '  "topics": ["topic1", "topic2"],',
+            '  "defines": ["term1", "term2"],',
+            '  "constraints": ["rule or limit 1", "rule or limit 2"],',
+            '  "summary": "1-2 sentence description"',
+            '}',
+            '',
+            `File: ${path}`,
+            'Content:',
+            content
+        ].join('\n');
+    }
+
+    function parseCanonMetadata(reply, card) {
+        const cardPath = card.path || card.displayId || '';
+        const fallback = {
+            path: cardPath,
+            type: card.type || 'misc',
+            scope: ['unknown'],
+            hardness: 'soft',
+            topics: [],
+            defines: [],
+            constraints: [],
+            summary: card.title || ''
+        };
+
+        if (!reply || !reply.content) return fallback;
+
+        try {
+            // Try to parse JSON from the response — strip markdown fences if present
+            let raw = reply.content.trim();
+            if (raw.startsWith('```')) {
+                raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+            }
+            const parsed = JSON.parse(raw);
+            return {
+                path: cardPath,
+                type: parsed.type || fallback.type,
+                scope: Array.isArray(parsed.scope) ? parsed.scope : [parsed.scope || 'unknown'],
+                hardness: parsed.hardness || 'soft',
+                topics: Array.isArray(parsed.topics) ? parsed.topics : [],
+                defines: Array.isArray(parsed.defines) ? parsed.defines : [],
+                constraints: Array.isArray(parsed.constraints) ? parsed.constraints : [],
+                summary: parsed.summary || fallback.summary
+            };
+        } catch {
+            return fallback;
+        }
+    }
+    // ── End Canon Index ──────────────────────────────────────────────
 
     async function createAgentIntroIssue(agent, endpoint, reason) {
         if (!agent) return null;
@@ -5420,4 +5686,6 @@
     window.showConferenceInviteModal = showConferenceInviteModal;
     window.exportAgent = exportAgent;
     window.duplicateAgent = duplicateAgent;
+    window.showCanonIndexingPopup = showCanonIndexingPopup;
+    window.isCanonIndexed = isCanonIndexed;
 })();
