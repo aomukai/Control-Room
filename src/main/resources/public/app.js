@@ -229,6 +229,8 @@
                 } catch (err) {
                     log(`Failed to load preparation status: ${err.message}`, 'warning');
                 }
+                // Re-evaluate lock now that canonStatus is loaded from server
+                if (updateAgentLockState) updateAgentLockState();
             }
             if (window.restoreEditorState) {
                 await window.restoreEditorState();

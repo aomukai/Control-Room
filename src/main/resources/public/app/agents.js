@@ -3530,8 +3530,10 @@
                 });
                 appendLog('Done. Canon index created (empty).');
                 state.workspace.canonStatus = 'indexed';
+                updateAgentLockState();
                 setTimeout(() => {
                     closeModal();
+                    renderAgentSidebar();
                     createAgentIntroIssue(agent, null, 'initial wiring')
                         .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
                 }, 1500);
@@ -3590,10 +3592,12 @@
             const categoryCount = result && result.categories ? result.categories.length : 0;
             appendLog(`Done. ${entries.length} files indexed across ${categoryCount} categories.`);
             state.workspace.canonStatus = 'indexed';
+            updateAgentLockState();
 
             // Step 4: Trigger CoS first real message after short delay
             setTimeout(() => {
                 closeModal();
+                renderAgentSidebar();
                 if (window.loadAgentStatuses) window.loadAgentStatuses();
                 createAgentIntroIssue(agent, null, 'initial wiring')
                     .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
