@@ -5802,7 +5802,12 @@ async function showWorkspaceSwitcher() {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'chat-message-content';
-        contentDiv.textContent = content;
+        if (role === 'user') {
+            contentDiv.textContent = content;
+        } else {
+            contentDiv.classList.add('markdown-rendered');
+            contentDiv.innerHTML = window.renderSimpleMarkdown(content);
+        }
         msg.appendChild(contentDiv);
 
         const hasMeta = meta && (meta.repLevel || meta.escalated || meta.stopHook || (meta.witnesses && meta.witnesses.length));

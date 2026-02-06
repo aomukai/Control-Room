@@ -4188,7 +4188,12 @@
             header.textContent = author || (role === 'user' ? 'You' : 'Agent');
             const body = document.createElement('div');
             body.className = 'conference-chat-message-body';
-            body.textContent = content;
+            if (role === 'user') {
+                body.textContent = content;
+            } else {
+                body.classList.add('markdown-rendered');
+                body.innerHTML = window.renderSimpleMarkdown(content);
+            }
             entry.appendChild(header);
             entry.appendChild(body);
             chatHistory.appendChild(entry);
@@ -5176,7 +5181,12 @@
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'workbench-chat-message-content';
-        contentDiv.textContent = content;
+        if (role === 'user') {
+            contentDiv.textContent = content;
+        } else {
+            contentDiv.classList.add('markdown-rendered');
+            contentDiv.innerHTML = window.renderSimpleMarkdown(content);
+        }
 
         msg.appendChild(label);
         msg.appendChild(contentDiv);
