@@ -820,7 +820,7 @@ public class ChatController implements Controller {
         );
         registry.register(new ToolSchema("canon_checker")
             .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
-            .arg("canon_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, true)
+            .arg("canon_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
             .arg("mode", com.miniide.tools.ToolArgSpec.Type.STRING, false)
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
         );

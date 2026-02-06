@@ -153,7 +153,7 @@ public class ToolExecutionService {
 
     private ToolRun executeOutlineAnalyzer(Map<String, Object> args) throws IOException {
         String outlinePath = stringArg(args, "outline_path", "");
-        String mode = stringArg(args, "mode", "");
+        String mode = stringArg(args, "mode", "structure");
         boolean dryRun = boolArg(args, "dry_run", false);
         if (outlinePath == null || outlinePath.isBlank()) {
             outlinePath = "Story/SCN-outline.md";
@@ -162,79 +162,324 @@ public class ToolExecutionService {
             ObjectNode root = objectMapper.createObjectNode();
             root.put("tool", "outline_analyzer");
             root.put("outline_path", outlinePath);
-            if (!mode.isBlank()) {
-                root.put("mode", mode);
-            }
+            root.put("mode", mode);
             root.put("dry_run", true);
             return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
         }
 
         String content = readFile(outlinePath);
-        List<String> lines = content != null ? List.of(content.split("\n")) : List.of();
-        long headings = lines.stream().filter(line -> line.trim().startsWith("##")).count();
-        long nonEmpty = lines.stream().filter(line -> !line.trim().isEmpty()).count();
-        String firstQuote = lines.stream().filter(line -> !line.trim().isEmpty()).findFirst().orElse("");
-        int firstLine = firstQuote.isEmpty() ? 0 : lines.indexOf(firstQuote) + 1;
-        String problem = headings == 0
-            ? "Problem Identified: \"No scene headings detected.\" (line " + Math.max(1, firstLine) + ")"
-            : "Problem Identified: \"" + trimQuote(firstQuote) + "\" (line " + firstLine + ")";
-        String fix = headings == 0
-            ? "Suggested Fix: Add scene headings (## Scene N) and short summaries to clarify structure."
-            : "Suggested Fix: Add explicit act breaks and stakes escalation notes between scenes.";
-
-        StringBuilder report = new StringBuilder();
-        report.append("Structure Overview: ")
-            .append(headings).append(" scene headings, ")
-            .append(nonEmpty).append(" non-empty lines.\n");
-        report.append(problem).append("\n");
-        report.append(fix);
-        ToolRun run = ToolRun.of(report.toString());
-        if (!firstQuote.isBlank()) {
-            run.fileRefs.add(buildFileRef(outlinePath, content, firstQuote));
+        if (content == null || content.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "outline_analyzer");
+            root.put("outline_path", outlinePath);
+            root.put("error", "No outline file found or file is empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
         }
+
+        List<String> lines = List.of(content.split("\n", -1));
+        List<OutlineScene> scenes = parseOutlineScenes(lines);
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "outline_analyzer");
+        root.put("outline_path", outlinePath);
+        root.put("mode", mode);
+        root.put("total_scenes", scenes.size());
+        root.put("total_lines", lines.size());
+
+        ArrayNode scenesArray = root.putArray("scenes");
+        for (OutlineScene scene : scenes) {
+            ObjectNode entry = scenesArray.addObject();
+            entry.put("number", scene.number);
+            entry.put("title", scene.title);
+            if (scene.pov != null && !scene.pov.isBlank()) {
+                entry.put("pov", scene.pov);
+            }
+            entry.put("start_line", scene.startLine);
+            entry.put("end_line", scene.endLine);
+            entry.put("summary", scene.summary);
+        }
+
+        if (!"structure".equalsIgnoreCase(mode)) {
+            root.put("content", content);
+        }
+
+        ToolRun run = ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        run.fileRefs.add(buildFileRef(outlinePath, content,
+            content.length() > 500 ? content.substring(0, 500) : content));
         return run;
+    }
+
+    private List<OutlineScene> parseOutlineScenes(List<String> lines) {
+        List<OutlineScene> scenes = new ArrayList<>();
+        int sceneNumber = 0;
+        int sceneStart = -1;
+        String sceneTitle = "";
+        String scenePov = null;
+        StringBuilder summaryBuilder = new StringBuilder();
+
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).trim();
+            if (line.startsWith("## ")) {
+                // Flush previous scene
+                if (sceneStart >= 0) {
+                    scenes.add(new OutlineScene(sceneNumber, sceneTitle, scenePov,
+                        sceneStart, i, summaryBuilder.toString().trim()));
+                }
+                sceneNumber++;
+                sceneStart = i + 1;
+                sceneTitle = extractSceneTitle(line);
+                scenePov = extractPovFromHeading(line);
+                summaryBuilder = new StringBuilder();
+            } else if (sceneStart >= 0 && !line.isEmpty()) {
+                // Check for POV marker in body lines
+                if (scenePov == null) {
+                    String bodyPov = extractPovFromLine(line);
+                    if (bodyPov != null) {
+                        scenePov = bodyPov;
+                    }
+                }
+                if (summaryBuilder.length() > 0) summaryBuilder.append(" ");
+                summaryBuilder.append(line);
+            }
+        }
+        // Flush last scene
+        if (sceneStart >= 0) {
+            scenes.add(new OutlineScene(sceneNumber, sceneTitle, scenePov,
+                sceneStart, lines.size(), summaryBuilder.toString().trim()));
+        }
+        return scenes;
+    }
+
+    private String extractSceneTitle(String headingLine) {
+        // "## Scene 3: The Anomaly" → "The Anomaly"
+        // "## The Anomaly" → "The Anomaly"
+        // "## Scene 3 - The Anomaly (POV: Serynthas)" → "The Anomaly"
+        String raw = headingLine.replaceFirst("^##\\s*", "");
+        // Strip POV parenthetical from end
+        raw = raw.replaceFirst("\\s*\\(POV[:\\s][^)]*\\)\\s*$", "");
+        raw = raw.replaceFirst("\\s*\\[POV[:\\s][^\\]]*\\]\\s*$", "");
+        // Strip "Scene N:" or "Scene N -" prefix
+        raw = raw.replaceFirst("^(?i)scene\\s+\\d+\\s*[:\\-–—]\\s*", "");
+        return raw.trim();
+    }
+
+    private String extractPovFromHeading(String headingLine) {
+        // Match (POV: Name) or [POV: Name] in heading
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("(?i)\\(?POV[:\\s]+([^)\\]]+)[)\\]]").matcher(headingLine);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private String extractPovFromLine(String line) {
+        // Match "POV: Name" or "**POV:** Name" at start of line
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("(?i)^\\*{0,2}POV\\*{0,2}[:\\s]+(.+)$").matcher(line);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private static final class OutlineScene {
+        final int number;
+        final String title;
+        final String pov;
+        final int startLine;
+        final int endLine;
+        final String summary;
+
+        OutlineScene(int number, String title, String pov, int startLine, int endLine, String summary) {
+            this.number = number;
+            this.title = title;
+            this.pov = pov;
+            this.startLine = startLine;
+            this.endLine = endLine;
+            // Keep summary concise — truncate if very long
+            this.summary = summary != null && summary.length() > 200
+                ? summary.substring(0, 197) + "..." : summary;
+        }
     }
 
     private ToolRun executeCanonChecker(Map<String, Object> args) throws IOException {
         String sceneFile = stringArg(args, "scene_path", "");
         List<String> canonFiles = listArg(args, "canon_paths");
-        String mode = stringArg(args, "mode", "");
+        String mode = stringArg(args, "mode", "strict");
         boolean dryRun = boolArg(args, "dry_run", false);
         if (canonFiles == null) canonFiles = List.of();
+
         if (dryRun) {
             ObjectNode root = objectMapper.createObjectNode();
             root.put("tool", "canon_checker");
             root.put("scene_path", sceneFile);
-            ArrayNode files = root.putArray("canon_paths");
-            canonFiles.forEach(files::add);
-            if (!mode.isBlank()) {
-                root.put("mode", mode);
-            }
+            ArrayNode paths = root.putArray("canon_paths");
+            canonFiles.forEach(paths::add);
+            root.put("mode", mode);
             root.put("dry_run", true);
             return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
         }
-        if (canonFiles.isEmpty()) {
-            return ToolRun.of("CANON_NEEDED: [canon files]\nSTATUS: Cannot validate without canon");
+
+        // Phase 1 (discovery): no canon_paths, or all guessed paths unreadable → return manifest
+        if (canonFiles.isEmpty() || allCanonPathsUnreadable(canonFiles)) {
+            return executeCanonCheckerDiscovery(sceneFile, mode);
         }
-        String scene = readFile(sceneFile);
-        String canon = readFile(canonFiles.get(0));
-        String sceneQuote = extractFirstSentence(scene);
-        String canonQuote = extractFirstSentence(canon);
-        StringBuilder report = new StringBuilder();
-        report.append("Scene: ").append(sceneFile).append("\n");
-        report.append("Canon: ").append(canonFiles.get(0)).append("\n");
-        report.append("Scene quote: \"").append(sceneQuote).append("\"\n");
-        report.append("Canon quote: \"").append(canonQuote).append("\"\n");
-        report.append("Status: Canon gap\n");
-        report.append("Recommendation: Flag for review");
-        ToolRun run = ToolRun.of(report.toString());
-        if (!sceneQuote.isBlank()) {
-            run.fileRefs.add(buildFileRef(sceneFile, scene, sceneQuote));
+
+        // Phase 2 (check): canon_paths provided and at least one readable → compare
+        return executeCanonCheckerCompare(sceneFile, canonFiles, mode);
+    }
+
+    private boolean allCanonPathsUnreadable(List<String> paths) {
+        for (String path : paths) {
+            if (path == null || path.isBlank()) continue;
+            try {
+                String content = readFile(path);
+                if (content != null && !content.isBlank()) return false;
+            } catch (IOException ignored) {}
         }
-        if (!canonQuote.isBlank()) {
-            run.fileRefs.add(buildFileRef(canonFiles.get(0), canon, canonQuote));
+        return true;
+    }
+
+    private ToolRun executeCanonCheckerDiscovery(String sceneFile, String mode) throws IOException {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "canon_checker");
+        root.put("phase", "discovery");
+        root.put("scene_path", sceneFile);
+        root.put("mode", mode);
+
+        // Read scene for context
+        String sceneContent = null;
+        if (!sceneFile.isBlank()) {
+            try {
+                sceneContent = readFile(sceneFile);
+            } catch (IOException ignored) {}
+        }
+        if (sceneContent != null && !sceneContent.isBlank()) {
+            int sceneBudget = 600;
+            String sceneExcerpt = sceneContent.length() > sceneBudget
+                ? sceneContent.substring(0, sceneBudget) : sceneContent;
+            root.put("scene_excerpt", sceneExcerpt);
+            if (sceneContent.length() > sceneBudget) {
+                root.put("scene_truncated", true);
+                root.put("scene_total_chars", sceneContent.length());
+            }
+        }
+
+        // Build manifest of all canon files (Compendium/)
+        List<FileNode> allFiles = collectStoryFiles();
+        List<FileNode> canonCandidates = allFiles.stream()
+            .filter(f -> {
+                String p = (f.getPath() != null ? f.getPath() : "").toLowerCase(Locale.ROOT);
+                return p.contains("compendium") || p.contains("canon");
+            })
+            .collect(Collectors.toList());
+
+        ArrayNode manifest = root.putArray("available_canon_files");
+        for (FileNode f : canonCandidates) {
+            ObjectNode entry = manifest.addObject();
+            entry.put("path", f.getPath());
+            entry.put("name", Path.of(f.getPath()).getFileName().toString());
+            entry.put("category", guessCanonCategory(f.getPath()));
+            entry.put("size_bytes", fileSize(f.getPath()));
+        }
+        root.put("total_canon_files", canonCandidates.size());
+        root.put("instruction", "Select the canon files relevant to this scene and call canon_checker again with canon_paths.");
+
+        ToolRun run = ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        if (sceneContent != null && !sceneContent.isBlank()) {
+            run.fileRefs.add(buildFileRef(sceneFile, sceneContent,
+                sceneContent.length() > 200 ? sceneContent.substring(0, 200) : sceneContent));
         }
         return run;
+    }
+
+    private ToolRun executeCanonCheckerCompare(String sceneFile, List<String> canonFiles, String mode)
+            throws IOException {
+        String sceneContent = readFile(sceneFile);
+        if (sceneContent == null || sceneContent.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "canon_checker");
+            root.put("scene_path", sceneFile);
+            root.put("error", "Scene file not found or empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "canon_checker");
+        root.put("phase", "compare");
+        root.put("scene_path", sceneFile);
+        root.put("mode", mode);
+
+        // Scene content — budget-aware
+        int sceneBudget = 800;
+        String sceneExcerpt = sceneContent.length() > sceneBudget
+            ? sceneContent.substring(0, sceneBudget) : sceneContent;
+        root.put("scene_content", sceneExcerpt);
+        if (sceneContent.length() > sceneBudget) {
+            root.put("scene_truncated", true);
+            root.put("scene_total_chars", sceneContent.length());
+        }
+
+        // Canon files — split remaining budget evenly
+        ArrayNode canonArray = root.putArray("canon_files");
+        int canonBudget = Math.max(200, 1000 / canonFiles.size());
+        ToolRun refCollector = ToolRun.of("");
+        for (String canonPath : canonFiles) {
+            ObjectNode canonEntry = canonArray.addObject();
+            canonEntry.put("path", canonPath);
+            try {
+                String canonContent = readFile(canonPath);
+                if (canonContent == null || canonContent.isBlank()) {
+                    canonEntry.put("error", "File not found or empty.");
+                    continue;
+                }
+                String canonExcerpt = canonContent.length() > canonBudget
+                    ? canonContent.substring(0, canonBudget) : canonContent;
+                canonEntry.put("content", canonExcerpt);
+                if (canonContent.length() > canonBudget) {
+                    canonEntry.put("truncated", true);
+                    canonEntry.put("total_chars", canonContent.length());
+                }
+                refCollector.fileRefs.add(buildFileRef(canonPath, canonContent,
+                    canonContent.length() > 200 ? canonContent.substring(0, 200) : canonContent));
+            } catch (IOException e) {
+                canonEntry.put("error", "Failed to read: " + e.getMessage());
+            }
+        }
+
+        refCollector.fileRefs.add(buildFileRef(sceneFile, sceneContent,
+            sceneContent.length() > 200 ? sceneContent.substring(0, 200) : sceneContent));
+
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun result = ToolRun.of(output);
+        result.fileRefs.addAll(refCollector.fileRefs);
+        return result;
+    }
+
+    private String guessCanonCategory(String path) {
+        if (path == null) return "unknown";
+        String lower = path.toLowerCase(Locale.ROOT);
+        // Check parent directory (VFS structure: Compendium/{Bucket}/...)
+        if (lower.contains("/characters/")) return "character";
+        if (lower.contains("/culture/")) return "culture";
+        if (lower.contains("/lore/")) return "lore";
+        if (lower.contains("/technology/")) return "technology";
+        if (lower.contains("/themes/")) return "theme";
+        if (lower.contains("/factions/")) return "faction";
+        if (lower.contains("/glossary/")) return "glossary";
+        if (lower.contains("/misc/")) return "misc";
+        // Check VFS card prefixes (CHAR-, CONCEPT-, CULTURE-, etc.)
+        String name = Path.of(path).getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.startsWith("char-")) return "character";
+        if (name.startsWith("concept-")) return "lore";
+        if (name.startsWith("culture-")) return "culture";
+        if (name.startsWith("tech-")) return "technology";
+        if (name.startsWith("theme-")) return "theme";
+        if (name.startsWith("faction-")) return "faction";
+        if (name.startsWith("gloss-")) return "glossary";
+        // Fallback: physical file naming
+        if (name.startsWith("characters-")) return "character";
+        if (name.startsWith("lore-")) return "lore";
+        if (name.startsWith("technology-")) return "technology";
+        if (name.startsWith("themes-")) return "theme";
+        if (name.startsWith("factions-")) return "faction";
+        if (name.startsWith("glossary-")) return "glossary";
+        return "other";
     }
 
     private ToolRun executeTaskRouter(Map<String, Object> args) throws IOException {
