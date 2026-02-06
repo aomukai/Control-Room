@@ -13,10 +13,10 @@ import java.util.List;
 
 public class PromptRegistry {
     private static final List<String> CORE_TOOL_IDS = List.of(
-        "file-locator",
-        "task-router",
-        "canon-checker",
-        "outline-analyzer"
+        "file_locator",
+        "task_router",
+        "canon_checker",
+        "outline_analyzer"
     );
 
     private final Path registryPath;
@@ -335,7 +335,7 @@ public class PromptRegistry {
         String id = baseId;
         int counter = 1;
         while (getPrompt(id) != null) {
-            id = baseId + "-" + counter++;
+            id = baseId + "_" + counter++;
         }
         return id;
     }
@@ -344,8 +344,8 @@ public class PromptRegistry {
         if (value == null) {
             return "prompt";
         }
-        String slug = value.toLowerCase().replaceAll("[^a-z0-9]+", "-");
-        slug = slug.replaceAll("(^-|-$)", "");
+        String slug = value.toLowerCase().replaceAll("[^a-z0-9]+", "_");
+        slug = slug.replaceAll("(^_|_$)", "");
         return slug.isEmpty() ? "prompt" : slug;
     }
 }

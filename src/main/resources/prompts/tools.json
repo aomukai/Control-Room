@@ -2,7 +2,7 @@
   "version": 1,
   "prompts": [
     {
-      "id": "search-issues",
+      "id": "search_issues",
       "name": "Search Issues",
       "archetype": "Any",
       "scope": "project",
@@ -12,7 +12,7 @@
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"search_issues\",\"args\":{\"tags\":[\"tag\"],\"assignedTo\":\"agent\",\"status\":\"open\",\"priority\":\"normal\",\"personalTags\":[\"tag\"],\"personalAgent\":\"agentId\",\"excludePersonalTags\":[\"tag\"],\"minInterestLevel\":1},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- tags?: string[]\n- assignedTo?: string\n- status?: \"open\" | \"closed\" | \"all\"\n- priority?: \"low\" | \"normal\" | \"high\" | \"urgent\"\n- personalTags?: string[]\n- personalAgent?: string\n- excludePersonalTags?: string[]\n- minInterestLevel?: number\n\nNotes:\n- personalTags filters on the agent's personal tags; requires personalAgent (agentId).\n- excludePersonalTags can hide items marked irrelevant."
     },
     {
-      "id": "file-locator",
+      "id": "file_locator",
       "name": "File Locator",
       "archetype": "Any",
       "scope": "project",
@@ -22,7 +22,7 @@
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"file_locator\",\"args\":{\"search_criteria\":\"Story/SCN-outline.md\",\"scan_mode\":\"FAST_SCAN\",\"max_results\":12,\"include_globs\":false,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- search_criteria: string (required)\n- scan_mode?: \"FAST_SCAN\" | \"DEEP_SCAN\"\n- max_results?: number\n- include_globs?: boolean\n- dry_run?: boolean\n\nSearch locations:\n- Story/Scenes/ (scene files, e.g. Story/Scenes/SCN-scene-slug.md)\n- Compendium/ (canon/worldbuilding, e.g. Compendium/Characters/CHAR-name.md)\n- Story/SCN-outline.md (story structure, virtual)\n\nMetadata fields to return per file:\n- Type: scene/canon/outline\n- POV (if scene) with confidence and match_basis\n- Scene # (if applicable) with confidence and match_basis\n- Size: word count or file size\n- Modified: last modified timestamp\n- Keywords: list with confidence and match_basis\n\nMatch basis values: FILENAME_MATCH | CONTENT_MATCH | METADATA_MATCH\n\nIf scan_mode=DEEP_SCAN, estimate token usage before loading content:\nDEEP_SCAN requested on [N] files (estimated [TOKENS] tokens).\nWARNING if TOKENS > 30000. Recommend FAST_SCAN or reduce scope to <= 6 files.\nProceed anyway? [yes/no]\n\nIf dry_run=true, output what would be scanned and estimated token usage only."
     },
     {
-      "id": "task-router",
+      "id": "task_router",
       "name": "Task Router",
       "archetype": "Chief",
       "scope": "project",
@@ -32,7 +32,7 @@
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"task_router\",\"args\":{\"user_request\":\"...\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- user_request: string (required)\n- dry_run?: boolean\n\nAvailable roles:\n- planner (outline structure, scene ordering, stakes)\n- writer (prose drafting, scenes, dialogue)\n- editor (line editing, clarity, consistency)\n- critic (narrative impact, reader experience)\n- continuity (timeline, canon consistency, character tracking)\n- chief (router/moderator)\n\nOutput format (exact fields):\nROUTE: [role or roles]\nORDER: [sequential order if multiple]\nPARALLEL: [roles that can run together]\nCONTEXT: [files needed] or \"needs file_locator scan\"\nEXPECTED_OUTPUT: [what to produce]\nEVIDENCE_TYPE: QUOTE | LINE_REF | SCOPE_SCAN\nCOMPLEXITY: LOW | MEDIUM | HIGH\nESTIMATED_TIME: [e.g., 3-5 minutes]\nPRIORITY: LOW | NORMAL | HIGH\nFALLBACK: [reason if routing to chief]\n\nIf ambiguous, output: CLARIFY: [specific questions]\n\nIf dry_run=true, output a routing preview only (no final route)."
     },
     {
-      "id": "canon-checker",
+      "id": "canon_checker",
       "name": "Canon Checker",
       "archetype": "Continuity",
       "scope": "project",
@@ -42,7 +42,7 @@
       "prompt": "Tool call (JSON only; no extra text):\n\nIMPORTANT: Do NOT guess canon file paths. Always start with Phase 1 to discover available files.\n\nPhase 1 — DISCOVERY (always call this first, no canon_paths):\n{\"tool\":\"canon_checker\",\"args\":{\"scene_path\":\"Story/Scenes/SCN-scene-slug.md\",\"mode\":\"strict\"},\"nonce\":\"<TOOL_NONCE>\"}\nReturns: scene excerpt + manifest of all available canon files with path, name, category, and size.\nReview the manifest and select canon files relevant to the scene.\n\nPhase 2 — COMPARE (use exact paths from Phase 1 manifest):\n{\"tool\":\"canon_checker\",\"args\":{\"scene_path\":\"Story/Scenes/SCN-scene-slug.md\",\"canon_paths\":[\"Compendium/Characters/CHAR-name.md\"],\"mode\":\"strict\"},\"nonce\":\"<TOOL_NONCE>\"}\nReturns: scene content + canon file contents for comparison.\n\nArgs:\n- scene_path: string (required)\n- canon_paths?: string[] (omit for Phase 1 discovery; use exact paths from manifest for Phase 2)\n- mode?: string\n- dry_run?: boolean\n\nCanon files live under Compendium/ (not Story/Compendium/). Use discovery to get exact paths.\n\nVerify character, location, technology, culture, and historical facts.\nReport format:\nScene: [filename]\nCanon: [filename]\nScene quote: \"...\"\nCanon quote: \"...\"\nStatus: Consistent | Inconsistent | Canon gap\nRecommendation: [Add to canon / Revise scene / Flag for review]\n\nIf dry_run=true, output which files would be checked."
     },
     {
-      "id": "outline-analyzer",
+      "id": "outline_analyzer",
       "name": "Outline Analyzer",
       "archetype": "Planner",
       "scope": "project",

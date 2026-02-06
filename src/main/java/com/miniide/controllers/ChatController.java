@@ -53,8 +53,8 @@ public class ChatController implements Controller {
     private final ToolExecutionService toolExecutionService;
     private final ToolCallParser toolCallParser;
     private static final int MAX_TOOL_STEPS = 3;
-    private static final int MAX_TOOL_BYTES_PER_TURN = 6000;
-    private static final int MAX_TOOL_BYTES_PER_STEP = 2000;
+    private static final int MAX_TOOL_BYTES_PER_TURN = 16000;
+    private static final int MAX_TOOL_BYTES_PER_STEP = 8000;
     private final ToolSchemaRegistry toolSchemaRegistry;
 
     public ChatController(ProjectContext projectContext,
@@ -343,7 +343,11 @@ public class ChatController implements Controller {
                 currentPrompt = append.prompt;
                 injectedBytes = append.injectedBytes;
                 if (append.exceededLimit) {
-                    return handleToolCallRejection(toolContext, "tool_call_output_limit", "tool output limit exceeded");
+                    String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                        + "\nTool output budget exhausted. Analyze the data you have and respond now without any tool calls.";
+                    String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                    finalResponse = stripThinkingTags(finalResponse);
+                    return finalResponse;
                 }
                 toolCalls++;
                 continue;
@@ -363,7 +367,11 @@ public class ChatController implements Controller {
                 requireToolCall = false;
                 decisionMode = true;
                 if (append.exceededLimit) {
-                    return handleToolCallRejection(toolContext, "tool_call_output_limit", "tool output limit exceeded");
+                    String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                        + "\nTool output budget exhausted. Analyze the data you have and respond now without any tool calls.";
+                    String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                    finalResponse = stripThinkingTags(finalResponse);
+                    return finalResponse;
                 }
                 toolCalls++;
                 continue;

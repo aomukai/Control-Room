@@ -5374,7 +5374,8 @@
                     notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
                 }
             } catch (err) {
-                const errorMessage = 'Sorry, I encountered an error. Please try again.';
+                console.error('Workbench chat error:', err);
+                const errorMessage = `Sorry, I encountered an error: ${err.message || 'unknown'}`;
                 appendWorkbenchChatMessage(history, 'assistant', errorMessage, agent.name);
                 log.push({ role: 'assistant', content: errorMessage });
             } finally {

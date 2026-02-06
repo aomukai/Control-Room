@@ -153,7 +153,7 @@ This section is the full source of truth for how grounding + tools + receipts wo
   - `requireTool`: force a tool call on the first step (bypasses heuristic)
 - **`skipTools` bypass**: When `skipTools: true` is passed to `/api/ai/chat`, the entire tool machinery is bypassed — no tool catalog prepended, no grounding header, no tool protocol appended, no tool loop. The prompt is sent directly to the model via `callAgentWithGate()`. Used by canon indexing for raw LLM extraction calls.
 - Agent turns are serialized by `AgentTurnGate` to avoid parallel tool loops.
-- Constants: `MAX_TOOL_STEPS=3` (fallback), `MAX_TOOL_BYTES_PER_STEP=2000`, `MAX_TOOL_BYTES_PER_TURN=6000`.
+- Constants: `MAX_TOOL_STEPS=3` (fallback), `MAX_TOOL_BYTES_PER_STEP=8000`, `MAX_TOOL_BYTES_PER_TURN=16000`.
 
 ## LM Studio Structured Output (JSON Schema Enforcement)
 - Provider: `src/main/java/com/miniide/providers/chat/OpenAiCompatibleChatProvider.java`
