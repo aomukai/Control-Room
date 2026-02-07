@@ -866,6 +866,11 @@ public class ChatController implements Controller {
             .arg("excludePersonalTags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
             .arg("minInterestLevel", com.miniide.tools.ToolArgSpec.Type.INT, false)
         );
+        registry.register(new ToolSchema("prose_analyzer")
+            .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("focus", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("pacing", "voice", "rhythm", "all"))
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
         return registry;
     }
 

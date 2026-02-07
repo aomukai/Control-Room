@@ -50,6 +50,16 @@
       "goals": "Identify structural issues with grounded references to outline text.",
       "guardrails": "If outline path unknown, call file_locator first. Do not claim outline is missing without file_locator confirmation. Quote outline text for all structural claims.",
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"outline_analyzer\",\"args\":{\"outline_path\":\"Story/SCN-outline.md\",\"mode\":\"structure\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- outline_path?: string\n- mode?: string\n- dry_run?: boolean\n\nIf outline_path not provided, call file_locator for \"outline\" and report results.\nIf no outline file exists, output: No outline file found.\n\nAnalyze:\n1) Scene count and distribution\n2) Stakes progression\n3) Act structure (setup/confrontation/resolution)\n4) Gaps or missing transitions\n5) POV balance\n\nReport format:\nStructure Overview: ...\nProblem Identified: [quote + location]\nSuggested Fix: [actionable change]\n\nIf dry_run=true, output which outline file would be analyzed."
+    },
+    {
+      "id": "prose_analyzer",
+      "name": "Prose Analyzer",
+      "archetype": "Editor",
+      "scope": "project",
+      "usageNotes": "Use when examining a scene for prose quality, pacing, voice, sentence rhythm, or sensory detail. Returns computed metrics (sentence stats, dialogue ratio, repeated words, POV signals) plus file content for grounded analysis.",
+      "goals": "Provide quantitative prose metrics so analysis is grounded in verifiable data, not subjective impressions.",
+      "guardrails": "Quote specific passages for every claim. Cite metric values from the tool output. Never claim pacing is slow without referencing sentence length data. Distinguish between style preferences and structural problems.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"prose_analyzer\",\"args\":{\"scene_path\":\"Story/Scenes/SCN-scene-slug.md\",\"focus\":\"all\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_path: string (required) — VFS path to the scene file\n- focus?: \"pacing\" | \"voice\" | \"rhythm\" | \"all\" (default: \"all\")\n- dry_run?: boolean\n\nFocus modes:\n- pacing: sentence/paragraph counts, avg lengths, longest/shortest sentence\n- voice: POV pronoun signals, dialogue ratio\n- rhythm: sentence length variance, repeated words, adverb count\n- all: all of the above\n\nReturns computed metrics plus scene content excerpt.\n\nReport format:\nScene: [filename]\nPOV: [inferred from pov_signals]\n\nStrength Found:\nQuote: \"[exact text from scene]\"\nMetric: [relevant metric value]\nWhy it works: [specific reason]\n\nIssue Found (if any):\nQuote: \"[exact text from scene]\"\nMetric: [relevant metric value]\nProblem: [specific issue]\nLocation: [paragraph/sentence reference]\n\nSuggested Fix:\n[concrete rewrite suggestion or technique]\n\nIf dry_run=true, output which file would be analyzed."
     }
   ]
 }

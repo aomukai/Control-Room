@@ -32,7 +32,8 @@ public class ToolExecutionService {
         "outline_analyzer",
         "canon_checker",
         "task_router",
-        "search_issues"
+        "search_issues",
+        "prose_analyzer"
     );
 
     private final ProjectContext projectContext;
@@ -78,6 +79,9 @@ public class ToolExecutionService {
                     break;
                 case "search_issues":
                     run = executeSearchIssues(call.getArgs());
+                    break;
+                case "prose_analyzer":
+                    run = executeProseAnalyzer(call.getArgs());
                     break;
                 default:
                     run = ToolRun.of("Unsupported tool: " + tool);
@@ -553,6 +557,258 @@ public class ToolExecutionService {
         root.put("note", "personalTags filters not implemented in tool runner MVP.");
         return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
     }
+
+    // ── prose_analyzer ──────────────────────────────────────────────
+
+    private ToolRun executeProseAnalyzer(Map<String, Object> args) throws IOException {
+        String scenePath = stringArg(args, "scene_path", "");
+        String focus = stringArg(args, "focus", "all").toLowerCase(Locale.ROOT);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (scenePath.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "prose_analyzer");
+            root.put("error", "scene_path is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        if (dryRun) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "prose_analyzer");
+            root.put("scene_path", scenePath);
+            root.put("focus", focus);
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        String content = readFile(scenePath);
+        if (content == null || content.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "prose_analyzer");
+            root.put("scene_path", scenePath);
+            root.put("error", "File not found or empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "prose_analyzer");
+        root.put("scene_path", scenePath);
+        root.put("focus", focus);
+
+        // Compute metrics
+        ObjectNode metrics = objectMapper.createObjectNode();
+
+        String[] words = content.split("\\s+");
+        int wordCount = 0;
+        for (String w : words) {
+            if (!w.isBlank()) wordCount++;
+        }
+        metrics.put("word_count", wordCount);
+
+        List<String> sentences = splitSentences(content);
+        metrics.put("sentence_count", sentences.size());
+
+        String[] paragraphs = content.split("\n\\s*\n");
+        int paragraphCount = 0;
+        for (String p : paragraphs) {
+            if (!p.trim().isEmpty()) paragraphCount++;
+        }
+        metrics.put("paragraph_count", paragraphCount);
+
+        boolean includePacing = "all".equals(focus) || "pacing".equals(focus);
+        boolean includeVoice = "all".equals(focus) || "voice".equals(focus);
+        boolean includeRhythm = "all".equals(focus) || "rhythm".equals(focus);
+
+        // Sentence length stats (pacing + rhythm)
+        if (includePacing || includeRhythm) {
+            int[] sentenceLengths = new int[sentences.size()];
+            for (int i = 0; i < sentences.size(); i++) {
+                sentenceLengths[i] = sentences.get(i).split("\\s+").length;
+            }
+            if (sentences.size() > 0) {
+                double avg = 0;
+                int longest = 0, shortest = Integer.MAX_VALUE;
+                int longestIdx = 0, shortestIdx = 0;
+                for (int i = 0; i < sentenceLengths.length; i++) {
+                    avg += sentenceLengths[i];
+                    if (sentenceLengths[i] > longest) { longest = sentenceLengths[i]; longestIdx = i; }
+                    if (sentenceLengths[i] < shortest) { shortest = sentenceLengths[i]; shortestIdx = i; }
+                }
+                avg /= sentenceLengths.length;
+                metrics.put("avg_sentence_length", Math.round(avg * 10.0) / 10.0);
+
+                // Standard deviation
+                double variance = 0;
+                for (int len : sentenceLengths) {
+                    variance += (len - avg) * (len - avg);
+                }
+                variance /= sentenceLengths.length;
+                metrics.put("sentence_length_stdev", Math.round(Math.sqrt(variance) * 10.0) / 10.0);
+
+                ObjectNode longestNode = metrics.putObject("longest_sentence");
+                longestNode.put("length", longest);
+                longestNode.put("text", trimQuote(sentences.get(longestIdx)));
+
+                ObjectNode shortestNode = metrics.putObject("shortest_sentence");
+                shortestNode.put("length", shortest);
+                shortestNode.put("text", trimQuote(sentences.get(shortestIdx)));
+            }
+        }
+
+        // Voice metrics
+        if (includeVoice) {
+            // Dialogue ratio: lines with at least one pair of quotes / total non-blank lines
+            String[] lines = content.split("\n");
+            int dialogueLines = 0;
+            int nonBlankLines = 0;
+            for (String line : lines) {
+                if (line.trim().isEmpty()) continue;
+                nonBlankLines++;
+                // Count quote marks — a pair means dialogue
+                long quoteCount = line.chars().filter(c -> c == '\u201C' || c == '\u201D'
+                    || c == '"').count();
+                if (quoteCount >= 2) dialogueLines++;
+            }
+            metrics.put("dialogue_ratio",
+                nonBlankLines > 0 ? Math.round((double) dialogueLines / nonBlankLines * 100.0) / 100.0 : 0.0);
+
+            // POV signals
+            ObjectNode pov = metrics.putObject("pov_signals");
+            String lower = content.toLowerCase(Locale.ROOT);
+            String[] tokens = lower.split("[^a-z']+");
+            int first = 0, second = 0, third = 0;
+            for (String t : tokens) {
+                switch (t) {
+                    case "i": case "me": case "my": case "mine": case "myself":
+                        first++; break;
+                    case "you": case "your": case "yours": case "yourself":
+                        second++; break;
+                    case "he": case "she": case "him": case "her": case "his":
+                    case "hers": case "they": case "them": case "their": case "theirs":
+                    case "its": case "itself": case "himself": case "herself": case "themselves":
+                        third++; break;
+                }
+            }
+            pov.put("first_person", first);
+            pov.put("second_person", second);
+            pov.put("third_person", third);
+        }
+
+        // Rhythm metrics
+        if (includeRhythm) {
+            // Adverb count (words ending in -ly, excluding common non-adverbs)
+            String[] tokens = content.toLowerCase(Locale.ROOT).split("[^a-z]+");
+            int adverbCount = 0;
+            for (String t : tokens) {
+                if (t.length() > 3 && t.endsWith("ly") && !ADVERB_EXCEPTIONS.contains(t)) {
+                    adverbCount++;
+                }
+            }
+            metrics.put("adverb_count", adverbCount);
+
+            // Repeated words (non-stopwords, top 10)
+            Map<String, Integer> freq = new java.util.LinkedHashMap<>();
+            for (String t : tokens) {
+                if (t.length() < 4 || STOPWORDS.contains(t)) continue;
+                freq.merge(t, 1, Integer::sum);
+            }
+            ArrayNode repeated = metrics.putArray("repeated_words");
+            freq.entrySet().stream()
+                .filter(e -> e.getValue() >= 3)
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(10)
+                .forEach(e -> {
+                    ObjectNode entry = repeated.addObject();
+                    entry.put("word", e.getKey());
+                    entry.put("count", e.getValue());
+                });
+        }
+
+        root.set("metrics", metrics);
+
+        // Content excerpt (budget-aware, same as canon_checker)
+        int contentBudget = 800;
+        String contentExcerpt = content.length() > contentBudget
+            ? content.substring(0, contentBudget) : content;
+        root.put("content", contentExcerpt);
+        if (content.length() > contentBudget) {
+            root.put("content_truncated", true);
+            root.put("content_total_chars", content.length());
+        }
+
+        ToolRun run = ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        run.fileRefs.add(buildFileRef(scenePath, content,
+            content.length() > 200 ? content.substring(0, 200) : content));
+        return run;
+    }
+
+    private List<String> splitSentences(String text) {
+        // Split on sentence-ending punctuation followed by whitespace or end-of-string.
+        // Skip common abbreviations.
+        String cleaned = text.replace("\n", " ").replaceAll("\\s+", " ").trim();
+        List<String> sentences = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        for (int i = 0; i < cleaned.length(); i++) {
+            char c = cleaned.charAt(i);
+            current.append(c);
+
+            if ((c == '.' || c == '!' || c == '?') &&
+                (i + 1 >= cleaned.length() || Character.isWhitespace(cleaned.charAt(i + 1))
+                    || cleaned.charAt(i + 1) == '"' || cleaned.charAt(i + 1) == '\u201D')) {
+
+                // Check for common abbreviations before the period
+                String built = current.toString().trim();
+                if (c == '.' && isAbbreviation(built)) {
+                    continue;
+                }
+                if (!built.isEmpty()) {
+                    sentences.add(built);
+                }
+                current = new StringBuilder();
+            }
+        }
+        // Flush remaining text as final sentence
+        String remaining = current.toString().trim();
+        if (!remaining.isEmpty() && remaining.length() > 2) {
+            sentences.add(remaining);
+        }
+        return sentences;
+    }
+
+    private boolean isAbbreviation(String textEndingWithDot) {
+        String lower = textEndingWithDot.toLowerCase(Locale.ROOT);
+        for (String abbr : ABBREVIATIONS) {
+            if (lower.endsWith(abbr)) return true;
+        }
+        return false;
+    }
+
+    private static final Set<String> ABBREVIATIONS = Set.of(
+        "mr.", "mrs.", "ms.", "dr.", "prof.", "sr.", "jr.",
+        "st.", "ave.", "blvd.", "dept.", "inc.", "ltd.", "corp.",
+        "vs.", "etc.", "e.g.", "i.e.", "approx.", "govt."
+    );
+
+    private static final Set<String> ADVERB_EXCEPTIONS = Set.of(
+        "only", "early", "daily", "holy", "lonely", "ugly",
+        "likely", "family", "belly", "jelly", "rally", "ally",
+        "supply", "apply", "reply", "fly", "july", "italy",
+        "assembly", "butterfly", "bully", "fully", "tally"
+    );
+
+    private static final Set<String> STOPWORDS = Set.of(
+        "the", "and", "that", "this", "with", "from", "have", "had",
+        "has", "was", "were", "been", "being", "would", "could",
+        "should", "will", "shall", "into", "also", "than", "then",
+        "them", "they", "their", "there", "here", "what", "when",
+        "where", "which", "while", "about", "just", "like", "over",
+        "such", "some", "more", "most", "other", "each", "every",
+        "much", "very", "does", "done", "didn", "hadn", "hasn",
+        "isn", "aren", "wasn", "weren", "couldn", "wouldn", "shouldn",
+        "through", "before", "after", "under", "between", "back",
+        "down", "still", "know", "said", "told"
+    );
 
     private String writeToolReceipt(ToolCall call, ToolRun run, ToolExecutionContext context) throws IOException {
         if (projectContext == null || projectContext.audit() == null) {
