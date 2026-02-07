@@ -56,6 +56,7 @@ public class ChatController implements Controller {
     private static final int MAX_TOOL_BYTES_PER_TURN = 16000;
     private static final int MAX_TOOL_BYTES_PER_STEP = 8000;
     private final ToolSchemaRegistry toolSchemaRegistry;
+    private static final java.util.Map<String, String> TOOL_ALIASES = buildToolAliases();
 
     public ChatController(ProjectContext projectContext,
                           SettingsService settingsService, ProviderChatService providerChatService,
@@ -92,6 +93,7 @@ public class ChatController implements Controller {
             String memoryId = json.has("memoryId") ? json.get("memoryId").asText(null) : null;
             boolean reroll = json.has("reroll") && json.get("reroll").asBoolean();
             boolean skipToolCatalog = json.has("skipToolCatalog") && json.get("skipToolCatalog").asBoolean();
+            boolean skipGrounding = json.has("skipGrounding") && json.get("skipGrounding").asBoolean();
             boolean skipTools = json.has("skipTools") && json.get("skipTools").asBoolean();
             String levelParam = json.has("level") ? json.get("level").asText() : null;
             boolean includeArchived = json.has("includeArchived") && json.get("includeArchived").asBoolean();
@@ -192,9 +194,13 @@ public class ChatController implements Controller {
                         prompt = toolCatalog + "\n\n" + (prompt != null ? prompt : "");
                     }
                 }
-                String grounding = buildEarlyGroundingHeader();
-                if (grounding != null && !grounding.isBlank()) {
-                    prompt = grounding + "\n\n" + (prompt != null ? prompt : "");
+                if (skipGrounding) {
+                    logger.info("Skipping early grounding header (skipGrounding=true).");
+                } else {
+                    String grounding = buildEarlyGroundingHeader();
+                    if (grounding != null && !grounding.isBlank()) {
+                        prompt = grounding + "\n\n" + (prompt != null ? prompt : "");
+                    }
                 }
                 final String finalPrompt = prompt;
                 ToolExecutionContext toolContext = new ToolExecutionContext(conferenceId, taskId, turnId, agentId);
@@ -293,6 +299,8 @@ public class ChatController implements Controller {
         String response = null;
         int injectedBytes = 0;
         int toolCalls = 0;
+        int toolParseRetries = 0;
+        int decisionParseRetries = 0;
         int maxTurns = maxToolSteps * 2 + 2;
         for (int turn = 0; turn < maxTurns; turn++) {
             com.fasterxml.jackson.databind.JsonNode responseFormat = null;
@@ -303,19 +311,76 @@ public class ChatController implements Controller {
             }
             response = callAgentWithGate(providerName, apiKey, agentEndpoint, currentPrompt, responseFormat);
             response = stripThinkingTags(response);
+            ProviderError providerError = parseProviderErrorResponse(response);
+            if (providerError != null) {
+                logger.warn("Provider error during tool loop"
+                    + " provider=" + safe(providerError.provider)
+                    + " model=" + safe(providerError.model)
+                    + " code=" + safe(providerError.code)
+                    + " message=" + safe(providerError.message));
+                return "STOP_HOOK: error\nProvider error"
+                    + (providerError.provider != null && !providerError.provider.isBlank() ? " (" + providerError.provider + ")" : "")
+                    + ": " + (providerError.message != null ? providerError.message : "unknown")
+                    + (providerError.code != null && !providerError.code.isBlank() ? " [code=" + providerError.code + "]" : "");
+            }
 
             if (decisionMode) {
                 ToolDecisionParseResult decision = parseToolDecision(response, nonce);
                 if (decision.getErrorCode() != null) {
+                    if (decisionParseRetries < 1) {
+                        decisionParseRetries++;
+                        currentPrompt = currentPrompt
+                            + "\n\nYour previous response was invalid. Return ONLY the decision JSON object. "
+                            + "No prose, no markdown, no extra fields.";
+                        continue;
+                    }
+                    logToolRejection("decision-parse-error", decision.getErrorCode(), decision.getErrorDetail(),
+                        requireToolCall, decisionMode, response);
                     return handleToolCallRejection(toolContext, decision.getErrorCode(), decision.getErrorDetail());
                 }
                 if (decision.isFinal()) {
                     String finalPrompt = appendFinalResponseProtocol(currentPrompt);
                     String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, finalPrompt, null);
                     finalResponse = stripThinkingTags(finalResponse);
+                    ProviderError finalProviderError = parseProviderErrorResponse(finalResponse);
+                    if (finalProviderError != null) {
+                        logger.warn("Provider error during final response"
+                            + " provider=" + safe(finalProviderError.provider)
+                            + " model=" + safe(finalProviderError.model)
+                            + " code=" + safe(finalProviderError.code)
+                            + " message=" + safe(finalProviderError.message));
+                        return "STOP_HOOK: error\nProvider error"
+                            + (finalProviderError.provider != null && !finalProviderError.provider.isBlank() ? " (" + finalProviderError.provider + ")" : "")
+                            + ": " + (finalProviderError.message != null ? finalProviderError.message : "unknown")
+                            + (finalProviderError.code != null && !finalProviderError.code.isBlank() ? " [code=" + finalProviderError.code + "]" : "");
+                    }
                     if (looksLikeToolCallAttempt(finalResponse)) {
-                        return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
-                            "tool call must be strict JSON");
+                        // One retry: some models stay "stuck" emitting JSON/tool syntax even after being told to answer in prose.
+                        String retryPrompt = finalPrompt
+                            + "\n\nYour previous response was invalid. Respond in plain text only. "
+                            + "Do NOT output JSON. Do NOT start with '{' or '```'.";
+                        String retry = callAgentWithGate(providerName, apiKey, agentEndpoint, retryPrompt, null);
+                        retry = stripThinkingTags(retry);
+                        ProviderError retryProviderError = parseProviderErrorResponse(retry);
+                        if (retryProviderError != null) {
+                            logger.warn("Provider error during final retry"
+                                + " provider=" + safe(retryProviderError.provider)
+                                + " model=" + safe(retryProviderError.model)
+                                + " code=" + safe(retryProviderError.code)
+                                + " message=" + safe(retryProviderError.message));
+                            return "STOP_HOOK: error\nProvider error"
+                                + (retryProviderError.provider != null && !retryProviderError.provider.isBlank() ? " (" + retryProviderError.provider + ")" : "")
+                                + ": " + (retryProviderError.message != null ? retryProviderError.message : "unknown")
+                                + (retryProviderError.code != null && !retryProviderError.code.isBlank() ? " [code=" + retryProviderError.code + "]" : "");
+                        }
+                        if (looksLikeToolCallAttempt(retry)) {
+                            logToolRejection("final-response-json", ToolCallParser.ERR_INVALID_FORMAT,
+                                "tool call must be strict JSON; response_excerpt=" + excerptForLog(retry, 260),
+                                requireToolCall, decisionMode, retry);
+                            return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                                "tool call must be strict JSON; response_excerpt=" + excerptForLog(retry, 260));
+                        }
+                        return retry;
                     }
                     return finalResponse;
                 }
@@ -324,9 +389,44 @@ public class ChatController implements Controller {
                         + "\nTool step limit reached. Respond now without any tool calls.";
                     String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
                     finalResponse = stripThinkingTags(finalResponse);
+                    ProviderError forcedProviderError = parseProviderErrorResponse(finalResponse);
+                    if (forcedProviderError != null) {
+                        logger.warn("Provider error during forced final response"
+                            + " provider=" + safe(forcedProviderError.provider)
+                            + " model=" + safe(forcedProviderError.model)
+                            + " code=" + safe(forcedProviderError.code)
+                            + " message=" + safe(forcedProviderError.message));
+                        return "STOP_HOOK: error\nProvider error"
+                            + (forcedProviderError.provider != null && !forcedProviderError.provider.isBlank() ? " (" + forcedProviderError.provider + ")" : "")
+                            + ": " + (forcedProviderError.message != null ? forcedProviderError.message : "unknown")
+                            + (forcedProviderError.code != null && !forcedProviderError.code.isBlank() ? " [code=" + forcedProviderError.code + "]" : "");
+                    }
                     if (looksLikeToolCallAttempt(finalResponse)) {
-                        return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
-                            "tool call must be strict JSON");
+                        String retryPrompt = forcedPrompt
+                            + "\n\nYour previous response was invalid. Respond in plain text only. "
+                            + "Do NOT output JSON. Do NOT start with '{' or '```'.";
+                        String retry = callAgentWithGate(providerName, apiKey, agentEndpoint, retryPrompt, null);
+                        retry = stripThinkingTags(retry);
+                        ProviderError retryProviderError = parseProviderErrorResponse(retry);
+                        if (retryProviderError != null) {
+                            logger.warn("Provider error during forced final retry"
+                                + " provider=" + safe(retryProviderError.provider)
+                                + " model=" + safe(retryProviderError.model)
+                                + " code=" + safe(retryProviderError.code)
+                                + " message=" + safe(retryProviderError.message));
+                            return "STOP_HOOK: error\nProvider error"
+                                + (retryProviderError.provider != null && !retryProviderError.provider.isBlank() ? " (" + retryProviderError.provider + ")" : "")
+                                + ": " + (retryProviderError.message != null ? retryProviderError.message : "unknown")
+                                + (retryProviderError.code != null && !retryProviderError.code.isBlank() ? " [code=" + retryProviderError.code + "]" : "");
+                        }
+                        if (looksLikeToolCallAttempt(retry)) {
+                            logToolRejection("forced-final-response-json", ToolCallParser.ERR_INVALID_FORMAT,
+                                "tool call must be strict JSON; response_excerpt=" + excerptForLog(retry, 260),
+                                requireToolCall, decisionMode, retry);
+                            return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                                "tool call must be strict JSON; response_excerpt=" + excerptForLog(retry, 260));
+                        }
+                        return retry;
                     }
                     return finalResponse;
                 }
@@ -376,18 +476,271 @@ public class ChatController implements Controller {
                 toolCalls++;
                 continue;
             }
+            // Salvage: some providers/models ignore response_format and return prose + a JSON blob.
+            // Try to extract a single JSON object and re-parse it strictly.
+            if (parsed.getErrorCode() == null && looksLikeToolCallAttempt(response)) {
+                String extracted = extractFirstJsonObject(response);
+                if (extracted != null && !extracted.isBlank() && !extracted.equals(response != null ? response.trim() : "")) {
+                    ToolCallParseResult salvaged = toolCallParser.parseStrict(extracted, nonce);
+                    if (salvaged.isToolCall()) {
+                        ToolCall call = salvaged.getCall();
+                        if (allowedTools != null && !allowedTools.isEmpty() && !allowedTools.contains(call.getName())) {
+                            return handleToolCallRejection(toolContext, ToolCallParser.ERR_UNKNOWN_TOOL, "tool not allowed");
+                        }
+                        ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
+                        ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
+                            toolPolicy, maxToolSteps - toolCalls - 1);
+                        currentPrompt = append.prompt;
+                        injectedBytes = append.injectedBytes;
+                        requireToolCall = false;
+                        decisionMode = true;
+                        if (append.exceededLimit) {
+                            String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                                + "\nTool output budget exhausted. Analyze the data you have and respond now without any tool calls.";
+                            String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                            finalResponse = stripThinkingTags(finalResponse);
+                            return finalResponse;
+                        }
+                        toolCalls++;
+                        continue;
+                    }
+                    // Also allow salvaging a decision envelope early.
+                    ToolDecisionParseResult decision = parseToolDecision(extracted, nonce);
+                    if (decision.getErrorCode() == null && decision.getCall() != null) {
+                        ToolCall call = decision.getCall();
+                        if (allowedTools != null && !allowedTools.isEmpty() && !allowedTools.contains(call.getName())) {
+                            return handleToolCallRejection(toolContext, ToolCallParser.ERR_UNKNOWN_TOOL, "tool not allowed");
+                        }
+                        ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
+                        ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
+                            toolPolicy, maxToolSteps - toolCalls - 1);
+                        currentPrompt = append.prompt;
+                        injectedBytes = append.injectedBytes;
+                        requireToolCall = false;
+                        decisionMode = true;
+                        if (append.exceededLimit) {
+                            String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                                + "\nTool output budget exhausted. Analyze the data you have and respond now without any tool calls.";
+                            String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                            finalResponse = stripThinkingTags(finalResponse);
+                            return finalResponse;
+                        }
+                        toolCalls++;
+                        continue;
+                    }
+                }
+            }
+            // Some models return the decision envelope even on the first tool step.
+            // Accept {"action":"tool",...} here as a tool call rather than rejecting.
+            if (parsed.getErrorCode() != null
+                && ToolCallParser.ERR_INVALID_FORMAT.equals(parsed.getErrorCode())
+                && parsed.getErrorDetail() != null
+                && parsed.getErrorDetail().startsWith("unknown-field:action")) {
+                ToolDecisionParseResult decision = parseToolDecision(response, nonce);
+                if (decision.getErrorCode() == null && decision.getCall() != null) {
+                    ToolCall call = decision.getCall();
+                    if (allowedTools != null && !allowedTools.isEmpty() && !allowedTools.contains(call.getName())) {
+                        return handleToolCallRejection(toolContext, ToolCallParser.ERR_UNKNOWN_TOOL, "tool not allowed");
+                    }
+                    ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
+                    ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
+                        toolPolicy, maxToolSteps - toolCalls - 1);
+                    currentPrompt = append.prompt;
+                    injectedBytes = append.injectedBytes;
+                    requireToolCall = false;
+                    decisionMode = true;
+                    if (append.exceededLimit) {
+                        String forcedPrompt = appendFinalResponseProtocol(currentPrompt)
+                            + "\nTool output budget exhausted. Analyze the data you have and respond now without any tool calls.";
+                        String finalResponse = callAgentWithGate(providerName, apiKey, agentEndpoint, forcedPrompt, null);
+                        finalResponse = stripThinkingTags(finalResponse);
+                        return finalResponse;
+                    }
+                    toolCalls++;
+                    continue;
+                }
+            }
             if (parsed.getErrorCode() != null) {
+                if (requireToolCall && toolParseRetries < 1) {
+                    toolParseRetries++;
+                    currentPrompt = currentPrompt
+                        + "\n\nYour previous response was invalid. Tool call required. "
+                        + "Return ONLY a strict JSON tool call object: "
+                        + "{\"tool\":\"<id>\",\"args\":{...},\"nonce\":\"" + nonce + "\"}";
+                    continue;
+                }
+                logToolRejection("tool-parse-error", parsed.getErrorCode(), parsed.getErrorDetail(), requireToolCall, decisionMode, response);
                 return handleToolCallRejection(toolContext, parsed.getErrorCode(), parsed.getErrorDetail());
             }
             if (requireToolCall) {
-                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "tool call required");
+                if (toolParseRetries < 1) {
+                    toolParseRetries++;
+                    currentPrompt = currentPrompt
+                        + "\n\nTool call required. Return ONLY the strict JSON tool call object. No prose.";
+                    continue;
+                }
+                logToolRejection("tool-required-not-provided", ToolCallParser.ERR_INVALID_FORMAT, "tool call required",
+                    requireToolCall, decisionMode, response);
+                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                    "tool call required; response_excerpt=" + excerptForLog(response, 260));
             }
             if (looksLikeToolCallAttempt(response)) {
-                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT, "tool call must be strict JSON");
+                logToolRejection("tool-syntax-without-required", ToolCallParser.ERR_INVALID_FORMAT, "tool call must be strict JSON",
+                    requireToolCall, decisionMode, response);
+                return handleToolCallRejection(toolContext, ToolCallParser.ERR_INVALID_FORMAT,
+                    "tool call must be strict JSON; response_excerpt=" + excerptForLog(response, 260));
             }
             return response;
         }
         return response != null ? response : "";
+    }
+
+    private String extractFirstJsonObject(String response) {
+        if (response == null) return null;
+        String text = response.trim();
+        if (text.isEmpty()) return null;
+
+        // Prefer a fenced JSON block if present anywhere in the response.
+        int fenceStart = text.indexOf("```");
+        if (fenceStart >= 0) {
+            int fenceEnd = text.indexOf("```", fenceStart + 3);
+            if (fenceEnd > fenceStart) {
+                String inside = text.substring(fenceStart + 3, fenceEnd);
+                // Drop optional language tag on first line.
+                String[] lines = inside.split("\n", -1);
+                if (lines.length >= 2 && lines[0].trim().matches("(?i)json")) {
+                    inside = String.join("\n", java.util.Arrays.copyOfRange(lines, 1, lines.length));
+                }
+                inside = inside.trim();
+                if (inside.startsWith("{") && inside.endsWith("}")) {
+                    return inside;
+                }
+            }
+        }
+
+        int start = text.indexOf('{');
+        if (start < 0) return null;
+        int depth = 0;
+        boolean inString = false;
+        boolean escape = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c == '\\') {
+                if (inString) {
+                    escape = true;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+            if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    String candidate = text.substring(start, i + 1).trim();
+                    return (candidate.startsWith("{") && candidate.endsWith("}")) ? candidate : null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static final class ProviderError {
+        final String provider;
+        final String model;
+        final String code;
+        final String message;
+
+        ProviderError(String provider, String model, String code, String message) {
+            this.provider = provider;
+            this.model = model;
+            this.code = code;
+            this.message = message;
+        }
+    }
+
+    private ProviderError parseProviderErrorResponse(String response) {
+        if (response == null) return null;
+        String trimmed = response.trim();
+        if (trimmed.isEmpty()) return null;
+        // Provider errors in our stack often arrive as a JSON object, not plain text.
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+        try {
+            JsonNode node = objectMapper.readTree(trimmed);
+            if (node == null || !node.isObject()) return null;
+
+            // Root-level {"error":{...}} form
+            JsonNode rootError = node.get("error");
+            if (rootError != null && rootError.isObject()) {
+                String msg = rootError.has("message") ? rootError.get("message").asText(null) : null;
+                String code = rootError.has("code") ? rootError.get("code").asText(null) : null;
+                String provider = node.has("provider") ? node.get("provider").asText(null) : null;
+                String model = node.has("model") ? node.get("model").asText(null) : null;
+                if (msg != null && !msg.isBlank()) {
+                    return new ProviderError(provider, model, code, msg);
+                }
+            }
+
+            // OpenAI-like wrapper with choices[0].error
+            JsonNode choices = node.get("choices");
+            if (choices != null && choices.isArray() && choices.size() > 0) {
+                JsonNode first = choices.get(0);
+                if (first != null && first.isObject()) {
+                    JsonNode err = first.get("error");
+                    if (err != null && err.isObject()) {
+                        String msg = err.has("message") ? err.get("message").asText(null) : null;
+                        String code = err.has("code") ? err.get("code").asText(null) : null;
+                        String provider = node.has("provider") ? node.get("provider").asText(null) : null;
+                        String model = node.has("model") ? node.get("model").asText(null) : null;
+                        // Some providers include a nested provider_name
+                        JsonNode meta = err.get("metadata");
+                        if ((provider == null || provider.isBlank()) && meta != null && meta.isObject()) {
+                            provider = meta.has("provider_name") ? meta.get("provider_name").asText(null) : provider;
+                        }
+                        if (msg != null && !msg.isBlank()) {
+                            return new ProviderError(provider, model, code, msg);
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void logToolRejection(String kind, String code, String detail,
+                                  boolean requireToolCall, boolean decisionMode, String response) {
+        try {
+            String excerpt = excerptForLog(response, 400);
+            logger.warn("Tool call rejected"
+                + " kind=" + safe(kind)
+                + " code=" + safe(code)
+                + " detail=" + safe(detail)
+                + " requireToolCall=" + requireToolCall
+                + " decisionMode=" + decisionMode
+                + " response_excerpt=\"" + excerpt + "\"");
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String excerptForLog(String value, int maxChars) {
+        if (value == null) return "";
+        String cleaned = value
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .replace("\t", " ")
+            .trim();
+        if (maxChars <= 0) return "";
+        if (cleaned.length() <= maxChars) return cleaned;
+        return cleaned.substring(0, maxChars) + "...";
     }
 
     private int resolveTierMaxToolSteps(com.miniide.models.AgentEndpointConfig agentEndpoint,
@@ -439,7 +792,8 @@ public class ChatController implements Controller {
             builder.append("\n\nTool error: ").append(result.getError() != null ? result.getError() : "unknown");
         }
         if (result != null && result.getReceiptId() != null) {
-            builder.append("\n\nReceipt: ").append(result.getReceiptId());
+            // Use the exact label expected by the conference evidence validator.
+            builder.append("\n\nreceipt_id: ").append(result.getReceiptId());
         }
         builder.append("\n\nDecision rules: choose action=final if the user request is satisfied. ");
         builder.append("Choose action=tool only if another tool is required for the user request. ");
@@ -487,6 +841,11 @@ public class ChatController implements Controller {
     }
 
     private String buildToolCallRejection(String code, String detail) {
+        try {
+            logger.warn("Tool call rejected (STOP_HOOK)"
+                + " code=" + safe(code)
+                + (detail != null && !detail.isBlank() ? " detail=" + safe(detail) : ""));
+        } catch (Exception ignored) {}
         StringBuilder builder = new StringBuilder();
         builder.append("STOP_HOOK: tool_call_rejected\n");
         builder.append("Reason: ").append(code != null ? code : "tool_call_invalid_format");
@@ -546,8 +905,14 @@ public class ChatController implements Controller {
             || lower.contains("tool_call_required")
             || lower.contains("return only the json tool call")
             || lower.contains("only the json tool call object")
+            || lower.contains("return only the strict json tool call")
+            || lower.contains("strict json tool call object")
             || lower.contains("respond with only a json tool call")
-            || lower.contains("respond with exactly one json object");
+            || lower.contains("respond with exactly one json object")
+            // Broad catch: if the user is explicitly asking for a tool call in JSON, enforce it.
+            || ((lower.contains("return only") || lower.contains("respond only"))
+                && lower.contains("tool call")
+                && lower.contains("json"));
     }
 
     private com.fasterxml.jackson.databind.JsonNode buildToolCallResponseFormat(String nonce, java.util.Set<String> allowedTools) {
@@ -763,6 +1128,33 @@ public class ChatController implements Controller {
         JsonNode actionNode = node.get("action");
         JsonNode nonceNode = node.get("nonce");
         if (actionNode == null || !actionNode.isTextual()) {
+            // Tolerate tool envelope in decision mode: {"tool":...,"args":...,"nonce":...}
+            JsonNode toolNode = node.get("tool");
+            JsonNode argsNode = node.get("args");
+            if (toolNode != null && toolNode.isTextual() && argsNode != null && argsNode.isObject()) {
+                String toolRaw = toolNode.asText();
+                String tool = canonicalizeToolId(toolRaw);
+                if (toolSchemaRegistry == null || tool == null || !toolSchemaRegistry.hasTool(tool)) {
+                    return ToolDecisionParseResult.error(ToolCallParser.ERR_UNKNOWN_TOOL,
+                        toolRaw != null ? ("unknown-tool:" + truncate(toolRaw, 60)) : null);
+                }
+                String nonce = nonceNode != null && nonceNode.isTextual() ? nonceNode.asText() : null;
+                if (expectedNonce != null && !expectedNonce.isBlank()) {
+                    if (nonce == null || !expectedNonce.equals(nonce)) {
+                        return ToolDecisionParseResult.error(ToolCallParser.ERR_NONCE_INVALID, null);
+                    }
+                }
+                ToolSchema schema = toolSchemaRegistry.getSchema(tool);
+                JsonNode normalizedArgsNode = schema != null ? schema.normalizeArgsNode(argsNode) : argsNode;
+                String validationError = schema != null ? schema.validate(normalizedArgsNode) : null;
+                if (validationError != null) {
+                    return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_ARGS, validationError);
+                }
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> args = objectMapper.convertValue(normalizedArgsNode, java.util.Map.class);
+                ToolCall call = new ToolCall(tool, args, trimmed, nonce);
+                return ToolDecisionParseResult.tool(call);
+            }
             return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "missing-action");
         }
         String action = actionNode.asText();
@@ -797,19 +1189,83 @@ public class ChatController implements Controller {
                 return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_FORMAT, "unknown-field:" + field);
             }
         }
-        String tool = toolNode.asText();
-        if (toolSchemaRegistry == null || !toolSchemaRegistry.hasTool(tool)) {
-            return ToolDecisionParseResult.error(ToolCallParser.ERR_UNKNOWN_TOOL, null);
+        String toolRaw = toolNode.asText();
+        String tool = canonicalizeToolId(toolRaw);
+        if (toolSchemaRegistry == null || tool == null || !toolSchemaRegistry.hasTool(tool)) {
+            return ToolDecisionParseResult.error(ToolCallParser.ERR_UNKNOWN_TOOL,
+                toolRaw != null ? ("unknown-tool:" + truncate(toolRaw, 60)) : null);
         }
         ToolSchema schema = toolSchemaRegistry.getSchema(tool);
-        String validationError = schema != null ? schema.validate(argsNode) : null;
+        JsonNode normalizedArgsNode = schema != null ? schema.normalizeArgsNode(argsNode) : argsNode;
+        String validationError = schema != null ? schema.validate(normalizedArgsNode) : null;
         if (validationError != null) {
             return ToolDecisionParseResult.error(ToolCallParser.ERR_INVALID_ARGS, validationError);
         }
         @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> args = objectMapper.convertValue(argsNode, java.util.Map.class);
+        java.util.Map<String, Object> args = objectMapper.convertValue(normalizedArgsNode, java.util.Map.class);
         ToolCall call = new ToolCall(tool, args, trimmed, nonce);
         return ToolDecisionParseResult.tool(call);
+    }
+
+    private String canonicalizeToolId(String raw) {
+        if (raw == null) return null;
+        String tool = raw.trim();
+        if (tool.isBlank()) return null;
+        if (toolSchemaRegistry == null) return tool;
+        if (toolSchemaRegistry.hasTool(tool)) return tool;
+        String lower = tool.toLowerCase();
+        String alias = TOOL_ALIASES.get(lower);
+        if (alias != null && toolSchemaRegistry.hasTool(alias)) return alias;
+        if (toolSchemaRegistry.hasTool(lower)) return lower;
+        String underscored = tool.replace('-', '_');
+        if (toolSchemaRegistry.hasTool(underscored)) return underscored;
+        String underscoredLower = underscored.toLowerCase();
+        String alias2 = TOOL_ALIASES.get(underscoredLower);
+        if (alias2 != null && toolSchemaRegistry.hasTool(alias2)) return alias2;
+        if (toolSchemaRegistry.hasTool(underscoredLower)) return underscoredLower;
+        return tool;
+    }
+
+    private static java.util.Map<String, String> buildToolAliases() {
+        java.util.HashMap<String, String> map = new java.util.HashMap<>();
+        map.put("file_viewer", "file_locator");
+        map.put("fileviewer", "file_locator");
+        map.put("read_file", "file_reader");
+        map.put("readfile", "file_reader");
+        map.put("file_browser", "file_locator");
+        map.put("filebrowser", "file_locator");
+        map.put("browse_files", "file_locator");
+        map.put("list_files", "file_locator");
+        map.put("listfiles", "file_locator");
+
+        map.put("issue_search", "search_issues");
+        map.put("issues_search", "search_issues");
+        map.put("issue_finder", "search_issues");
+        map.put("issue_tracker_search", "search_issues");
+
+        map.put("issue_summary", "issue_status_summarizer");
+        map.put("issue_status_summary", "issue_status_summarizer");
+        map.put("status_summarizer", "issue_status_summarizer");
+
+        map.put("stakes_map", "stakes_mapper");
+        map.put("stakes_mapping", "stakes_mapper");
+
+        map.put("line_edit", "line_editor");
+        map.put("line_editor_tool", "line_editor");
+
+        map.put("impact_analyzer", "scene_impact_analyzer");
+        map.put("scene_analyzer", "scene_impact_analyzer");
+
+        map.put("reader_simulator", "reader_experience_simulator");
+        map.put("reader_sim", "reader_experience_simulator");
+
+        map.put("timeline_check", "timeline_validator");
+        map.put("timeline_checker", "timeline_validator");
+
+        map.put("beat_builder", "beat_architect");
+        map.put("beat_generator", "beat_architect");
+
+        return java.util.Collections.unmodifiableMap(map);
     }
 
     private boolean containsMultipleJsonObjects(String trimmed) {
@@ -840,6 +1296,38 @@ public class ChatController implements Controller {
             .arg("max_results", com.miniide.tools.ToolArgSpec.Type.INT, false)
             .arg("include_globs", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            // Common arg name hallucinations / casing drift from models:
+            .alias("searchCriteria", "search_criteria")
+            .alias("searchcriteria", "search_criteria")
+            .alias("criteria", "search_criteria")
+            .alias("query", "search_criteria")
+            .alias("path", "search_criteria")
+            .alias("root", "search_criteria")
+            .alias("directory", "search_criteria")
+            .alias("dir", "search_criteria")
+            .alias("folder", "search_criteria")
+            .alias("scanMode", "scan_mode")
+            .alias("scanmode", "scan_mode")
+            .alias("maxResults", "max_results")
+            .alias("maxresults", "max_results")
+            .alias("includeGlobs", "include_globs")
+            .alias("includeglobs", "include_globs")
+            .alias("dryRun", "dry_run")
+            .alias("dryrun", "dry_run")
+        );
+        registry.register(new ToolSchema("file_reader")
+            .arg("file_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("start_line", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("end_line", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("include_line_numbers", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            .alias("path", "file_path")
+            .alias("file", "file_path")
+            .alias("filePath", "file_path")
+            .alias("startLine", "start_line")
+            .alias("endLine", "end_line")
+            .alias("includeLineNumbers", "include_line_numbers")
+            .alias("dryRun", "dry_run")
         );
         registry.register(new ToolSchema("outline_analyzer")
             .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
@@ -856,6 +1344,9 @@ public class ChatController implements Controller {
             .arg("user_request", com.miniide.tools.ToolArgSpec.Type.STRING, true)
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
         );
+        registry.register(new ToolSchema("issue_status_summarizer")
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
         registry.register(new ToolSchema("search_issues")
             .arg("tags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
             .arg("assignedTo", com.miniide.tools.ToolArgSpec.Type.STRING, false)
@@ -866,9 +1357,23 @@ public class ChatController implements Controller {
             .arg("excludePersonalTags", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
             .arg("minInterestLevel", com.miniide.tools.ToolArgSpec.Type.INT, false)
         );
+        registry.register(new ToolSchema("stakes_mapper")
+            .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("scene_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, false)
+            .arg("max_scenes", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
         registry.register(new ToolSchema("prose_analyzer")
             .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
             .arg("focus", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("pacing", "voice", "rhythm", "all"))
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("line_editor")
+            .arg("file_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("text", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("start_line", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("end_line", com.miniide.tools.ToolArgSpec.Type.INT, false)
+            .arg("max_edits", com.miniide.tools.ToolArgSpec.Type.INT, false)
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
         );
         registry.register(new ToolSchema("consistency_checker")
@@ -880,6 +1385,25 @@ public class ChatController implements Controller {
             .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
             .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
             .arg("include_canon", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("scene_impact_analyzer")
+            .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("reader_experience_simulator")
+            .arg("scene_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, true)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("timeline_validator")
+            .arg("file_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, true)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("beat_architect")
+            .arg("scene_brief", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("density", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("lean", "balanced", "dense"))
+            .arg("max_clusters", com.miniide.tools.ToolArgSpec.Type.INT, false)
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
         );
         return registry;

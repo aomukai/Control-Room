@@ -83,6 +83,11 @@
         'error',
         'budget-limit'
     ];
+    // Some STOP_HOOK types are emitted by the server/tool gate (not by the model). We should parse and surface them,
+    // but we should not include them in the model-facing STOP_HOOK_TYPES list above.
+    const STOP_HOOK_PARSE_TYPES = STOP_HOOK_TYPES.concat([
+        'tool_call_rejected'
+    ]);
 
     function stripThinkingTags(content) {
         if (!content) return content;
@@ -146,13 +151,14 @@
         const text = stripThinkingTags(content || '');
         const lines = String(text || '').split('\n');
         const first = lines[0] ? lines[0].trim() : '';
-        const match = first.match(/^\[?STOP[ _-]?HOOK\s*:\s*([a-z-]+)\]?\s*(.*)$/i);
+        // Allow underscores since the server may emit types like "tool_call_rejected".
+        const match = first.match(/^\[?STOP[ _-]?HOOK\s*:\s*([a-z_-]+)\]?\s*(.*)$/i);
         if (!match) {
             return { content: text, stopHook: null, stopHookDetail: '' };
         }
 
         const hook = match[1].toLowerCase();
-        if (!STOP_HOOK_TYPES.includes(hook)) {
+        if (!STOP_HOOK_PARSE_TYPES.includes(hook)) {
             return { content: text, stopHook: null, stopHookDetail: '' };
         }
 

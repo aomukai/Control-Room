@@ -22,6 +22,16 @@
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"file_locator\",\"args\":{\"search_criteria\":\"Story/SCN-outline.md\",\"scan_mode\":\"FAST_SCAN\",\"max_results\":12,\"include_globs\":false,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- search_criteria: string (required)\n- scan_mode?: \"FAST_SCAN\" | \"DEEP_SCAN\"\n- max_results?: number\n- include_globs?: boolean\n- dry_run?: boolean\n\nSearch locations:\n- Story/Scenes/ (scene files, e.g. Story/Scenes/SCN-scene-slug.md)\n- Compendium/ (canon/worldbuilding, e.g. Compendium/Characters/CHAR-name.md)\n- Story/SCN-outline.md (story structure, virtual)\n\nMetadata fields to return per file:\n- Type: scene/canon/outline\n- POV (if scene) with confidence and match_basis\n- Scene # (if applicable) with confidence and match_basis\n- Size: word count or file size\n- Modified: last modified timestamp\n- Keywords: list with confidence and match_basis\n\nMatch basis values: FILENAME_MATCH | CONTENT_MATCH | METADATA_MATCH\n\nIf scan_mode=DEEP_SCAN, estimate token usage before loading content:\nDEEP_SCAN requested on [N] files (estimated [TOKENS] tokens).\nWARNING if TOKENS > 30000. Recommend FAST_SCAN or reduce scope to <= 6 files.\nProceed anyway? [yes/no]\n\nIf dry_run=true, output what would be scanned and estimated token usage only."
     },
     {
+      "id": "file_reader",
+      "name": "File Reader",
+      "archetype": "Any",
+      "scope": "project",
+      "usageNotes": "Use to read a specific line range from a file so quotes and line references can be grounded deterministically.",
+      "goals": "Return a line-numbered excerpt from a VFS file for evidence and editing tools.",
+      "guardrails": "Never invent file contents. Require an existing VFS file path (use file_locator first if needed). Keep excerpts small (<= 250 lines).",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"file_reader\",\"args\":{\"file_path\":\"Story/SCN-outline.md\",\"start_line\":1,\"end_line\":40,\"include_line_numbers\":true,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- file_path: string (required)\n- start_line?: number (default: 1)\n- end_line?: number (default: start_line + ~80; capped)\n- include_line_numbers?: boolean (default: true)\n- dry_run?: boolean\n\nTip: If the model tries `read_file`, the backend will alias it to `file_reader`."
+    },
+    {
       "id": "task_router",
       "name": "Task Router",
       "archetype": "Chief",
@@ -80,6 +90,76 @@
       "goals": "Verify scene meets structural requirements, matches outline beat intent, and does not contradict canon. Bundle context that would otherwise require 3 tool calls.",
       "guardrails": "MUST check scene against outline beat if one exists. MUST verify POV character consistency with canon if include_canon is true. NEVER approve a scene that contradicts established facts. Quote scene, outline, and canon for any claim.",
       "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"scene_draft_validator\",\"args\":{\"scene_path\":\"Story/Scenes/SCN-slug.md\",\"include_canon\":true,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_path: string (required) — VFS path to the scene file\n- outline_path?: string (default: \"Story/SCN-outline.md\")\n- include_canon?: boolean (default: true) — also load POV character's canon card\n- dry_run?: boolean\n\nReturns scene content, auto-matched outline beat (with match method), and optional POV canon card.\n\nValidation checklist:\n1. Does scene match outline beat intent?\n2. Is POV character voice consistent with canon?\n3. Does scene have clear beginning/middle/end?\n4. Are there contradictions with established canon?\n5. Are sensory details appropriate for species/setting?\n\nReport format:\nScene: [filename]\nOutline beat: [quote beat description or \"No match found\"]\n\nValidation Results:\nPASS: [aspect that passes with evidence]\nWARN: [aspect needing attention with quote]\nFAIL: [aspect that fails with quote from both scene and canon/outline]\n\nCanon Check:\nQuote from canon: \"[relevant canon text]\"\nScene text: \"[relevant scene text]\"\nStatus: Consistent | Inconsistent | Unclear\n\nRecommendation: APPROVE | REVISE | FLAG_FOR_REVIEW\n\nIf dry_run=true, output which files would be checked."
+    },
+    {
+      "id": "issue_status_summarizer",
+      "name": "Issue Status Summarizer",
+      "archetype": "Chief",
+      "scope": "project",
+      "usageNotes": "Use when the user asks for project status, what is in progress, or a quick situational overview.",
+      "goals": "Summarize open issues and show recent tool activity for the current session with receipt IDs (no guesswork).",
+      "guardrails": "Do not invent issues or activity. If no receipts exist for the current session, say so.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"issue_status_summarizer\",\"args\":{\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- dry_run?: boolean\n\nReturns:\n- active_issues (up to 20)\n- issue_counts\n- recent_activity (up to 5 receipts)\n- files_touched (derived from recent receipts)"
+    },
+    {
+      "id": "stakes_mapper",
+      "name": "Stakes Mapper",
+      "archetype": "Planner",
+      "scope": "project",
+      "usageNotes": "Use to map external and internal stakes across an outline or across specific scene files.",
+      "goals": "Provide grounded scene-by-scene context (outline summaries or scene excerpts) plus candidate stake lines to accelerate analysis.",
+      "guardrails": "Do not assume outline path; use default Story/SCN-outline.md unless user specifies. If scenes are provided, use exact scene_paths.",
+      "prompt": "Tool call (JSON only; no extra text):\n\nOutline-driven map:\n{\"tool\":\"stakes_mapper\",\"args\":{\"outline_path\":\"Story/SCN-outline.md\",\"max_scenes\":20,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nScene-driven map:\n{\"tool\":\"stakes_mapper\",\"args\":{\"scene_paths\":[\"Story/Scenes/SCN-slug.md\"],\"max_scenes\":12,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- outline_path?: string\n- scene_paths?: string[]\n- max_scenes?: number\n- dry_run?: boolean\n\nReturns:\n- scenes[] with summaries/excerpts and stakes_candidates[] (heuristic candidates for the model to interpret)"
+    },
+    {
+      "id": "line_editor",
+      "name": "Line Editor",
+      "archetype": "Editor",
+      "scope": "project",
+      "usageNotes": "Use to surface line-level edit opportunities (clarity, repetition, filler, adverbs) for a passage or file excerpt.",
+      "goals": "Produce deterministic, grounded edit findings so the model can propose safe rewrites without hallucinating source text.",
+      "guardrails": "This tool does not rewrite prose; it flags edit opportunities. The model must preserve meaning and voice when proposing final revisions.",
+      "prompt": "Tool call (JSON only; no extra text):\n\nFrom a file:\n{\"tool\":\"line_editor\",\"args\":{\"file_path\":\"Story/Scenes/SCN-slug.md\",\"start_line\":1,\"end_line\":120,\"max_edits\":12,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nFrom inline text:\n{\"tool\":\"line_editor\",\"args\":{\"text\":\"...\",\"max_edits\":12,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- file_path?: string\n- text?: string\n- start_line?: number\n- end_line?: number\n- max_edits?: number\n- dry_run?: boolean\n\nReturns:\n- excerpt + findings[] (each includes original snippet or signal and a suggestion)"
+    },
+    {
+      "id": "scene_impact_analyzer",
+      "name": "Scene Impact Analyzer",
+      "archetype": "Critic",
+      "scope": "project",
+      "usageNotes": "Use to assess whether a scene has a strong hook, clear pressure, and a satisfying ending by loading opening/ending excerpts and basic impact signals.",
+      "goals": "Bundle opening/ending excerpts, basic impact signals, and optional outline beat match in one call.",
+      "guardrails": "Quote the scene text for all impact claims. If outline match is missing, do not assume intended purpose.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"scene_impact_analyzer\",\"args\":{\"scene_path\":\"Story/Scenes/SCN-slug.md\",\"outline_path\":\"Story/SCN-outline.md\",\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_path: string (required)\n- outline_path?: string (default: Story/SCN-outline.md)\n- dry_run?: boolean\n\nReturns:\n- opening, ending excerpts\n- impact_signals (dialogue ratio, punctuation, conflict-marker counts)\n- outline_match (best-effort)"
+    },
+    {
+      "id": "reader_experience_simulator",
+      "name": "Reader Experience Simulator",
+      "archetype": "Critic",
+      "scope": "project",
+      "usageNotes": "Use to evaluate reading flow across a sequence of scenes by loading each scene's opening/ending and building transition pairs.",
+      "goals": "Provide a grounded substrate so the model can simulate confusion/fatigue/engagement without inventing text.",
+      "guardrails": "Use only the provided scene_paths in reading order. Quote the exact moments when describing reader friction.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"reader_experience_simulator\",\"args\":{\"scene_paths\":[\"Story/Scenes/SCN-1.md\",\"Story/Scenes/SCN-2.md\"],\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_paths: string[] (required, max 12)\n- dry_run?: boolean\n\nReturns:\n- scenes[] with opening/ending excerpts and entities\n- transitions[] with from_ending and to_opening excerpts"
+    },
+    {
+      "id": "timeline_validator",
+      "name": "Timeline Validator",
+      "archetype": "Continuity",
+      "scope": "project",
+      "usageNotes": "Use to extract time markers from multiple files and build a quote-backed timeline skeleton for chronology checks.",
+      "goals": "Extract time references (dates, 'three days later', morning/evening cues) with line numbers so contradictions can be flagged with evidence.",
+      "guardrails": "Do not infer chronology beyond extracted quotes. Flashbacks are not errors by default; the model must interpret intent.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"timeline_validator\",\"args\":{\"file_paths\":[\"Story/Scenes/SCN-1.md\",\"Story/Scenes/SCN-2.md\"],\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- file_paths: string[] (required, max 12)\n- dry_run?: boolean\n\nReturns:\n- per-file time_markers[] with line numbers\n- timeline[] flattened in reading order"
+    },
+    {
+      "id": "beat_architect",
+      "name": "Beat Architect",
+      "archetype": "Any",
+      "scope": "project",
+      "usageNotes": "Use to turn a scene brief into a beat-cluster scaffold that downstream drafting can follow.",
+      "goals": "Generate a cluster template (SCENE START → CONTINUATIONS → SCENE ENDING) and force clarification when the brief is underspecified.",
+      "guardrails": "Never invent canon facts. If needs_clarification=true, ask the returned questions before generating beat content.",
+      "prompt": "Tool call (JSON only; no extra text):\n{\"tool\":\"beat_architect\",\"args\":{\"scene_brief\":\"...\",\"density\":\"balanced\",\"max_clusters\":10,\"dry_run\":false},\"nonce\":\"<TOOL_NONCE>\"}\n\nArgs:\n- scene_brief: string (required)\n- density?: \"lean\" | \"balanced\" | \"dense\"\n- max_clusters?: number\n- dry_run?: boolean\n\nReturns:\n- confidence_in_comprehension + needs_clarification\n- questions[] (if clarification needed)\n- cluster_templates[] scaffold (if ready)\n\nThe model should fill each cluster with concrete, canon-aware content."
     }
   ]
 }

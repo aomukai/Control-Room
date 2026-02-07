@@ -1,4 +1,4 @@
-# Grounding + Tooling State Machine (v0.3)
+# Grounding + Tooling State Machine (v0.4)
 
 Purpose: Track requirements, sequencing, and status for grounding + tool execution across the platform.
 Conference chat is the current playground, but all rules apply system-wide (conference + tasks + any agent loop).
@@ -60,6 +60,37 @@ We are hardening agent responses so agents:
 - LM Studio model still emits chain-of-thought unless JSON schema is applied; confirm schema enforcement works end-to-end.
 - Evidence line can be fabricated without tool-backed excerpts (needs stronger file-read tooling later).
 - Tool call required detection is heuristic; may need explicit contract flag instead of string matching.
+
+## What’s Happening In Practice (Tool-Call Compliance)
+We are now past "are the tools implemented" and into "can real models drive the tool protocol reliably".
+
+Observed failure modes (conference + 1:1):
+- Models ignore "JSON-only tool call" instructions and answer in prose.
+- Models emit tool-ish JSON but choose the wrong tool id (e.g. `file_viewer`, `file_reader`) instead of the registered tool id (`file_locator`).
+- Models choose the right tool but use the wrong arg keys (e.g. `root`, `path`, `searchCriteria`) and fail schema validation.
+- Models mix protocols (tool-call envelope vs decision envelope) or emit STOP_HOOK text as normal prose.
+- Some models hallucinate `receipt_id: rcpt_...` without actually running tools.
+
+Hardening already in place:
+- Backend tool protocol loop with strict JSON + nonce + schema checks (ChatController).
+- Stop hook parsing in UI now recognizes `STOP_HOOK: tool_call_rejected` (underscore type).
+- Tool id aliasing in backend parser to map common hallucinations to real tools (small, curated map).
+- Arg aliasing and arg-key normalization (trim/lower/separator normalization) to tolerate common key drift.
+- Added `file_reader` as a real tool so models that naturally call "read a file excerpt" don’t get mis-aliased into `file_locator`.
+- When "Require tool on first step" is enabled in conference, we reduce prompt bloat (skip tool catalog + skip early grounding header) to improve local-model compliance and avoid timeouts.
+
+What is still failing / confusing right now:
+- Conference UI can still surface a failure as an "Ungrounded response" when the real issue is "tool call required but model refused/ignored it".
+  - This happens when the model replies in prose (no STOP_HOOK, no JSON tool call) and the UI immediately runs the Evidence validator.
+  - Result: misleading rejections like quote-not-found/missing evidence instead of a clean tool_call_required failure.
+
+Next changes to make this "waterproof":
+1) Conference UI gating when requireTool is enabled:
+   - If `toolPolicy.requireTool` is true and the agent reply is not strict JSON and not a STOP_HOOK, reject with a tool-call specific message and skip Evidence validation.
+2) Receipt reality checks:
+   - When a reply claims tool use (mentions tools / includes `receipt_id`), verify the receipt exists for the current session before accepting the Evidence line.
+3) Expand aliasing cautiously:
+   - Keep the alias map small and high-confidence, but add obvious variants as we encounter them (e.g. `file_viewer` -> `file_locator`, `read_file` -> `file_reader`).
 
 ## Acceptance Tests (conference)
 1) Agent cites a quote that is not in file → rejected.
@@ -136,6 +167,12 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - Validation: tool must be registered, args must match schema, nonce must match current turn.
 - Rejections: `tool_call_invalid_format`, `tool_call_unknown_tool`, `tool_call_invalid_args`, `tool_call_multiple`, `tool_call_nonce_invalid`.
 
+### Tool Name Drift (Alias Policy)
+Some models reliably produce *nearby* tool names (e.g. `file_viewer`) rather than the exact registered id (`file_locator`).
+We support a curated alias map in the backend parser:
+- Only map aliases that are unambiguous and safe.
+- Prefer adding a real tool (like `file_reader`) over aliasing a distinct tool intent into an existing tool with incompatible args.
+
 ## Tool Execution Loop (Backend)
 - Entry point: `src/main/java/com/miniide/controllers/ChatController.java`
 - Flow: prompt → (tool call?) → execute → append result → repeat up to the tier-based tool budget.
@@ -170,6 +207,7 @@ This section is the full source of truth for how grounding + tools + receipts wo
 
 ## Tool IDs (Implemented and Required to Test)
 - `file_locator`: locate files in VFS.
+- `file_reader`: read a line-range excerpt from a file (used to support grounded quotes and to match common model intent).
 - `outline_analyzer`: analyze outline structure.
 - `canon_checker`: compare scenes vs canon.
 - `task_router`: classify and route tasks by role.

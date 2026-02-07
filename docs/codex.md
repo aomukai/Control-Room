@@ -14,7 +14,8 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Tool suite expansion: implement remaining tools (issue_status_summarizer, stakes_mapper, line_editor, scene_impact_analyzer, reader_experience_simulator, timeline_validator, beat_architect) from basic_tool_suite.md.
+- Tool-call harness hardening (conference + 1:1): make "Require tool on first step" robust across real models, especially smaller/local ones.
+- Tool suite expansion: implemented (see roadmap.md). Remaining work is harness reliability and model compliance.
 - Canon index UX: polish indexing flow, handle edge cases (model failure mid-index, re-index trigger).
 - Conference grounding hardening: remaining gaps from statemachine.md.
 
@@ -35,9 +36,12 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 - Tool implementation progress tracked in memory/tool-implementation.md.
 
 ## Next Session Plan
-1) User compiles and tests consistency_checker + scene_draft_validator end-to-end.
-2) Begin implementing next tool from the suite (timeline_validator or line_editor).
-3) Canon index UX edge cases (model failure mid-index, re-index trigger).
+1) Verify tool-call compliance end-to-end with "Require tool on first step" enabled:
+   - At least one strong instruct model (baseline) and one smaller/local model (stress).
+2) If models still answer in prose when tools are required:
+   - Improve conference UI gating to treat non-JSON responses as tool-call failures (not grounding failures).
+   - Ensure any claim of tool use must cite a real `receipt_id` that exists for the session.
+3) Only after tool harness is stable: continue tool suite work and canon index UX polish.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.
@@ -47,3 +51,10 @@ Guardrails:
 - Do not redesign Workbench layout or introduce new flows beyond the active milestone scope.
 - Update roadmap/docs only when required to reflect completed work or resolve contradictions.
 - Prompt hygiene matters: design + test prompts for small/quirky local models (e.g., lfm2, gpt-oss). Conference is only a test harness; all fixes must be platform-wide.
+
+## Current Reality (Notes For Codex)
+- Tools can be fully implemented and still "not work" in practice if the model won’t emit strict JSON tool calls or selects the wrong tool/args.
+- Treat this as a protocol/harness problem, not a tool implementation problem.
+- When debugging:
+  - Prefer STOP_HOOK tool-call failures over Evidence validator failures when `requireTool` is enabled.
+  - Use session receipts (`/api/audit/sessions/<id>/receipts` via UI) to confirm tools actually ran instead of trusting model-provided `receipt_id`.

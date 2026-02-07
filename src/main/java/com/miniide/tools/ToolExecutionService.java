@@ -29,13 +29,21 @@ import java.util.stream.Collectors;
 public class ToolExecutionService {
     private static final Set<String> SUPPORTED_TOOLS = Set.of(
         "file_locator",
+        "file_reader",
         "outline_analyzer",
         "canon_checker",
         "task_router",
+        "issue_status_summarizer",
         "search_issues",
+        "stakes_mapper",
         "prose_analyzer",
+        "line_editor",
         "consistency_checker",
-        "scene_draft_validator"
+        "scene_draft_validator",
+        "scene_impact_analyzer",
+        "reader_experience_simulator",
+        "timeline_validator",
+        "beat_architect"
     );
 
     private final ProjectContext projectContext;
@@ -70,6 +78,9 @@ public class ToolExecutionService {
                 case "file_locator":
                     run = executeFileLocator(call.getArgs());
                     break;
+                case "file_reader":
+                    run = executeFileReader(call.getArgs());
+                    break;
                 case "outline_analyzer":
                     run = executeOutlineAnalyzer(call.getArgs());
                     break;
@@ -79,17 +90,38 @@ public class ToolExecutionService {
                 case "task_router":
                     run = executeTaskRouter(call.getArgs());
                     break;
+                case "issue_status_summarizer":
+                    run = executeIssueStatusSummarizer(call.getArgs(), context);
+                    break;
                 case "search_issues":
                     run = executeSearchIssues(call.getArgs());
                     break;
+                case "stakes_mapper":
+                    run = executeStakesMapper(call.getArgs());
+                    break;
                 case "prose_analyzer":
                     run = executeProseAnalyzer(call.getArgs());
+                    break;
+                case "line_editor":
+                    run = executeLineEditor(call.getArgs());
                     break;
                 case "consistency_checker":
                     run = executeConsistencyChecker(call.getArgs());
                     break;
                 case "scene_draft_validator":
                     run = executeSceneDraftValidator(call.getArgs());
+                    break;
+                case "scene_impact_analyzer":
+                    run = executeSceneImpactAnalyzer(call.getArgs());
+                    break;
+                case "reader_experience_simulator":
+                    run = executeReaderExperienceSimulator(call.getArgs());
+                    break;
+                case "timeline_validator":
+                    run = executeTimelineValidator(call.getArgs());
+                    break;
+                case "beat_architect":
+                    run = executeBeatArchitect(call.getArgs());
                     break;
                 default:
                     run = ToolRun.of("Unsupported tool: " + tool);
@@ -160,6 +192,58 @@ public class ToolExecutionService {
         root.put("notes", scanMode.equals("DEEP_SCAN")
             ? "DEEP_SCAN requested; content not loaded in MVP."
             : "FAST_SCAN results; content not loaded.");
+        return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+    }
+
+    private ToolRun executeFileReader(Map<String, Object> args) throws IOException {
+        String filePath = stringArg(args, "file_path", "");
+        if (filePath == null || filePath.isBlank()) {
+            filePath = stringArg(args, "path", "");
+        }
+        int startLine = intArg(args, "start_line", 1);
+        int endLine = intArg(args, "end_line", Math.max(startLine, startLine + 80));
+        boolean includeLineNumbers = boolArg(args, "include_line_numbers", true);
+
+        startLine = Math.max(1, startLine);
+        endLine = Math.max(startLine, endLine);
+        int maxLines = 250;
+        if (endLine - startLine + 1 > maxLines) {
+            endLine = startLine + maxLines - 1;
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "file_reader");
+        root.put("file_path", filePath);
+        root.put("start_line", startLine);
+        root.put("end_line", endLine);
+        root.put("include_line_numbers", includeLineNumbers);
+
+        if (filePath == null || filePath.isBlank()) {
+            root.put("error", "Missing required file_path.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        String content = readFile(filePath);
+        if (content == null) {
+            root.put("error", "File not found or unreadable.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        List<String> lines = List.of(content.split("\n", -1));
+        root.put("total_lines", lines.size());
+
+        int startIdx = Math.min(lines.size(), startLine - 1);
+        int endIdxExclusive = Math.min(lines.size(), endLine);
+
+        StringBuilder excerpt = new StringBuilder();
+        for (int i = startIdx; i < endIdxExclusive; i++) {
+            int lineNo = i + 1;
+            if (includeLineNumbers) {
+                excerpt.append(lineNo).append(": ");
+            }
+            excerpt.append(lines.get(i));
+            if (i < endIdxExclusive - 1) excerpt.append("\n");
+        }
+        root.put("excerpt", excerpt.toString());
         return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
     }
 
@@ -567,6 +651,281 @@ public class ToolExecutionService {
         return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
     }
 
+    // ── issue_status_summarizer ────────────────────────────────────
+
+    private ToolRun executeIssueStatusSummarizer(Map<String, Object> args, ToolExecutionContext context) throws IOException {
+        boolean dryRun = boolArg(args, "dry_run", false);
+        if (dryRun) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "issue_status_summarizer");
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "issue_status_summarizer");
+
+        // Issues
+        ArrayNode active = root.putArray("active_issues");
+        int openCount = 0;
+        int waitingCount = 0;
+        int closedCount = 0;
+        if (issueService != null) {
+            List<Issue> issues = new ArrayList<>(issueService.listIssues());
+            issues.sort(Comparator.comparingLong(Issue::getUpdatedAt).reversed());
+            for (Issue issue : issues) {
+                String status = safe(issue.getStatus()).toLowerCase(Locale.ROOT);
+                if ("closed".equals(status)) {
+                    closedCount++;
+                    continue;
+                }
+                if ("waiting-on-user".equals(status)) {
+                    waitingCount++;
+                } else if ("open".equals(status)) {
+                    openCount++;
+                } else {
+                    openCount++;
+                }
+                ObjectNode entry = active.addObject();
+                entry.put("id", issue.getId());
+                entry.put("title", safe(issue.getTitle()));
+                entry.put("assignedTo", safe(issue.getAssignedTo()));
+                entry.put("status", safe(issue.getStatus()));
+                entry.put("priority", safe(issue.getPriority()));
+                entry.put("updatedAt", issue.getUpdatedAt());
+                if (issue.getTags() != null && !issue.getTags().isEmpty()) {
+                    ArrayNode tags = entry.putArray("tags");
+                    issue.getTags().stream().limit(12).forEach(tags::add);
+                }
+                if (active.size() >= 20) break;
+            }
+        } else {
+            root.put("issues_note", "Issue service unavailable.");
+        }
+        ObjectNode counts = root.putObject("issue_counts");
+        counts.put("open", openCount);
+        counts.put("waiting_on_user", waitingCount);
+        counts.put("closed", closedCount);
+
+        // Recent receipts for the current session (if available)
+        String sessionId = context != null ? context.getSessionId() : null;
+        if ((sessionId == null || sessionId.isBlank()) && context != null && context.getTaskId() != null) {
+            sessionId = context.getTaskId();
+        }
+        String sessionIdSource = "context";
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = findLatestSessionWithReceipts();
+            sessionIdSource = sessionId != null ? "latest" : "none";
+        }
+        ArrayNode recent = root.putArray("recent_activity");
+        ArrayNode touched = root.putArray("files_touched");
+
+        List<Map<String, Object>> receipts = readRecentToolReceipts(sessionId, 5);
+        java.util.Set<String> touchedPaths = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> rcpt : receipts) {
+            ObjectNode entry = recent.addObject();
+            entry.put("receipt_id", safeObj(rcpt.get("receipt_id")));
+            entry.put("agent_id", safeObj(rcpt.get("agent_id")));
+            entry.put("tool_id", safeObj(rcpt.get("tool_id")));
+            entry.put("timestamp", safeObj(rcpt.get("timestamp")));
+            Object fileRefs = rcpt.get("file_refs");
+            if (fileRefs instanceof List<?> list) {
+                ArrayNode files = entry.putArray("file_refs");
+                for (Object o : list) {
+                    if (!(o instanceof Map<?, ?> m)) continue;
+                    Object p = m.get("path");
+                    if (p != null) {
+                        String path = p.toString();
+                        files.add(path);
+                        touchedPaths.add(path);
+                    }
+                }
+            }
+        }
+        for (String path : touchedPaths.stream().limit(30).toList()) {
+            touched.add(path);
+        }
+        if (receipts.isEmpty()) {
+            root.put("recent_activity_note", sessionIdSource.equals("none")
+                ? "No session id available in context; no receipts to summarize."
+                : "No session receipts found for session_id=" + sessionId + ".");
+        } else {
+            root.put("session_id", sessionId);
+            root.put("session_id_source", sessionIdSource);
+        }
+
+        root.put("status", (openCount + waitingCount) == 0
+            ? "No issues currently tracked (or all closed)."
+            : "Active issues present; see active_issues and recent_activity.");
+        return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+    }
+
+    private String findLatestSessionWithReceipts() {
+        if (projectContext == null || projectContext.audit() == null) return null;
+        try {
+            Path sessionsRoot = projectContext.audit().getSessionsRoot();
+            if (sessionsRoot == null || !Files.exists(sessionsRoot)) return null;
+            Path newest = null;
+            long newestMs = -1;
+            try (var stream = Files.list(sessionsRoot)) {
+                for (Path dir : stream.toList()) {
+                    if (!Files.isDirectory(dir)) continue;
+                    Path receipts = dir.resolve("tool_receipts.jsonl");
+                    if (!Files.exists(receipts)) continue;
+                    long ms = Files.getLastModifiedTime(receipts).toMillis();
+                    if (ms > newestMs) {
+                        newestMs = ms;
+                        newest = dir;
+                    }
+                }
+            }
+            return newest != null ? newest.getFileName().toString() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> readRecentToolReceipts(String sessionId, int limit) {
+        if (limit <= 0) return List.of();
+        if (projectContext == null || projectContext.audit() == null) return List.of();
+        if (sessionId == null || sessionId.isBlank()) return List.of();
+        try {
+            Path receipts = projectContext.audit().getSessionsRoot()
+                .resolve(sessionId.trim().replaceAll("[^a-zA-Z0-9._-]+", "_"))
+                .resolve("tool_receipts.jsonl");
+            if (!Files.exists(receipts)) {
+                return List.of();
+            }
+            List<String> lines = Files.readAllLines(receipts, StandardCharsets.UTF_8);
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (int i = Math.max(0, lines.size() - limit); i < lines.size(); i++) {
+                String line = lines.get(i);
+                if (line == null || line.isBlank()) continue;
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> node = objectMapper.readValue(line, Map.class);
+                    result.add(node);
+                } catch (Exception ignored) {
+                }
+            }
+            return result;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private String safeObj(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
+    // ── stakes_mapper ──────────────────────────────────────────────
+
+    private ToolRun executeStakesMapper(Map<String, Object> args) throws IOException {
+        String outlinePath = stringArg(args, "outline_path", "Story/SCN-outline.md");
+        List<String> scenePaths = listArg(args, "scene_paths");
+        int maxScenes = intArg(args, "max_scenes", 20);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "stakes_mapper");
+        root.put("outline_path", outlinePath);
+        root.put("max_scenes", maxScenes);
+        if (scenePaths != null && !scenePaths.isEmpty()) {
+            ArrayNode arr = root.putArray("scene_paths");
+            scenePaths.forEach(arr::add);
+        }
+        if (dryRun) {
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ToolRun refCollector = ToolRun.of("");
+
+        if (scenePaths != null && !scenePaths.isEmpty()) {
+            ArrayNode scenes = root.putArray("scenes");
+            for (String path : scenePaths.stream().limit(Math.max(1, maxScenes)).toList()) {
+                ObjectNode entry = scenes.addObject();
+                entry.put("path", path);
+                try {
+                    String content = readFile(path);
+                    if (content == null || content.isBlank()) {
+                        entry.put("error", "File not found or empty.");
+                        continue;
+                    }
+                    entry.put("word_count", countWords(content));
+                    entry.put("opening", excerptFirst(content, 400));
+                    entry.put("ending", excerptLast(content, 400));
+                    ArrayNode candidates = entry.putArray("stakes_candidates");
+                    extractStakeCandidates(content).stream().limit(5).forEach(candidates::add);
+                    refCollector.fileRefs.add(buildFileRef(path, content,
+                        content.length() > 200 ? content.substring(0, 200) : content));
+                } catch (IOException e) {
+                    entry.put("error", "Failed to read: " + e.getMessage());
+                }
+            }
+            String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+            ToolRun run = ToolRun.of(output);
+            run.fileRefs.addAll(refCollector.fileRefs);
+            return run;
+        }
+
+        // Outline-driven stakes map (uses outline summaries)
+        String outlineContent;
+        try {
+            outlineContent = readFile(outlinePath);
+        } catch (IOException e) {
+            outlineContent = null;
+        }
+        if (outlineContent == null || outlineContent.isBlank()) {
+            root.put("error", "No outline file found or file is empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        List<String> lines = List.of(outlineContent.split("\n", -1));
+        List<OutlineScene> scenes = parseOutlineScenes(lines);
+        ArrayNode mapped = root.putArray("scenes");
+        for (OutlineScene scene : scenes.stream().limit(Math.max(1, maxScenes)).toList()) {
+            ObjectNode entry = mapped.addObject();
+            entry.put("number", scene.number);
+            entry.put("title", scene.title);
+            if (scene.pov != null && !scene.pov.isBlank()) {
+                entry.put("pov", scene.pov);
+            }
+            entry.put("start_line", scene.startLine);
+            entry.put("end_line", scene.endLine);
+            entry.put("summary", scene.summary);
+            ArrayNode candidates = entry.putArray("stakes_candidates");
+            extractStakeCandidates(scene.summary).stream().limit(3).forEach(candidates::add);
+        }
+        ToolRun run = ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        run.fileRefs.add(buildFileRef(outlinePath, outlineContent,
+            outlineContent.length() > 200 ? outlineContent.substring(0, 200) : outlineContent));
+        return run;
+    }
+
+    private List<String> extractStakeCandidates(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        List<String> sentences = new ArrayList<>();
+        for (String s : text.split("(?<=[.!?])\\s+")) {
+            String trimmed = s.trim();
+            if (!trimmed.isEmpty()) sentences.add(trimmed);
+        }
+        java.util.List<String> hits = new ArrayList<>();
+        for (String s : sentences) {
+            String lower = s.toLowerCase(Locale.ROOT);
+            if (lower.contains("must") || lower.contains("risk") || lower.contains("threat")
+                || lower.contains("or else") || lower.contains("if ") || lower.contains("unless")
+                || lower.contains("lose") || lower.contains("loss") || lower.contains("save")
+                || lower.contains("die") || lower.contains("survive") || lower.contains("consequence")
+                || lower.contains("stakes")) {
+                hits.add(trimQuote(s));
+            }
+        }
+        if (!hits.isEmpty()) return hits;
+        // Fallback: return first 2 sentences (for LLM to interpret stakes)
+        return sentences.stream().limit(2).map(this::trimQuote).toList();
+    }
+
     // ── prose_analyzer ──────────────────────────────────────────────
 
     private ToolRun executeProseAnalyzer(Map<String, Object> args) throws IOException {
@@ -749,6 +1108,169 @@ public class ToolExecutionService {
         run.fileRefs.add(buildFileRef(scenePath, content,
             content.length() > 200 ? content.substring(0, 200) : content));
         return run;
+    }
+
+    // ── line_editor ────────────────────────────────────────────────
+
+    private ToolRun executeLineEditor(Map<String, Object> args) throws IOException {
+        String filePath = stringArg(args, "file_path", "");
+        String text = stringArg(args, "text", "");
+        int startLine = intArg(args, "start_line", -1);
+        int endLine = intArg(args, "end_line", -1);
+        int maxEdits = intArg(args, "max_edits", 12);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "line_editor");
+        root.put("max_edits", maxEdits);
+        if (!filePath.isBlank()) root.put("file_path", filePath);
+        if (startLine > 0) root.put("start_line", startLine);
+        if (endLine > 0) root.put("end_line", endLine);
+
+        if (dryRun) {
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        String content = null;
+        ToolRun refCollector = ToolRun.of("");
+        if (!text.isBlank()) {
+            content = text;
+            root.put("source", "inline_text");
+        } else if (!filePath.isBlank()) {
+            content = readFile(filePath);
+            if (content == null || content.isBlank()) {
+                root.put("error", "File not found or empty.");
+                return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+            }
+            root.put("source", "file");
+            refCollector.fileRefs.add(buildFileRef(filePath, content,
+                content.length() > 200 ? content.substring(0, 200) : content));
+            if (startLine > 0 || endLine > 0) {
+                content = sliceLines(content, startLine, endLine);
+            }
+        } else {
+            root.put("error", "Provide either text or file_path.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        root.put("word_count", countWords(content));
+        root.put("excerpt", content.length() > 900 ? content.substring(0, 900) : content);
+
+        ArrayNode findings = root.putArray("findings");
+        int remaining = Math.max(1, maxEdits);
+
+        // Mechanical cleanup suggestions (safe edits)
+        if (content.contains("  ")) {
+            ObjectNode f = findings.addObject();
+            f.put("kind", "whitespace");
+            f.put("original", "Contains multiple consecutive spaces.");
+            f.put("suggestion", "Collapse consecutive spaces to a single space where appropriate.");
+            remaining--;
+        }
+
+        // Long sentences
+        List<String> sentences = splitSentences(content);
+        int longCount = 0;
+        for (String s : sentences) {
+            if (remaining <= 0) break;
+            int len = s.split("\\s+").length;
+            if (len >= 30) {
+                ObjectNode f = findings.addObject();
+                f.put("kind", "long_sentence");
+                f.put("word_count", len);
+                f.put("original", trimQuote(s));
+                f.put("suggestion", "Consider splitting or tightening; look for optional clauses or stacked prepositional phrases.");
+                remaining--;
+                longCount++;
+                if (longCount >= 6) break;
+            }
+        }
+
+        // Filler words and -ly adverbs (flag; do not rewrite meaning)
+        if (remaining > 0) {
+            List<String> fillerHits = findFillerPhrases(content);
+            for (String hit : fillerHits.stream().limit(remaining).toList()) {
+                ObjectNode f = findings.addObject();
+                f.put("kind", "filler_word");
+                f.put("original", hit);
+                f.put("suggestion", "If it isn't doing intentional voice work, remove or replace with a concrete action/sensory detail.");
+                remaining--;
+                if (remaining <= 0) break;
+            }
+        }
+
+        if (remaining > 0) {
+            List<String> adverbs = findAdverbs(content);
+            for (String adv : adverbs.stream().limit(remaining).toList()) {
+                ObjectNode f = findings.addObject();
+                f.put("kind", "adverb");
+                f.put("original", adv);
+                f.put("suggestion", "If the verb can carry the meaning alone, remove the adverb or choose a stronger verb.");
+                remaining--;
+                if (remaining <= 0) break;
+            }
+        }
+
+        // Repeated words (top offenders)
+        if (remaining > 0) {
+            Map<String, Integer> freq = extractTermFrequencies(content);
+            for (Map.Entry<String, Integer> e : freq.entrySet().stream()
+                .filter(en -> en.getValue() >= 4)
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(6)
+                .toList()) {
+                if (remaining <= 0) break;
+                ObjectNode f = findings.addObject();
+                f.put("kind", "repetition");
+                f.put("word", e.getKey());
+                f.put("count", e.getValue());
+                f.put("suggestion", "Check nearby sentences for repeated phrasing; vary the wording or remove redundancy.");
+                remaining--;
+            }
+        }
+
+        root.put("note", "This tool flags line-level edit opportunities deterministically; the model should propose final rewrites while preserving meaning/voice.");
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun run = ToolRun.of(output);
+        run.fileRefs.addAll(refCollector.fileRefs);
+        return run;
+    }
+
+    private String sliceLines(String content, int startLine, int endLine) {
+        if (content == null) return "";
+        if (startLine <= 0 && endLine <= 0) return content;
+        List<String> lines = List.of(content.split("\n", -1));
+        int start = Math.max(1, startLine > 0 ? startLine : 1);
+        int end = endLine > 0 ? Math.min(lines.size(), endLine) : lines.size();
+        if (start > end) return "";
+        return String.join("\n", lines.subList(start - 1, end));
+    }
+
+    private List<String> findFillerPhrases(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        String[] fillers = new String[] {" really ", " very ", " just ", " actually ", " basically ", " suddenly ", " somewhat ", " quite "};
+        List<String> hits = new ArrayList<>();
+        String lower = " " + content.toLowerCase(Locale.ROOT).replace('\n', ' ') + " ";
+        for (String f : fillers) {
+            int idx = lower.indexOf(f);
+            if (idx >= 0) {
+                hits.add(f.trim());
+            }
+        }
+        return hits;
+    }
+
+    private List<String> findAdverbs(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        String[] tokens = content.toLowerCase(Locale.ROOT).split("[^a-z]+");
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (String t : tokens) {
+            if (t.length() > 3 && t.endsWith("ly") && !ADVERB_EXCEPTIONS.contains(t)) {
+                seen.add(t);
+            }
+        }
+        return new ArrayList<>(seen);
     }
 
     // ── consistency_checker ────────────────────────────────────────
@@ -1154,6 +1676,446 @@ public class ToolExecutionService {
         return result;
     }
 
+    // ── scene_impact_analyzer ──────────────────────────────────────
+
+    private ToolRun executeSceneImpactAnalyzer(Map<String, Object> args) throws IOException {
+        String scenePath = stringArg(args, "scene_path", "");
+        String outlinePath = stringArg(args, "outline_path", "Story/SCN-outline.md");
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (scenePath.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_impact_analyzer");
+            root.put("error", "scene_path is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        if (dryRun) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_impact_analyzer");
+            root.put("scene_path", scenePath);
+            root.put("outline_path", outlinePath);
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        String content = readFile(scenePath);
+        if (content == null || content.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_impact_analyzer");
+            root.put("scene_path", scenePath);
+            root.put("error", "File not found or empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "scene_impact_analyzer");
+        root.put("scene_path", scenePath);
+        root.put("word_count", countWords(content));
+
+        // Opening + ending excerpts
+        root.put("opening", excerptFirst(content, 550));
+        root.put("ending", excerptLast(content, 550));
+
+        // Simple impact signals
+        ObjectNode signals = root.putObject("impact_signals");
+        signals.put("question_marks", countChar(content, '?'));
+        signals.put("exclamation_marks", countChar(content, '!'));
+        signals.put("ellipsis_count", countSubstring(content, "..."));
+        signals.put("dialogue_ratio", computeDialogueRatio(content));
+        signals.put("conflict_marker_lines", countConflictLines(content));
+
+        // Optional outline match (best-effort)
+        ObjectNode beat = root.putObject("outline_match");
+        try {
+            String outlineContent = readFile(outlinePath);
+            if (outlineContent != null && !outlineContent.isBlank()) {
+                List<OutlineScene> scenes = parseOutlineScenes(List.of(outlineContent.split("\n", -1)));
+                OutlineScene matched = matchSceneToBeat(scenePath, scenes);
+                if (matched != null) {
+                    beat.put("matched", true);
+                    beat.put("scene_number", matched.number);
+                    beat.put("title", matched.title);
+                    if (matched.pov != null && !matched.pov.isBlank()) {
+                        beat.put("pov", matched.pov);
+                    }
+                    beat.put("summary", matched.summary);
+                    beat.put("match_method", matched.matchMethod != null ? matched.matchMethod : "title_slug");
+                } else {
+                    beat.put("matched", false);
+                    beat.put("note", "No outline beat match found.");
+                }
+            } else {
+                beat.put("matched", false);
+                beat.put("note", "Outline file not found or empty at " + outlinePath);
+            }
+        } catch (IOException e) {
+            beat.put("matched", false);
+            beat.put("note", "Failed to read outline: " + e.getMessage());
+        }
+
+        ToolRun run = ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        run.fileRefs.add(buildFileRef(scenePath, content,
+            content.length() > 200 ? content.substring(0, 200) : content));
+        return run;
+    }
+
+    private int countChar(String content, char c) {
+        if (content == null) return 0;
+        return (int) content.chars().filter(ch -> ch == c).count();
+    }
+
+    private int countSubstring(String content, String sub) {
+        if (content == null || sub == null || sub.isEmpty()) return 0;
+        int count = 0;
+        int idx = 0;
+        while ((idx = content.indexOf(sub, idx)) >= 0) {
+            count++;
+            idx += sub.length();
+        }
+        return count;
+    }
+
+    private double computeDialogueRatio(String content) {
+        if (content == null || content.isBlank()) return 0.0;
+        String[] lines = content.split("\n");
+        int dialogueLines = 0;
+        int nonBlankLines = 0;
+        for (String line : lines) {
+            if (line.trim().isEmpty()) continue;
+            nonBlankLines++;
+            long quoteCount = line.chars().filter(c -> c == '\u201C' || c == '\u201D' || c == '"').count();
+            if (quoteCount >= 2) dialogueLines++;
+        }
+        if (nonBlankLines == 0) return 0.0;
+        return Math.round(((double) dialogueLines / nonBlankLines) * 100.0) / 100.0;
+    }
+
+    private int countConflictLines(String content) {
+        if (content == null || content.isBlank()) return 0;
+        String[] lines = content.split("\n");
+        int count = 0;
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+            String lower = t.toLowerCase(Locale.ROOT);
+            if (lower.contains("but ") || lower.contains("however") || lower.contains("yet ")
+                || lower.contains("unless") || lower.contains("instead") || lower.contains("can't")
+                || lower.contains("cannot") || lower.contains("won't") || lower.contains("won’t")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // ── reader_experience_simulator ────────────────────────────────
+
+    private ToolRun executeReaderExperienceSimulator(Map<String, Object> args) throws IOException {
+        List<String> scenePaths = listArg(args, "scene_paths");
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (scenePaths == null || scenePaths.isEmpty()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "reader_experience_simulator");
+            root.put("error", "scene_paths is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        if (scenePaths.size() > 12) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "reader_experience_simulator");
+            root.put("error", "Too many scene_paths (" + scenePaths.size() + "). Maximum is 12.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "reader_experience_simulator");
+        ArrayNode paths = root.putArray("scene_paths");
+        scenePaths.forEach(paths::add);
+
+        if (dryRun) {
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ArrayNode scenes = root.putArray("scenes");
+        ToolRun refCollector = ToolRun.of("");
+
+        List<SceneSnapshot> snapshots = new ArrayList<>();
+        for (String path : scenePaths) {
+            ObjectNode entry = scenes.addObject();
+            entry.put("path", path);
+            try {
+                String content = readFile(path);
+                if (content == null || content.isBlank()) {
+                    entry.put("error", "File not found or empty.");
+                    continue;
+                }
+                int wc = countWords(content);
+                entry.put("word_count", wc);
+                entry.put("dialogue_ratio", computeDialogueRatio(content));
+                String opening = excerptFirst(content, 450);
+                String ending = excerptLast(content, 450);
+                entry.put("opening", opening);
+                entry.put("ending", ending);
+
+                List<String> entities = extractEntities(content);
+                ArrayNode entArr = entry.putArray("entities");
+                entities.stream().limit(20).forEach(entArr::add);
+
+                snapshots.add(new SceneSnapshot(path, opening, ending));
+                refCollector.fileRefs.add(buildFileRef(path, content,
+                    content.length() > 200 ? content.substring(0, 200) : content));
+            } catch (IOException e) {
+                entry.put("error", "Failed to read: " + e.getMessage());
+            }
+        }
+
+        ArrayNode transitions = root.putArray("transitions");
+        for (int i = 0; i + 1 < snapshots.size(); i++) {
+            SceneSnapshot a = snapshots.get(i);
+            SceneSnapshot b = snapshots.get(i + 1);
+            ObjectNode t = transitions.addObject();
+            t.put("from", a.path);
+            t.put("to", b.path);
+            t.put("from_ending", a.ending);
+            t.put("to_opening", b.opening);
+        }
+
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun run = ToolRun.of(output);
+        run.fileRefs.addAll(refCollector.fileRefs);
+        return run;
+    }
+
+    private static final class SceneSnapshot {
+        final String path;
+        final String opening;
+        final String ending;
+
+        SceneSnapshot(String path, String opening, String ending) {
+            this.path = path;
+            this.opening = opening;
+            this.ending = ending;
+        }
+    }
+
+    // ── timeline_validator ─────────────────────────────────────────
+
+    private ToolRun executeTimelineValidator(Map<String, Object> args) throws IOException {
+        List<String> filePaths = listArg(args, "file_paths");
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (filePaths == null || filePaths.isEmpty()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "timeline_validator");
+            root.put("error", "file_paths is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        if (filePaths.size() > 12) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "timeline_validator");
+            root.put("error", "Too many file_paths (" + filePaths.size() + "). Maximum is 12.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "timeline_validator");
+        ArrayNode paths = root.putArray("file_paths");
+        filePaths.forEach(paths::add);
+        if (dryRun) {
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ArrayNode files = root.putArray("files");
+        ArrayNode timeline = root.putArray("timeline");
+        ToolRun refCollector = ToolRun.of("");
+
+        int timelineCount = 0;
+        for (String path : filePaths) {
+            ObjectNode fileNode = files.addObject();
+            fileNode.put("path", path);
+            String content;
+            try {
+                content = readFile(path);
+            } catch (IOException e) {
+                fileNode.put("error", "Failed to read: " + e.getMessage());
+                continue;
+            }
+            if (content == null || content.isBlank()) {
+                fileNode.put("error", "File not found or empty.");
+                continue;
+            }
+            fileNode.put("word_count", countWords(content));
+            ArrayNode markers = fileNode.putArray("time_markers");
+            List<TimeMarker> extracted = extractTimeMarkers(content);
+            for (TimeMarker m : extracted.stream().limit(30).toList()) {
+                ObjectNode marker = markers.addObject();
+                marker.put("line", m.line);
+                marker.put("text", m.text);
+            }
+            for (TimeMarker m : extracted) {
+                if (timelineCount >= 60) break;
+                ObjectNode ev = timeline.addObject();
+                ev.put("file", path);
+                ev.put("line", m.line);
+                ev.put("quote", m.text);
+                timelineCount++;
+            }
+            refCollector.fileRefs.add(buildFileRef(path, content,
+                content.length() > 200 ? content.substring(0, 200) : content));
+        }
+
+        root.put("note", "Timeline entries are extracted in reading order. The model should reconcile chronology and flag contradictions using the quotes/line numbers.");
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun run = ToolRun.of(output);
+        run.fileRefs.addAll(refCollector.fileRefs);
+        return run;
+    }
+
+    private static final class TimeMarker {
+        final int line;
+        final String text;
+
+        TimeMarker(int line, String text) {
+            this.line = line;
+            this.text = text;
+        }
+    }
+
+    private List<TimeMarker> extractTimeMarkers(String content) {
+        if (content == null || content.isBlank()) return List.of();
+        List<TimeMarker> markers = new ArrayList<>();
+        String[] lines = content.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String raw = lines[i];
+            if (raw == null) continue;
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) continue;
+            String lower = trimmed.toLowerCase(Locale.ROOT);
+            if (EVENT_PATTERN.matcher(lower).find() || TIME_PATTERN.matcher(lower).find()) {
+                // IMPORTANT: Evidence validator checks quoted text exists verbatim in the file content.
+                // Do not append "..." here; if we must truncate, return a prefix-only excerpt.
+                markers.add(new TimeMarker(i + 1, quotePrefix(trimmed, 220)));
+            }
+        }
+        return markers;
+    }
+
+    private String quotePrefix(String text, int maxChars) {
+        if (text == null) return "";
+        String trimmed = text.trim();
+        if (maxChars <= 0) return "";
+        if (trimmed.length() <= maxChars) return trimmed;
+        // No ellipsis: keep it as a strict prefix so it can still be found in the source file.
+        return trimmed.substring(0, maxChars);
+    }
+
+    private static final java.util.regex.Pattern TIME_PATTERN = java.util.regex.Pattern.compile(
+        "\\b(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}:\\d{2}\\s*(am|pm)?"
+            + "|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?"
+            + "|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?"
+            + "|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+            + "|next\\s+(day|morning|night|week)|the\\s+next\\s+(day|morning|night|week)"
+            + "|\\b\\d+\\s+(days|weeks|months|years)\\s+(later|ago)\\b)\\b"
+    );
+
+    // ── beat_architect ─────────────────────────────────────────────
+
+    private ToolRun executeBeatArchitect(Map<String, Object> args) throws IOException {
+        String brief = stringArg(args, "scene_brief", "");
+        String density = stringArg(args, "density", "balanced").toLowerCase(Locale.ROOT);
+        int maxClusters = intArg(args, "max_clusters", -1);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "beat_architect");
+        root.put("density", density);
+
+        if (brief == null || brief.isBlank()) {
+            root.put("error", "scene_brief is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        if (dryRun) {
+            root.put("dry_run", true);
+            root.put("scene_brief_excerpt", brief.length() > 200 ? brief.substring(0, 200) : brief);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        int confidence = estimateBriefConfidence(brief);
+        root.put("confidence_in_comprehension", confidence);
+
+        if (confidence < 85) {
+            root.put("needs_clarification", true);
+            ArrayNode questions = root.putArray("questions");
+            for (String q : buildBriefQuestions(brief)) {
+                questions.add(q);
+            }
+            root.put("instruction", "Ask these questions before generating clusters.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        int clusters = switch (density) {
+            case "lean" -> 5;
+            case "dense" -> 10;
+            default -> 7;
+        };
+        if (maxClusters > 0) clusters = Math.min(clusters, maxClusters);
+        clusters = Math.max(3, Math.min(12, clusters));
+
+        root.put("cluster_count", clusters);
+        root.put("needs_clarification", false);
+
+        ArrayNode templates = root.putArray("cluster_templates");
+        for (int i = 0; i < clusters; i++) {
+            ObjectNode c = templates.addObject();
+            if (i == 0) c.put("label", "SCENE START");
+            else if (i == clusters - 1) c.put("label", "SCENE ENDING");
+            else c.put("label", "CONTINUATION " + i);
+            c.put("sensory_anchor_hint", "Anchor this beat in a concrete perception (sound/texture/light/EM signal/etc.).");
+            c.put("procedural_core_hint", "List the key actions in logical order; keep it reproducible for drafting.");
+            c.put("realization_hint", "What changes in the POV's understanding/emotion by the end of this beat?");
+            c.put("variable_points_hint", "What can flex without breaking the story intent?");
+            c.put("fixed_points_hint", "What must remain constant (theme/decision/reveal)?");
+            c.put("canonical_verification_hint", "Flag any lore/biology/tech details not explicitly grounded in canon.");
+        }
+        root.put("scene_brief", brief.length() > 1200 ? brief.substring(0, 1200) : brief);
+        if (brief.length() > 1200) {
+            root.put("scene_brief_truncated", true);
+            root.put("scene_brief_total_chars", brief.length());
+        }
+        root.put("note", "This tool generates a beat cluster scaffold. The model should fill each cluster with concrete, canon-aware content, and ask questions first if needs_clarification=true.");
+        return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+    }
+
+    private int estimateBriefConfidence(String brief) {
+        if (brief == null || brief.isBlank()) return 0;
+        String lower = brief.toLowerCase(Locale.ROOT);
+        int score = 50;
+        if (lower.contains("pov")) score += 10;
+        if (lower.contains("setting") || lower.contains("location") || lower.contains("where")) score += 10;
+        if (lower.contains("wants") || lower.contains("goal") || lower.contains("must")) score += 10;
+        if (lower.contains("conflict") || lower.contains("but") || lower.contains("however") || lower.contains("threat")) score += 10;
+        if (lower.contains("ends") || lower.contains("ending") || lower.contains("reveal") || lower.contains("decision")) score += 10;
+        int len = brief.trim().length();
+        if (len >= 300) score += 10;
+        if (len >= 800) score += 5;
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private List<String> buildBriefQuestions(String brief) {
+        List<String> qs = new ArrayList<>();
+        String lower = brief != null ? brief.toLowerCase(Locale.ROOT) : "";
+        if (!lower.contains("pov")) qs.add("Who is the POV character for this scene?");
+        if (!(lower.contains("setting") || lower.contains("location") || lower.contains("where"))) qs.add("Where does the scene take place (specific location/environment)?");
+        if (!(lower.contains("goal") || lower.contains("wants") || lower.contains("must"))) qs.add("What is the POV character trying to achieve in this scene?");
+        if (!(lower.contains("conflict") || lower.contains("threat") || lower.contains("but") || lower.contains("however"))) qs.add("What is the core obstacle/conflict that pushes back?");
+        if (!(lower.contains("ending") || lower.contains("ends") || lower.contains("decision") || lower.contains("reveal"))) qs.add("What needs to change by the end (decision, reveal, or emotional turn)?");
+        qs.add("Desired beat density: lean (5), balanced (7), or dense (10)?");
+        return qs;
+    }
+
+
     private OutlineScene matchSceneToBeat(String scenePath, List<OutlineScene> scenes) {
         if (scenes.isEmpty()) return null;
 
@@ -1194,8 +2156,43 @@ public class ToolExecutionService {
         }
 
         // Pass 3: scene number match (slug contains a number matching scene number)
+        // Prefer an explicit "scene-<N>" marker (avoid matching unrelated numeric segments like "00" / "01").
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)scene[-_ ]*(\\d{1,3})").matcher(slug);
+        if (m.find()) {
+            try {
+                int num = Integer.parseInt(m.group(1));
+                for (OutlineScene scene : scenes) {
+                    if (scene.number == num) {
+                        scene.matchMethod = "scene_number";
+                        return scene;
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // Fallback: scan all numeric segments, but ignore leading-zero tokens like "00"/"01" unless they're the only option.
+        List<String> numericParts = new ArrayList<>();
         for (String part : slug.split("[^0-9]+")) {
             if (part.isEmpty()) continue;
+            numericParts.add(part);
+        }
+        for (String part : numericParts) {
+            if (part.length() > 1 && part.startsWith("0")) {
+                continue;
+            }
+            try {
+                int num = Integer.parseInt(part);
+                for (OutlineScene scene : scenes) {
+                    if (scene.number == num) {
+                        scene.matchMethod = "scene_number";
+                        return scene;
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // Last resort: if everything was leading-zero, allow it (better than no match).
+        for (String part : numericParts) {
             try {
                 int num = Integer.parseInt(part);
                 for (OutlineScene scene : scenes) {
@@ -1628,6 +2625,54 @@ public class ToolExecutionService {
             return trimmed.substring(0, idx + 1).trim();
         }
         return trimmed.split("\n")[0].trim();
+    }
+
+    private int countWords(String content) {
+        if (content == null || content.isBlank()) return 0;
+        int count = 0;
+        for (String w : content.split("\\s+")) {
+            if (!w.isBlank()) count++;
+        }
+        return count;
+    }
+
+    private String excerptFirst(String content, int maxChars) {
+        if (content == null) return "";
+        if (maxChars <= 0) return "";
+        String trimmed = content.trim();
+        if (trimmed.length() <= maxChars) return trimmed;
+        String slice = trimmed.substring(0, maxChars);
+        // Prefer cutting at a paragraph boundary or whitespace so we don't end mid-word.
+        int nl = slice.lastIndexOf("\n\n");
+        if (nl >= 200) return slice.substring(0, nl).trim();
+        int sp = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\n'));
+        if (sp >= 200) return slice.substring(0, sp).trim();
+        return slice;
+    }
+
+    private String excerptLast(String content, int maxChars) {
+        if (content == null) return "";
+        if (maxChars <= 0) return "";
+        String trimmed = content.trim();
+        if (trimmed.length() <= maxChars) return trimmed;
+        int start = Math.max(0, trimmed.length() - maxChars);
+        String slice = trimmed.substring(start);
+        // Prefer starting at a boundary so we don't begin mid-word.
+        int boundary = -1;
+        int nl = slice.indexOf("\n\n");
+        if (nl >= 0 && nl <= 200) boundary = nl + 2;
+        if (boundary < 0) {
+            for (int i = 0; i < Math.min(200, slice.length()); i++) {
+                char c = slice.charAt(i);
+                if (c == ' ' || c == '\n' || c == '\t') {
+                    boundary = i + 1;
+                }
+            }
+        }
+        if (boundary > 0 && boundary < slice.length()) {
+            return slice.substring(boundary).trim();
+        }
+        return slice.trim();
     }
 
     private String trimQuote(String text) {

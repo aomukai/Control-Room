@@ -4268,12 +4268,19 @@
             return slice.map(entry => `${entry.author}: ${entry.content}`).join('\n');
         };
 
-        const buildConferencePrompt = (agent, message, { retry = false } = {}) => {
+        const buildConferencePrompt = (agent, message, { retry = false, rejectionReason = null, requireTool = false } = {}) => {
             const agentName = agent?.name || 'Agent';
             const agentRole = agent?.role || 'role';
             const roleFrame = buildRoleFrame(agentRole);
-            const evidenceRules = buildEvidenceRules();
+            // When requiring a tool on the first step, keep the prompt minimal to reduce token load and improve
+            // strict-JSON tool call compliance on smaller/local models. Evidence rules are enforced by the UI anyway
+            // and can be restated in the retry prompt if needed.
+            const includeFullRules = retry || !requireTool;
+            const evidenceRules = includeFullRules ? buildEvidenceRules() : null;
             const contextPrelude = conferenceContext.text ? `Grounding prelude:\n${conferenceContext.text}` : 'Grounding prelude: (no context loaded)';
+            const rejectionLine = retry
+                ? `Rejection reason: ${rejectionReason || 'missing or invalid evidence'}.`
+                : null;
             const lines = [
                 'You are in a creative project review for a fiction project (not a business standup).',
                 `Conference agenda: ${agenda || 'none'}`,
@@ -4283,14 +4290,16 @@
                 'Primary task: find ONE issue in your role domain using evidence from the VFS. Secondary observations are optional and must be clearly labeled as secondary.',
                 roleFrame,
                 evidenceRules,
-                contextPrelude,
-                'Conversation so far:',
-                formatChatLogForPrompt(),
+                includeFullRules ? contextPrelude : null,
+                includeFullRules ? 'Conversation so far:' : null,
+                includeFullRules ? formatChatLogForPrompt() : null,
                 'Latest message:',
                 message,
-                retry ? 'Your last response was rejected for missing or invalid evidence. Fix it now.' : 'Keep your reply concise and actionable.'
+                retry ? 'Your last response was rejected. Fix it now.' : 'Keep your reply concise and actionable.',
+                retry ? rejectionLine : null,
+                retry ? 'On retry: include EXACTLY ONE Evidence line. If a tool was used, include receipt_id: rcpt_... in that Evidence line.' : null
             ];
-            const payload = lines.join('\n');
+            const payload = lines.filter(Boolean).join('\n');
             return buildChatPrompt ? buildChatPrompt(payload, agent) : payload;
         };
 
@@ -4329,8 +4338,10 @@
                 '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
                 '✅ Evidence: ACCESS_REQUEST — need [X] from [Y].',
                 '✅ Evidence: Story/SCN-outline.md line 12: "..."',
-                'If you used a tool, include receipt_id: <id> in the Evidence line.',
-                '❌ Missing evidence line, issue-tracker-only evidence, or generic claims without checks will be rejected.'
+                'If you used a tool, the Evidence line MUST include receipt_id: rcpt_... (exact).',
+                'Example (tool + quote in one line): Evidence: receipt_id: rcpt_abc123; Story/Scenes/SCN-foo.md line 12: "Exact quote from the file."',
+                '❌ Missing evidence line or generic claims without checks will be rejected.',
+                'Note: Issue-tracker-only evidence is allowed for chief/assistant roles when it includes a valid receipt_id.'
             ].join('\n');
         };
 
@@ -4344,7 +4355,7 @@
         const detectToolSyntax = (content) => {
             if (!content) return false;
             const text = String(content);
-            const toolPattern = /\b(file_locator|task_router|canon_checker|outline_analyzer|search_issues)\s*\(/i;
+            const toolPattern = /\b(file_locator|file_reader|outline_analyzer|canon_checker|task_router|search_issues|prose_analyzer|consistency_checker|scene_draft_validator|issue_status_summarizer|stakes_mapper|line_editor|scene_impact_analyzer|reader_experience_simulator|timeline_validator|beat_architect)\s*\(/i;
             if (toolPattern.test(text)) return true;
             const trimmed = text.trim();
             return trimmed.startsWith('{') && trimmed.includes('"tool"');
@@ -4377,10 +4388,21 @@
             const lower = String(content).toLowerCase();
             return (
                 lower.includes('file_locator') ||
+                lower.includes('file_reader') ||
                 lower.includes('outline_analyzer') ||
                 lower.includes('canon_checker') ||
                 lower.includes('task_router') ||
                 lower.includes('search_issues') ||
+                lower.includes('prose_analyzer') ||
+                lower.includes('consistency_checker') ||
+                lower.includes('scene_draft_validator') ||
+                lower.includes('issue_status_summarizer') ||
+                lower.includes('stakes_mapper') ||
+                lower.includes('line_editor') ||
+                lower.includes('scene_impact_analyzer') ||
+                lower.includes('reader_experience_simulator') ||
+                lower.includes('timeline_validator') ||
+                lower.includes('beat_architect') ||
                 lower.includes('tool call') ||
                 lower.includes('tool result')
             );
@@ -4388,8 +4410,12 @@
 
         const extractReceiptId = (line) => {
             if (!line) return null;
-            const match = String(line).match(/receipt[_-]?id\s*[:=]\s*([a-z0-9_-]+)/i);
-            return match ? match[1] : null;
+            const text = String(line);
+            const match = text.match(/receipt[_-]?id\s*[:=]\s*(rcpt_[a-z0-9_-]+|[a-z0-9_-]+)/i);
+            if (match) return match[1];
+            // Tolerate bare receipt ids in Evidence line (models often omit the "receipt_id:" label).
+            const bare = text.match(/\b(rcpt_[a-z0-9_-]{6,})\b/i);
+            return bare ? bare[1] : null;
         };
 
         const loadReceiptIds = async () => {
@@ -4407,7 +4433,8 @@
             if (detectToolSyntax(content)) return { ok: false, reason: 'tool-syntax' };
             if (detectCotLeak(content)) return { ok: false, reason: 'cot-leak' };
             const rawLines = String(content).split('\n');
-            const evidencePattern = /^\s*(?:\*\*|__)?\s*evidence:\s*(?:\*\*|__)?/i;
+            // Accept both "Evidence:" and "Evidence -" styles; models sometimes use dashes despite instructions.
+            const evidencePattern = /^\s*(?:\*\*|__)?\s*evidence\s*[:\-–—]\s*(?:\*\*|__)?/i;
             const evidenceLines = rawLines.filter(line => evidencePattern.test(line));
             if (evidenceLines.length === 0) return { ok: false, reason: 'missing' };
             if (evidenceLines.length > 1) return { ok: false, reason: 'multiple' };
@@ -4415,6 +4442,8 @@
             const cleanedEvidenceLine = evidenceLine.replace(/\*\*/g, '').replace(/__/g, '').trim();
             const normalized = cleanedEvidenceLine.toLowerCase();
             const lines = rawLines.map(line => line.trim()).filter(Boolean);
+            const roleLower = String(agentRole || '').toLowerCase();
+            const isChiefish = roleLower.includes('assistant') || roleLower.includes('chief');
             const checkedFound = normalized.includes('i checked') && normalized.includes('and found');
             const checkedFoundNo = normalized.includes('i checked') && (normalized.includes('found no') || normalized.includes('found nothing'));
             const needCheck = (normalized.includes('i need to check') && (normalized.includes('requesting') || normalized.includes('request')))
@@ -4432,7 +4461,7 @@
             ];
             const mentionsStorySource = storyKeywords.some(keyword => normalized.includes(keyword));
             const mentionsIssueOnly = normalized.includes('issue') && !mentionsStorySource;
-            if ((checkedFound || checkedFoundNo) && mentionsIssueOnly) {
+            if (!isChiefish && (checkedFound || checkedFoundNo) && mentionsIssueOnly) {
                 return { ok: false, reason: 'issue-only' };
             }
             const hasQuote = /["“”'‘’][^"“”'‘’]{6,}["“”'‘’]/.test(cleanedEvidenceLine);
@@ -4442,8 +4471,34 @@
                 const lower = line.toLowerCase();
                 return lower.startsWith('problem:') || lower.startsWith('suggestion:') || lower.includes('problem') || lower.includes('suggestion');
             });
+
+            // Issue-tracker grounding for chiefs: allow "receipt-only" Evidence even if the model doesn't mention the tool name.
+            // We still validate the receipt_id exists in the current conference session receipts to prevent hallucinations.
+            if (isChiefish) {
+                const receiptId = extractReceiptId(cleanedEvidenceLine);
+                if (receiptId) {
+                    const receiptIds = await loadReceiptIds();
+                    if (receiptIds.includes(receiptId)) {
+                        const looksIssueGrounded = normalized.includes('search_issues')
+                            || normalized.includes('issue_status_summarizer')
+                            || normalized.includes('issue')
+                            || normalized.includes('issues')
+                            || normalized.includes('#');
+                        if (looksIssueGrounded && !mentionsStorySource) {
+                            return { ok: true };
+                        }
+                        // Tool-backed ACCESS_REQUEST is acceptable even without a story-file quote.
+                        if (needCheck) {
+                            return { ok: true };
+                        }
+                    }
+                }
+            }
+
             const roleRequirement = roleEvidenceRequirement(agentRole);
-            if (roleRequirement && !roleRequirement(normalized)) {
+            // ACCESS_REQUEST / "I need to check..." is always valid evidence shape if it's specific enough;
+            // don't fail these on role-specific source constraints.
+            if (roleRequirement && !needCheck && !roleRequirement(normalized)) {
                 return { ok: false, reason: 'wrong-source' };
             }
 
@@ -4453,6 +4508,29 @@
                 const receiptIds = await loadReceiptIds();
                 if (!receiptIds.includes(receiptId)) {
                     return { ok: false, reason: 'missing-receipt' };
+                }
+                // Chiefs frequently run issue-tracker tools where the only concrete ground truth is the receipt.
+                // Accept receipt-only Evidence lines for chiefs to match "Evidence: receipt_id: rcpt_..." prompts.
+                if (isChiefish && !mentionsStorySource) {
+                    const receiptOnly = /\breceipt[_-]?id\s*[:=]\s*rcpt_[a-z0-9_-]+\b/i.test(cleanedEvidenceLine)
+                        || /^\s*evidence:\s*(?:\*\*|__)?\s*rcpt_[a-z0-9_-]+\s*$/i.test(cleanedEvidenceLine);
+                    if (receiptOnly) {
+                        return { ok: true };
+                    }
+                }
+                // Tool-backed ACCESS_REQUEST is acceptable even without a story-file quote.
+                if (needCheck) {
+                    return { ok: true };
+                }
+                // Chiefs can ground in issue tracker receipts (e.g. search_issues) without a story-file quote.
+                if (isChiefish) {
+                    const looksIssueGrounded = normalized.includes('search_issues')
+                        || normalized.includes('issue')
+                        || normalized.includes('issues')
+                        || normalized.includes('#');
+                    if (looksIssueGrounded && !mentionsStorySource) {
+                        return { ok: true };
+                    }
                 }
             }
 
@@ -4497,7 +4575,16 @@
                 return (line) => line.includes('compendium') || line.includes('canon') || line.includes('story/scenes');
             }
             if (normalized.includes('assistant') || normalized.includes('chief')) {
-                return (line) => line.includes('outline') || line.includes('story/scenes') || line.includes('compendium');
+                // Chiefs frequently summarize issue-tracker state; allow issue-based evidence for them.
+                return (line) =>
+                    line.includes('outline')
+                    || line.includes('story/scenes')
+                    || line.includes('compendium')
+                    || line.includes('search_issues')
+                    || line.includes('issue_status_summarizer')
+                    || line.includes('issue')
+                    || line.includes('issues')
+                    || line.includes('#');
             }
             return null;
         };
@@ -4650,8 +4737,9 @@
             for (const agent of participants) {
                 try {
                     const turnId = createTurnId(agent.id);
-                    const prompt = buildConferencePrompt(agent, text);
-                const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
+                    const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
+                    const requireTool = Boolean(toolPolicy && toolPolicy.requireTool);
+                    const prompt = buildConferencePrompt(agent, text, { requireTool });
                     const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -4660,7 +4748,11 @@
                             agentId: agent.id,
                             conferenceId: conferenceContext.sessionId,
                             turnId,
-                            toolPolicy
+                            toolPolicy,
+                            // When requiring a tool on the first step, keep server-side prompt additions minimal
+                            // to improve tool-call compliance and avoid local-model timeouts.
+                            skipToolCatalog: requireTool,
+                            skipGrounding: requireTool
                         })
                     }), `Conference response from ${agent.name || 'agent'}`);
                     let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
@@ -4675,7 +4767,11 @@
                     let reply = parsed.content || 'No response.';
                     let evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     if (!evidenceCheck.ok) {
-                        const retryPrompt = buildConferencePrompt(agent, text, { retry: true });
+                        const retryPrompt = buildConferencePrompt(agent, text, {
+                            retry: true,
+                            rejectionReason: evidenceCheck.reason,
+                            requireTool: Boolean(toolPolicy && toolPolicy.requireTool)
+                        });
                         const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -4684,7 +4780,9 @@
                                 agentId: agent.id,
                                 conferenceId: conferenceContext.sessionId,
                                 turnId,
-                                toolPolicy
+                                toolPolicy,
+                                skipToolCatalog: requireTool,
+                                skipGrounding: requireTool
                             })
                         }), `Conference retry for ${agent.name || 'agent'}`);
                         parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null, stopHookDetail: '' };
@@ -4723,6 +4821,15 @@
                         rejection = 'Ungrounded response rejected. Remove planning/chain-of-thought preface and respond directly in role.';
                     } else if (evidenceCheck.reason === 'missing-receipt') {
                             rejection = 'Ungrounded response rejected. access_claim_without_stamp: include a valid receipt_id in Evidence.';
+                        }
+                        // Dev/debug assist: show why it failed and a short excerpt of the rejected reply.
+                        // This makes it possible to diagnose model compliance vs validator bugs without provider logs.
+                        const rawReply = String(reply || '').replace(/\s+/g, ' ').trim();
+                        const excerpt = rawReply.length > 260 ? rawReply.slice(0, 260) + '...' : rawReply;
+                        const reason = evidenceCheck.reason || 'unknown';
+                        rejection += ` (reason=${reason})`;
+                        if (excerpt) {
+                            rejection += `\nDebug excerpt: ${excerpt}`;
                         }
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
                         chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
@@ -5159,10 +5266,19 @@
 
     function buildToolPolicyPayload(allowedInput, requireCheckbox) {
         const allowedRaw = allowedInput ? allowedInput.value : '';
-        const allowedTools = allowedRaw
-            .split(/[,\\s]+/)
+        // Be conservative: this is a dev control. Avoid turning accidental prose into a bunch of "tools"
+        // that then hard-fail backend validation (unknown tool).
+        const allowedTools = String(allowedRaw || '')
+            .split(',')
             .map((value) => value.trim())
-            .filter(Boolean);
+            .filter((value) => {
+                if (!value) return false;
+                // Tool IDs are lowercase with underscores (e.g., file_locator). Reject anything with spaces/punct.
+                if (!/^[a-z0-9_]+$/i.test(value)) return false;
+                // Ignore tiny tokens that commonly come from accidental typing (e.g., "i").
+                if (value.length < 4) return false;
+                return true;
+            });
         const requireTool = requireCheckbox ? Boolean(requireCheckbox.checked) : false;
 
         const payload = {};

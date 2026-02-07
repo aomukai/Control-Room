@@ -238,11 +238,17 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [x] **Single-Active Agent Turns** - enforce serialized agent turns (one active agent at a time) for local LLM viability (refs: docs/reference/cr_agents.md#agent-workflow)
 - [x] **Verify agent turn queue indicator** - test alongside conference chat wiring (currently 1:1 chat only).
 - [x] **Versioning UX polish** - align Manual Save & History flow with docs/reference/versioning.md.
-- [ ] **Tool Suite Expansion** - implement analysis/validation tools from basic_tool_suite.md.
+- [x] **Tool Suite Expansion** - implement analysis/validation tools from basic_tool_suite.md.
   - [x] `prose_analyzer` — quantitative prose metrics (sentence stats, dialogue ratio, rhythm, POV signals).
   - [x] `consistency_checker` — multi-file cross-referencing (entity extraction, shared terms, event markers) for contradiction detection.
   - [x] `scene_draft_validator` — auto-matches scene to outline beat + loads POV canon card in one call.
-  - [ ] Remaining: issue_status_summarizer, stakes_mapper, line_editor, scene_impact_analyzer, reader_experience_simulator, timeline_validator, beat_architect.
+  - [x] `issue_status_summarizer` — open issues + recent receipts snapshot for the current session.
+  - [x] `stakes_mapper` — outline/scene stake candidate extraction for escalation analysis.
+  - [x] `line_editor` — deterministic line-level findings for a passage or file excerpt.
+  - [x] `scene_impact_analyzer` — opening/ending excerpts + impact signals + outline beat match (best-effort).
+  - [x] `reader_experience_simulator` — multi-scene openings/endings + transition pairs.
+  - [x] `timeline_validator` — extract time markers with line numbers + flattened timeline skeleton.
+  - [x] `beat_architect` — brief comprehension scoring + clarification questions + beat-cluster scaffold.
 - [ ] **Prompt hardening + receipts** - enforce task packet + receipt contracts, validators, retries (design for small local models first).
   - [x] **PH-0 Task packet + receipt schemas** - add minimal v0.1 schemas + validators; JSON-only enforcement + 2x retry + STOP_HOOK on failure.
     - [x] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
