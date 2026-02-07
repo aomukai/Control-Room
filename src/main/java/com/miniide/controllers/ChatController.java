@@ -871,6 +871,17 @@ public class ChatController implements Controller {
             .arg("focus", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("pacing", "voice", "rhythm", "all"))
             .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
         );
+        registry.register(new ToolSchema("consistency_checker")
+            .arg("file_paths", com.miniide.tools.ToolArgSpec.Type.STRING_ARRAY, true)
+            .arg("focus", com.miniide.tools.ToolArgSpec.Type.STRING, false, Set.of("characters", "terminology", "events", "general"))
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
+        registry.register(new ToolSchema("scene_draft_validator")
+            .arg("scene_path", com.miniide.tools.ToolArgSpec.Type.STRING, true)
+            .arg("outline_path", com.miniide.tools.ToolArgSpec.Type.STRING, false)
+            .arg("include_canon", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+            .arg("dry_run", com.miniide.tools.ToolArgSpec.Type.BOOLEAN, false)
+        );
         return registry;
     }
 

@@ -43,7 +43,7 @@ We are hardening agent responses so agents:
 - [x] Evidence validator with quote verification (file content lookup).
 - [x] Evidence parser accepts **Evidence:** while preserving single-line rule.
 - [x] Chain-of-thought preface rejection + plain-text tool call rejection.
-- [x] Tool execution loop (file_locator, outline_analyzer, canon_checker, task_router, search_issues).
+- [x] Tool execution loop (file_locator, outline_analyzer, canon_checker, task_router, search_issues, prose_analyzer, consistency_checker, scene_draft_validator).
 - [x] Signed receipts + per-session audit log.
 - [x] Conference save links receipts into issues/L5.
 - [x] Telemetry buckets + conference tags.
@@ -174,6 +174,9 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - `canon_checker`: compare scenes vs canon.
 - `task_router`: classify and route tasks by role.
 - `search_issues`: search issues by criteria.
+- `prose_analyzer`: quantitative prose metrics (sentence stats, dialogue ratio, rhythm).
+- `consistency_checker`: multi-file cross-referencing for contradiction detection.
+- `scene_draft_validator`: auto-match scene to outline beat + load POV canon card.
 
 ## Tool Execution Backends (Current)
 - Location: `src/main/java/com/miniide/tools/ToolExecutionService.java`
@@ -182,6 +185,9 @@ This section is the full source of truth for how grounding + tools + receipts wo
 - `canon_checker`: compares scene vs canon files; returns quotes and status.
 - `task_router`: simple role selection based on request.
 - `search_issues`: filters issues from local memory service.
+- `prose_analyzer`: computes sentence/paragraph stats, dialogue ratio, repeated words, POV signals, adverb count.
+- `consistency_checker`: reads N files, extracts entities and terms, builds cross-reference map; focus modes: characters, terminology, events, general.
+- `scene_draft_validator`: reads scene, auto-matches outline beat (3-pass: title_slug → pov_name → scene_number), optionally loads POV canon card.
 
 ## Tool Receipts (Non-Forgeable)
 - Signed receipts with HMAC; server secret stored at `.control-room/audit/secret.key`.
@@ -300,6 +306,9 @@ This is the full map of everything connected to grounding + tool execution. If i
 - `canon_checker`
 - `task_router`
 - `search_issues`
+- `prose_analyzer`
+- `consistency_checker`
+- `scene_draft_validator`
 
 ## Tool List Sources (Where the Tool Catalog Lives)
 - Global tool registry: `src/main/resources/prompts/tools.json`
@@ -357,6 +366,9 @@ This is the full map of everything connected to grounding + tool execution. If i
 - `canon_checker` args enforced: `scene_path` (string), `canon_paths` (string[]), `mode` (string optional), `dry_run` (bool).
 - `task_router` args enforced: `user_request` (string), `dry_run` (bool).
 - `search_issues` args enforced: `tags` (string[]), `assignedTo` (string), `status` (open|closed|all), `priority` (low|normal|high|urgent), `personalTags` (string[]), `personalAgent` (string), `excludePersonalTags` (string[]), `minInterestLevel` (int).
+- `prose_analyzer` args enforced: `scene_path` (string required), `focus` (pacing|voice|rhythm|all), `dry_run` (bool).
+- `consistency_checker` args enforced: `file_paths` (string[] required, max 10), `focus` (characters|terminology|events|general), `dry_run` (bool).
+- `scene_draft_validator` args enforced: `scene_path` (string required), `outline_path` (string optional), `include_canon` (bool), `dry_run` (bool).
 - Tool execution writes a receipt even when tool errors or unknown tool ids occur.
 
 ## Tool Result Injection
@@ -484,6 +496,12 @@ This is the full map of everything connected to grounding + tool execution. If i
   `{"tool":"task_router","args":{"user_request":"...","dry_run":false},"nonce":"<TOOL_NONCE>"}`
 - `search_issues` example:
   `{"tool":"search_issues","args":{"tags":["tag"],"status":"open","priority":"normal"},"nonce":"<TOOL_NONCE>"}`
+- `prose_analyzer` example:
+  `{"tool":"prose_analyzer","args":{"scene_path":"Story/Scenes/SCN-scene-slug.md","focus":"all","dry_run":false},"nonce":"<TOOL_NONCE>"}`
+- `consistency_checker` example:
+  `{"tool":"consistency_checker","args":{"file_paths":["Story/Scenes/SCN-slug.md","Compendium/Characters/CHAR-name.md"],"focus":"general","dry_run":false},"nonce":"<TOOL_NONCE>"}`
+- `scene_draft_validator` example:
+  `{"tool":"scene_draft_validator","args":{"scene_path":"Story/Scenes/SCN-slug.md","include_canon":true,"dry_run":false},"nonce":"<TOOL_NONCE>"}`
 
 ## Dev Tools: Receipts Viewer
 - UI: `src/main/resources/public/app.js` (Tool Receipts section)

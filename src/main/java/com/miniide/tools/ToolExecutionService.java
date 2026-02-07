@@ -33,7 +33,9 @@ public class ToolExecutionService {
         "canon_checker",
         "task_router",
         "search_issues",
-        "prose_analyzer"
+        "prose_analyzer",
+        "consistency_checker",
+        "scene_draft_validator"
     );
 
     private final ProjectContext projectContext;
@@ -82,6 +84,12 @@ public class ToolExecutionService {
                     break;
                 case "prose_analyzer":
                     run = executeProseAnalyzer(call.getArgs());
+                    break;
+                case "consistency_checker":
+                    run = executeConsistencyChecker(call.getArgs());
+                    break;
+                case "scene_draft_validator":
+                    run = executeSceneDraftValidator(call.getArgs());
                     break;
                 default:
                     run = ToolRun.of("Unsupported tool: " + tool);
@@ -288,6 +296,7 @@ public class ToolExecutionService {
         final int startLine;
         final int endLine;
         final String summary;
+        String matchMethod; // set by matchSceneToBeat()
 
         OutlineScene(int number, String title, String pov, int startLine, int endLine, String summary) {
             this.number = number;
@@ -740,6 +749,534 @@ public class ToolExecutionService {
         run.fileRefs.add(buildFileRef(scenePath, content,
             content.length() > 200 ? content.substring(0, 200) : content));
         return run;
+    }
+
+    // ── consistency_checker ────────────────────────────────────────
+
+    private ToolRun executeConsistencyChecker(Map<String, Object> args) throws IOException {
+        List<String> filePaths = listArg(args, "file_paths");
+        String focus = stringArg(args, "focus", "general").toLowerCase(Locale.ROOT);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (filePaths == null || filePaths.isEmpty()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "consistency_checker");
+            root.put("error", "file_paths is required (provide at least 2 files).");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        if (filePaths.size() > 10) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "consistency_checker");
+            root.put("error", "Too many files (" + filePaths.size() + "). Maximum is 10.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        if (dryRun) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "consistency_checker");
+            root.put("focus", focus);
+            root.put("dry_run", true);
+            root.put("file_count", filePaths.size());
+            ArrayNode paths = root.putArray("file_paths");
+            filePaths.forEach(paths::add);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        // Read all files
+        Map<String, String> fileContents = new java.util.LinkedHashMap<>();
+        for (String path : filePaths) {
+            try {
+                String content = readFile(path);
+                if (content != null && !content.isBlank()) {
+                    fileContents.put(path, content);
+                }
+            } catch (IOException ignored) {}
+        }
+
+        if (fileContents.isEmpty()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "consistency_checker");
+            root.put("error", "No readable files found.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "consistency_checker");
+        root.put("focus", focus);
+        root.put("file_count", fileContents.size());
+
+        boolean includeEntities = "general".equals(focus) || "characters".equals(focus);
+        boolean includeTerms = "general".equals(focus) || "terminology".equals(focus);
+        boolean includeEvents = "general".equals(focus) || "events".equals(focus);
+
+        // Per-file data + entity extraction
+        Map<String, List<String>> entitiesByFile = new java.util.LinkedHashMap<>();
+        Map<String, Map<String, Integer>> termsByFile = new java.util.LinkedHashMap<>();
+
+        ArrayNode filesArray = root.putArray("files");
+        int contentBudget = Math.max(200, 2000 / fileContents.size());
+
+        ToolRun refCollector = ToolRun.of("");
+
+        for (Map.Entry<String, String> entry : fileContents.entrySet()) {
+            String path = entry.getKey();
+            String content = entry.getValue();
+
+            ObjectNode fileNode = filesArray.addObject();
+            fileNode.put("path", path);
+
+            String[] words = content.split("\\s+");
+            int wc = 0;
+            for (String w : words) { if (!w.isBlank()) wc++; }
+            fileNode.put("word_count", wc);
+
+            // Extract entities (named proper nouns)
+            if (includeEntities) {
+                List<String> entities = extractEntities(content);
+                entitiesByFile.put(path, entities);
+                ArrayNode entArr = fileNode.putArray("entities");
+                entities.stream().limit(30).forEach(entArr::add);
+            }
+
+            // Extract term frequencies (for cross-referencing)
+            if (includeTerms) {
+                Map<String, Integer> terms = extractTermFrequencies(content);
+                termsByFile.put(path, terms);
+            }
+
+            // Event markers
+            if (includeEvents) {
+                List<String> eventLines = extractEventLines(content);
+                if (!eventLines.isEmpty()) {
+                    ArrayNode evArr = fileNode.putArray("event_markers");
+                    eventLines.stream().limit(10).forEach(evArr::add);
+                }
+            }
+
+            // Budget-aware content excerpt
+            String excerpt = content.length() > contentBudget
+                ? content.substring(0, contentBudget) : content;
+            fileNode.put("content", excerpt);
+            if (content.length() > contentBudget) {
+                fileNode.put("content_truncated", true);
+                fileNode.put("content_total_chars", content.length());
+            }
+
+            refCollector.fileRefs.add(buildFileRef(path, content,
+                content.length() > 200 ? content.substring(0, 200) : content));
+        }
+
+        // Cross-references: entities appearing in 2+ files
+        if (includeEntities && entitiesByFile.size() >= 2) {
+            // Build entity → {file → count} map
+            Map<String, Map<String, Integer>> entityIndex = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, List<String>> e : entitiesByFile.entrySet()) {
+                String path = e.getKey();
+                Map<String, Integer> freq = new java.util.LinkedHashMap<>();
+                for (String ent : e.getValue()) {
+                    freq.merge(ent, 1, Integer::sum);
+                }
+                for (Map.Entry<String, Integer> f : freq.entrySet()) {
+                    entityIndex.computeIfAbsent(f.getKey(), k -> new java.util.LinkedHashMap<>())
+                        .put(path, f.getValue());
+                }
+            }
+
+            ArrayNode crossRefs = root.putArray("cross_references");
+            int crossRefCount = 0;
+            for (Map.Entry<String, Map<String, Integer>> e : entityIndex.entrySet()) {
+                if (e.getValue().size() < 2) continue;
+                if (crossRefCount >= 20) break;
+                ObjectNode ref = crossRefs.addObject();
+                ref.put("entity", e.getKey());
+                ArrayNode refFiles = ref.putArray("files");
+                ArrayNode refCounts = ref.putArray("counts");
+                for (Map.Entry<String, Integer> f : e.getValue().entrySet()) {
+                    refFiles.add(f.getKey());
+                    refCounts.add(f.getValue());
+                }
+                crossRefCount++;
+            }
+        }
+
+        // Shared terms: non-stopwords appearing in 2+ files
+        if (includeTerms && termsByFile.size() >= 2) {
+            // Merge term frequencies across files
+            Map<String, Map<String, Integer>> termIndex = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, Map<String, Integer>> e : termsByFile.entrySet()) {
+                String path = e.getKey();
+                for (Map.Entry<String, Integer> t : e.getValue().entrySet()) {
+                    termIndex.computeIfAbsent(t.getKey(), k -> new java.util.LinkedHashMap<>())
+                        .put(path, t.getValue());
+                }
+            }
+
+            ArrayNode sharedTerms = root.putArray("shared_terms");
+            termIndex.entrySet().stream()
+                .filter(e -> e.getValue().size() >= 2)
+                .sorted((a, b) -> {
+                    int totalA = a.getValue().values().stream().mapToInt(Integer::intValue).sum();
+                    int totalB = b.getValue().values().stream().mapToInt(Integer::intValue).sum();
+                    return Integer.compare(totalB, totalA);
+                })
+                .limit(15)
+                .forEach(e -> {
+                    ObjectNode termNode = sharedTerms.addObject();
+                    termNode.put("term", e.getKey());
+                    ArrayNode termFiles = termNode.putArray("files");
+                    e.getValue().keySet().forEach(termFiles::add);
+                    termNode.put("total_count",
+                        e.getValue().values().stream().mapToInt(Integer::intValue).sum());
+                });
+        }
+
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun result = ToolRun.of(output);
+        result.fileRefs.addAll(refCollector.fileRefs);
+        return result;
+    }
+
+    private List<String> extractEntities(String content) {
+        // Extract proper nouns: capitalized words not at sentence starts, merged into multi-word entities
+        List<String> entities = new ArrayList<>();
+        Set<String> seen = new java.util.LinkedHashSet<>();
+        String[] lines = content.split("\n");
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            // Skip markdown headings and blank lines
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+
+            String[] words = trimmed.split("\\s+");
+            StringBuilder multiWord = new StringBuilder();
+
+            for (int i = 0; i < words.length; i++) {
+                String word = words[i].replaceAll("[^a-zA-Z'-]", "");
+                if (word.isEmpty()) {
+                    flushEntity(multiWord, seen, entities);
+                    continue;
+                }
+
+                boolean isCapitalized = Character.isUpperCase(word.charAt(0)) && word.length() > 1;
+                boolean isSentenceStart = (i == 0) || (i > 0 && words[i - 1].matches(".*[.!?]$"));
+
+                if (isCapitalized && !isSentenceStart) {
+                    if (multiWord.length() > 0) multiWord.append(" ");
+                    multiWord.append(word);
+                } else if (isCapitalized && isSentenceStart && multiWord.length() > 0) {
+                    // Sentence start but we have an ongoing multi-word — flush and start fresh
+                    flushEntity(multiWord, seen, entities);
+                } else {
+                    flushEntity(multiWord, seen, entities);
+                }
+            }
+            flushEntity(multiWord, seen, entities);
+        }
+        return entities;
+    }
+
+    private void flushEntity(StringBuilder multiWord, Set<String> seen, List<String> entities) {
+        if (multiWord.length() == 0) return;
+        String entity = multiWord.toString();
+        multiWord.setLength(0);
+        // Filter: skip very short, common words, articles
+        if (entity.length() <= 1) return;
+        if (ENTITY_STOPWORDS.contains(entity.toLowerCase(Locale.ROOT))) return;
+        if (!seen.contains(entity)) {
+            seen.add(entity);
+            entities.add(entity);
+        }
+    }
+
+    private Map<String, Integer> extractTermFrequencies(String content) {
+        String[] tokens = content.toLowerCase(Locale.ROOT).split("[^a-z]+");
+        Map<String, Integer> freq = new java.util.LinkedHashMap<>();
+        for (String t : tokens) {
+            if (t.length() < 4 || STOPWORDS.contains(t)) continue;
+            freq.merge(t, 1, Integer::sum);
+        }
+        return freq;
+    }
+
+    private List<String> extractEventLines(String content) {
+        // Find lines containing time markers
+        List<String> events = new ArrayList<>();
+        String[] lines = content.split("\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            String lower = trimmed.toLowerCase(Locale.ROOT);
+            if (EVENT_PATTERN.matcher(lower).find()) {
+                events.add(trimQuote(trimmed));
+            }
+        }
+        return events;
+    }
+
+    private static final java.util.regex.Pattern EVENT_PATTERN = java.util.regex.Pattern.compile(
+        "\\b(later|ago|before|after|during|yesterday|tomorrow|morning|evening|night|dawn|dusk"
+        + "|year|month|week|day|hour|minute|season|cycle|epoch"
+        + "|first|second|third|fourth|fifth|final|last"
+        + "|began|ended|arrived|departed|returned)\\b"
+    );
+
+    private static final Set<String> ENTITY_STOPWORDS = Set.of(
+        "the", "and", "but", "for", "not", "its", "this", "that",
+        "with", "from", "they", "them", "their", "there", "then",
+        "been", "were", "have", "had", "has", "will", "would",
+        "could", "should", "may", "might", "shall", "can",
+        "which", "where", "when", "what", "who", "whom",
+        "some", "any", "all", "each", "every", "both",
+        "many", "much", "more", "most", "other", "another"
+    );
+
+    // ── scene_draft_validator ───────────────────────────────────────
+
+    private ToolRun executeSceneDraftValidator(Map<String, Object> args) throws IOException {
+        String scenePath = stringArg(args, "scene_path", "");
+        String outlinePath = stringArg(args, "outline_path", "Story/SCN-outline.md");
+        boolean includeCanon = boolArg(args, "include_canon", true);
+        boolean dryRun = boolArg(args, "dry_run", false);
+
+        if (scenePath.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_draft_validator");
+            root.put("error", "scene_path is required.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+        if (outlinePath == null || outlinePath.isBlank()) {
+            outlinePath = "Story/SCN-outline.md";
+        }
+
+        if (dryRun) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_draft_validator");
+            root.put("scene_path", scenePath);
+            root.put("outline_path", outlinePath);
+            root.put("include_canon", includeCanon);
+            root.put("dry_run", true);
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        // Read scene
+        String sceneContent = readFile(scenePath);
+        if (sceneContent == null || sceneContent.isBlank()) {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("tool", "scene_draft_validator");
+            root.put("scene_path", scenePath);
+            root.put("error", "Scene file not found or empty.");
+            return ToolRun.of(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root));
+        }
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("tool", "scene_draft_validator");
+        root.put("scene_path", scenePath);
+
+        // Scene word count
+        String[] words = sceneContent.split("\\s+");
+        int wc = 0;
+        for (String w : words) { if (!w.isBlank()) wc++; }
+        root.put("scene_word_count", wc);
+
+        // Scene content excerpt
+        int sceneBudget = 800;
+        String sceneExcerpt = sceneContent.length() > sceneBudget
+            ? sceneContent.substring(0, sceneBudget) : sceneContent;
+        root.put("scene_content", sceneExcerpt);
+        if (sceneContent.length() > sceneBudget) {
+            root.put("scene_content_truncated", true);
+            root.put("scene_total_chars", sceneContent.length());
+        }
+
+        ToolRun refCollector = ToolRun.of("");
+        refCollector.fileRefs.add(buildFileRef(scenePath, sceneContent,
+            sceneContent.length() > 200 ? sceneContent.substring(0, 200) : sceneContent));
+
+        // Read and parse outline
+        ObjectNode outlineMatch = root.putObject("outline_match");
+        String outlineContent = null;
+        try {
+            outlineContent = readFile(outlinePath);
+        } catch (IOException ignored) {}
+
+        if (outlineContent == null || outlineContent.isBlank()) {
+            outlineMatch.put("matched", false);
+            outlineMatch.put("error", "Outline file not found or empty at " + outlinePath);
+        } else {
+            List<String> outlineLines = List.of(outlineContent.split("\n", -1));
+            List<OutlineScene> scenes = parseOutlineScenes(outlineLines);
+
+            OutlineScene matched = matchSceneToBeat(scenePath, scenes);
+            if (matched != null) {
+                outlineMatch.put("matched", true);
+                outlineMatch.put("scene_number", matched.number);
+                outlineMatch.put("title", matched.title);
+                if (matched.pov != null && !matched.pov.isBlank()) {
+                    outlineMatch.put("pov", matched.pov);
+                }
+                outlineMatch.put("summary", matched.summary);
+                outlineMatch.put("match_method", matched.matchMethod != null ? matched.matchMethod : "title_slug");
+            } else {
+                outlineMatch.put("matched", false);
+                // Return all beats as candidates
+                ArrayNode candidates = outlineMatch.putArray("candidates");
+                for (OutlineScene scene : scenes) {
+                    ObjectNode c = candidates.addObject();
+                    c.put("number", scene.number);
+                    c.put("title", scene.title);
+                    if (scene.pov != null) c.put("pov", scene.pov);
+                    c.put("summary", scene.summary);
+                }
+            }
+
+            // Canon card lookup
+            if (includeCanon) {
+                String povName = null;
+                if (matched != null && matched.pov != null && !matched.pov.isBlank()) {
+                    povName = matched.pov;
+                }
+                // Fallback: try to extract POV from scene filename
+                if (povName == null) {
+                    povName = extractPovFromScenePath(scenePath);
+                }
+                if (povName != null) {
+                    ObjectNode canonCard = findAndReadPovCanonCard(povName, refCollector);
+                    if (canonCard != null) {
+                        root.set("canon_card", canonCard);
+                    }
+                }
+            }
+        }
+
+        String output = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
+        ToolRun result = ToolRun.of(output);
+        result.fileRefs.addAll(refCollector.fileRefs);
+        return result;
+    }
+
+    private OutlineScene matchSceneToBeat(String scenePath, List<OutlineScene> scenes) {
+        if (scenes.isEmpty()) return null;
+
+        // Extract slug from scene path: "Story/Scenes/SCN-early-cycle-anomalies.md" → "early-cycle-anomalies"
+        String filename = Path.of(scenePath).getFileName().toString();
+        String slug = filename
+            .replaceFirst("^(?i)SCN-", "")
+            .replaceFirst("\\.md$", "");
+        String normalizedSlug = normalizeForMatch(slug);
+
+        // Pass 1: title match (normalized slug contains title or vice versa)
+        OutlineScene bestMatch = null;
+        int bestScore = 0;
+        for (OutlineScene scene : scenes) {
+            String normalizedTitle = normalizeForMatch(scene.title);
+            if (normalizedTitle.isEmpty()) continue;
+
+            if (normalizedSlug.contains(normalizedTitle) || normalizedTitle.contains(normalizedSlug)) {
+                int score = normalizedTitle.length(); // longer match = better
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMatch = scene;
+                    bestMatch.matchMethod = "title_slug";
+                }
+            }
+        }
+        if (bestMatch != null) return bestMatch;
+
+        // Pass 2: POV name match (slug contains character name)
+        for (OutlineScene scene : scenes) {
+            if (scene.pov == null || scene.pov.isBlank()) continue;
+            String normalizedPov = normalizeForMatch(scene.pov);
+            if (normalizedSlug.contains(normalizedPov)) {
+                // Could match multiple — prefer first one (scene order)
+                scene.matchMethod = "pov_name";
+                return scene;
+            }
+        }
+
+        // Pass 3: scene number match (slug contains a number matching scene number)
+        for (String part : slug.split("[^0-9]+")) {
+            if (part.isEmpty()) continue;
+            try {
+                int num = Integer.parseInt(part);
+                for (OutlineScene scene : scenes) {
+                    if (scene.number == num) {
+                        scene.matchMethod = "scene_number";
+                        return scene;
+                    }
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        return null;
+    }
+
+    private String normalizeForMatch(String text) {
+        if (text == null) return "";
+        return text.toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]", "");
+    }
+
+    private String extractPovFromScenePath(String scenePath) {
+        // Try to extract a character name from the scene slug
+        // e.g., "SCN-scenes-00-instability-00-scene-1-seryn.md" → might contain "seryn"
+        String filename = Path.of(scenePath).getFileName().toString();
+        String slug = filename
+            .replaceFirst("^(?i)SCN-", "")
+            .replaceFirst("\\.md$", "");
+        // The last segment after the final hyphen is often a character short name
+        String[] parts = slug.split("-");
+        if (parts.length > 0) {
+            String lastPart = parts[parts.length - 1];
+            if (lastPart.length() >= 3 && lastPart.matches("[a-zA-Z]+")) {
+                return lastPart;
+            }
+        }
+        return null;
+    }
+
+    private ObjectNode findAndReadPovCanonCard(String povName, ToolRun refCollector) throws IOException {
+        String normalizedPov = povName.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        if (normalizedPov.isEmpty()) return null;
+
+        List<FileNode> files = collectStoryFiles();
+        // Search for character card matching POV name
+        for (FileNode file : files) {
+            String path = file.getPath();
+            if (path == null) continue;
+            String lower = path.toLowerCase(Locale.ROOT);
+
+            // Match VFS naming: Compendium/Characters/CHAR-serynthas.md
+            // or physical naming: characters-pov-serynthas.md
+            boolean isCharFile = lower.contains("/characters/")
+                || lower.contains("char-")
+                || lower.contains("characters-");
+            if (!isCharFile) continue;
+
+            String fileName = Path.of(path).getFileName().toString().toLowerCase(Locale.ROOT);
+            if (fileName.contains(normalizedPov)) {
+                try {
+                    String content = readFile(path);
+                    if (content == null || content.isBlank()) continue;
+
+                    ObjectNode card = objectMapper.createObjectNode();
+                    card.put("path", path);
+
+                    int canonBudget = 600;
+                    String excerpt = content.length() > canonBudget
+                        ? content.substring(0, canonBudget) : content;
+                    card.put("content", excerpt);
+                    if (content.length() > canonBudget) {
+                        card.put("content_truncated", true);
+                        card.put("content_total_chars", content.length());
+                    }
+
+                    refCollector.fileRefs.add(buildFileRef(path, content,
+                        content.length() > 200 ? content.substring(0, 200) : content));
+                    return card;
+                } catch (IOException ignored) {}
+            }
+        }
+        return null;
     }
 
     private List<String> splitSentences(String text) {
