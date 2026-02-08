@@ -1057,7 +1057,8 @@
 
             const lockRole = !hasAssistant;
             if (lockRole && assistantTemplate) {
-                roleInput.value = assistantTemplate.role;
+                // Keep internal roleKey as "assistant" but present the user-facing label.
+                roleInput.value = 'Chief of Staff';
                 roleInput.disabled = true;
                 roleInput.title = 'Role is locked until a Chief of Staff exists.';
                 const lockedHint = document.createElement('div');
@@ -1223,11 +1224,13 @@
         const renderConfirmStep = () => {
             const name = formState.name.trim() || generateAgentName(formState.role);
             const personalityStatus = formState.personalityConfigured ? 'Configured' : 'Default';
+            const roleKey = canonicalizeRole(formState.role);
+            const roleLabel = roleKey === 'assistant' ? 'Chief of Staff' : formState.role;
             const summary = document.createElement('div');
             summary.className = 'modal-text';
             summary.innerHTML = `
                 <div><strong>Name:</strong> ${escapeHtml(name)}</div>
-                <div><strong>Role:</strong> ${escapeHtml(formState.role)}</div>
+                <div><strong>Role:</strong> ${escapeHtml(roleLabel)}</div>
                 <div><strong>Provider:</strong> ${escapeHtml(formState.provider)}</div>
                 <div><strong>Model:</strong> ${escapeHtml(formState.model)}</div>
                 <div><strong>Personality:</strong> ${escapeHtml(personalityStatus)}</div>
@@ -3470,6 +3473,7 @@
                 closeOnEscape: false
             }
         );
+        if (cancelBtn) cancelBtn.remove();
 
         modal.classList.add('canon-indexing-modal');
 
@@ -3533,10 +3537,6 @@
         });
         actionRow.appendChild(openLastReportBtn);
 
-        cancelBtn.disabled = true;
-        cancelBtn.title = 'Available after indexing completes.';
-        cancelBtn.addEventListener('click', () => close());
-
         const statusBody = statusPanel.querySelector('.canon-indexing-status-body');
         (async () => {
             try {
@@ -3562,14 +3562,12 @@
         confirmBtn.addEventListener('click', async () => {
             confirmBtn.disabled = true;
             confirmBtn.textContent = 'Indexing...';
-            cancelBtn.disabled = true;
-            await runCanonIndexing(agent, body, { confirmBtn, cancelBtn, closeModal: close });
+            await runCanonIndexing(agent, body, { confirmBtn, closeModal: close });
         });
     }
 
     async function runCanonIndexing(agent, modalBody, controls) {
         // NOTE: do not hold a long-lived reference to confirmBtn; we may replace the button to reset handlers.
-        const cancelBtn = controls && controls.cancelBtn ? controls.cancelBtn : null;
         const closeModal = controls && controls.closeModal ? controls.closeModal : null;
 
         // Replace modal body with progress log
@@ -3597,12 +3595,7 @@
             clone.addEventListener('click', handler);
         };
 
-        const enableClose = () => {
-            if (cancelBtn) {
-                cancelBtn.disabled = false;
-                cancelBtn.title = '';
-            }
-        };
+        const enableClose = () => {};
 
         const formatMs = (ms) => {
             const s = Math.max(0, Math.round(ms / 1000));
