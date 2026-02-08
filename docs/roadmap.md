@@ -258,6 +258,10 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - [ ] Recipe registry (data, not code): declarative recipes with tools/agents phases and machine-checkable DoD where possible.
 - [ ] Deterministic `task_router`: request -> recipe_id + initial args, routable=true/false.
 - [ ] Replace the hardcoded "Write Scene from Outline" playbook with an equivalent StepRunner recipe.
+- [ ] Dashboard layout backend persistence: migrate widget layout from localStorage to per-project `.control-room/` file (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
+- [ ] Widget import/export (MVP): export a widget layout + import on another project/machine (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
+- [ ] Editor bottom panel UX pass: fix scroll issues, default to AI Actions, consider hiding Console by default (refs: docs/ideas/editor_ui_rework.md)
+- [ ] Settings "Soon" inventory -> roadmap: backup/cloud, editor settings, other placeholders need scoping and sequencing (refs: Settings UI)
 
 ### Medium Term
 
@@ -266,6 +270,10 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 ### Future
 
 - [ ] **Export Stage** - PDF/EPUB/DOCX manuscript export (refs: docs/reference/cr_editor.md)
+- [ ] Custom widgets (needs design): widget sandbox/permissions + per-project storage + import/export of widget bundles (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
+- [ ] Agent-generated tools v2 (needs design): tool proposal workflow, review via Issues, tool versioning/diffing, ratings/favorites (refs: docs/ideas/agent_tools_v2.md)
+- [ ] Cross-role autonomy + speculative execution (post-Pipeline): allow single-agent chains with explicit attempted roles and deterministic fallback (refs: docs/ideas/scene_pipeline_cross_role_autonomy.md)
+- [ ] Theme builder / custom themes (big): theme import/export + visual theme editor (refs: docs/claude/SYSTEMS_THEMES.md)
 
 ### Completed Milestones (for reference)
 
