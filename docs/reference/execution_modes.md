@@ -45,6 +45,26 @@ Order within phase 2 does not affect output.
 
 Use when: quick opinions, multi-perspective review, brainstorming.
 
+## Conference Tool Policy (Phase 1 Only)
+
+Conference exposes a tool-policy control surface that affects **only the Chief's phase 1** tool loop:
+
+- Allowed tools (comma-separated): restricts which tools the Chief may call (server-enforced).
+- Require tool on first step: forces at least one tool call to occur (bypasses the heuristic "tool_call_required" detector).
+
+Phase 2 always runs with `skipTools: true` and cannot call tools.
+
+## Conference Evidence Enforcement (Phase 2)
+
+Phase 2 agent replies are validated for grounding:
+
+- Exactly one `Evidence:` line is required.
+- Evidence source requirements depend on role (see `docs/reference/agent_roles.md`).
+- Quotes are verified against VFS content when a file is cited.
+- Tool-backed evidence must include a valid `receipt_id: rcpt_...` that exists in the conference session receipts.
+
+Rejected replies are not treated as "tool failures"; they are evidence/grounding failures in phase 2.
+
 
 ---
 
