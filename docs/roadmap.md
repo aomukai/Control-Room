@@ -284,6 +284,15 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
   - [x] History wipe between rounds (agents see no prior context).
   - [x] Conference UI: continuous chat view for user despite per-round isolation.
 
+- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. (refs: docs/reference/execution_modes.md)
+  - [ ] StepRunner core (server-side): execute a recipe mechanically (no reasoning), halt on stop hook, persist audit trail.
+  - [ ] Recipe storage format (data, not code): static declarative recipes with Phase A (tools) + Phase B (agents) + DoD.
+  - [ ] Deterministic task_router service (system-level): request -> recipe_id + initial_args, routable=true/false.
+  - [ ] Session Plan UI: user-visible ordered task checklist (edit/reorder/pause/resume) with status and dependency blocking.
+  - [ ] Per-task cache slots: tool/agent outputs stored with receipt_id + summary injection, discarded after completion.
+  - [ ] DoD evaluation + issue creation on failure (machine-checkable where possible).
+  - [ ] Migration: replace the hardcoded "Write Scene from Outline" playbook with an equivalent recipe executed by StepRunner.
+
 ### Medium Term
 
 - [x] **Agentic Editing** - AI-proposed patches with approval workflow (refs: docs/reference/cr_editor.md, docs/reference/cr_agents.md)
