@@ -127,6 +127,17 @@ It summarizes key concepts and links into stable anchors in the source docs.
 - prereq: Planner task sizing estimates
 - Primary refs: [Tiering system](reference/tiers.md)
 
+### Execution modes (Conference + Pipeline)
+- Doc type: Reference
+- Purpose: Define the two choreography modes — Conference (parallel interpretation) and Pipeline (sequential production) — plus the Recipe format, StepRunner contract, and Session Plan lifecycle.
+- Triggers/Interfaces: Conference UI, Session Plan UI, task_router, StepRunner, tier-based step sizing.
+- Implementation prerequisites:
+- prereq: Conference two-phase lifecycle (implemented)
+- prereq: task_router promotion to system service
+- prereq: StepRunner + Recipe registry
+- Primary refs: [Execution modes](reference/execution_modes.md)
+- Related refs: [Agent role contracts](reference/agent_roles.md), [Conference round lifecycle](statemachine.md#conference-round-lifecycle-two-phase-model), [Assistant concept](cr_assistant_assisted_mode.md), [Tiering system](reference/tiers.md)
+
 ### Team Mode workflow
 - Doc type: Reference
 - Purpose: Define the mandatory Assistant-led execution flow from intent to polished scenes.
