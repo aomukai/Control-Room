@@ -117,13 +117,13 @@ Remaining 1:1 friction:
 ## Now: Task Checklist
 
 ### Conference Two-Phase Implementation
-- [ ] Chief of Staff auto-invite enforcement (UI + backend).
-- [ ] Chief phase 1: lean tool-call prompt (same weight as 1:1), tool execution, results into round buffer.
-- [ ] Tool result injection framing for phase 2 agents.
-- [ ] Abstain detection (keyword match on trimmed response) + agent card visual state (yellow "Abstained" subtitle).
-- [ ] Round-close: save transcript as issue ("Conference {sessionId} — Turn {n}") with receipt linking.
-- [ ] History wipe between rounds (agents see no prior context; UI maintains continuous view).
-- [ ] Chief phase 2: second pass as normal attendee with injection.
+- [x] Chief of Staff auto-invite enforcement (UI + backend).
+- [x] Chief phase 1: lean tool-call prompt (same weight as 1:1), tool execution, results into round buffer.
+- [x] Tool result injection framing for phase 2 agents.
+- [x] Abstain detection (keyword match on trimmed response) + agent card visual state (yellow "Abstained" subtitle).
+- [x] Round-close: save transcript as issue ("Conference {sessionId} — Turn {n}") with receipt linking.
+- [x] History wipe between rounds (agents see no prior context; UI maintains continuous view).
+- [x] Chief phase 2: second pass as normal attendee with injection.
 
 ### Smoke Tests (Conference)
 - Chief phase 1: tool call succeeds, receipt minted, results buffered.
@@ -176,8 +176,9 @@ We support a curated alias map in the backend parser:
 ## Tool Execution Loop (Backend)
 - Entry point: `src/main/java/com/miniide/controllers/ChatController.java`
 - Flow: prompt → (tool call?) → execute → append result → repeat up to the tier-based tool budget.
-- Max tool calls per turn: derived from tier caps (fallback to 3 if tier info unavailable).
-- Tool output injected into prompt is truncated and hashed. Max injected per step: 2000 chars. Max per turn: 6000 chars.
+- Max tool calls per turn: derived from tier caps (fallback to `MAX_TOOL_STEPS` if tier info unavailable).
+- Conference floor: when `conferenceId` is present, the tool loop enforces a small minimum tool budget so Phase 1 can complete multi-step evidence gathering in one round.
+- Tool output injected into prompt is truncated and hashed. Limits are enforced per step and per turn; conferences have a higher budget than default turns.
 - Tool call is executed only if strict JSON envelope passes parse + schema + nonce.
 - After any tool result, the model must send a **decision JSON** (strict, no extra text):
   - Another tool: `{"action":"tool","tool":"<id>","args":{...},"nonce":"<server nonce>"}`
@@ -190,7 +191,8 @@ We support a curated alias map in the backend parser:
   - `requireTool`: force a tool call on the first step (bypasses heuristic)
 - **`skipTools` bypass**: When `skipTools: true` is passed to `/api/ai/chat`, the entire tool machinery is bypassed — no tool catalog prepended, no grounding header, no tool protocol appended, no tool loop. The prompt is sent directly to the model via `callAgentWithGate()`. Used by canon indexing for raw LLM extraction calls.
 - Agent turns are serialized by `AgentTurnGate` to avoid parallel tool loops.
-- Constants: `MAX_TOOL_STEPS=3` (fallback), `MAX_TOOL_BYTES_PER_STEP=8000`, `MAX_TOOL_BYTES_PER_TURN=16000`.
+- Constants (defaults): `MAX_TOOL_STEPS=6`, `MAX_TOOL_BYTES_PER_STEP=8000`, `MAX_TOOL_BYTES_PER_TURN=16000`.
+- Constants (conference): `MAX_TOOL_BYTES_PER_STEP_CONFERENCE=12000`, `MAX_TOOL_BYTES_PER_TURN_CONFERENCE=48000`.
 
 ## LM Studio Structured Output (JSON Schema Enforcement)
 - Provider: `src/main/java/com/miniide/providers/chat/OpenAiCompatibleChatProvider.java`

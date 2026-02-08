@@ -26,6 +26,9 @@ public class OpenRouterChatProvider extends AbstractChatProvider {
 
         ObjectNode payload = mapper.createObjectNode();
         payload.put("model", endpoint.getModel());
+        // Reduce response size and provider-side work; OpenRouter may include reasoning fields by default.
+        // This materially helps on slow/flaky connections.
+        payload.put("include_reasoning", false);
 
         ArrayNode messages = payload.putArray("messages");
         ObjectNode msg = messages.addObject();
@@ -53,7 +56,14 @@ public class OpenRouterChatProvider extends AbstractChatProvider {
             }
         }
 
-        JsonNode response = sendJsonPost(url, payload, apiKey == null ? null : "Bearer " + apiKey, null, endpoint.getTimeoutMs());
+        JsonNode response = sendJsonPostWithRetries(
+            url,
+            payload,
+            apiKey == null ? null : "Bearer " + apiKey,
+            null,
+            endpoint.getTimeoutMs(),
+            endpoint.getMaxRetries()
+        );
 
         JsonNode choices = response.path("choices");
         if (choices.isArray() && choices.size() > 0) {

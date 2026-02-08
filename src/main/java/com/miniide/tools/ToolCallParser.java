@@ -33,6 +33,11 @@ public class ToolCallParser {
         }
         trimmed = unwrapStrictJsonCodeFence(trimmed);
         trimmed = stripInvisibleEdgeChars(trimmed);
+        // If the model starts a JSON object but doesn't close it, treat as invalid format
+        // (not "no tool call"), since the intent was to emit strict JSON.
+        if (trimmed.startsWith("{") && !trimmed.endsWith("}")) {
+            return ToolCallParseResult.error(ERR_INVALID_FORMAT, "unterminated-json");
+        }
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
             return ToolCallParseResult.noCall();
         }

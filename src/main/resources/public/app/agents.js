@@ -4015,11 +4015,11 @@
         const invited = Array.isArray(config?.invited) ? config.invited.slice() : [];
         const moderators = Array.isArray(config?.moderators) ? config.moderators.slice() : [];
         const agenda = config?.agenda || '';
-        const mutedIds = new Set();
-        const abstainedIds = new Set();
-        const chatLog = [];
-        const roundBuffer = { toolResults: [], receiptIds: [] };
-        let roundNumber = 0;
+	        const mutedIds = new Set();
+	        const abstainedIds = new Set();
+	        const chatLog = [];
+	        const roundBuffer = { toolResults: [], receiptIds: [], phase1TurnId: null };
+	        let roundNumber = 0;
         const conferenceContext = {
             isLoading: false,
             text: '',
@@ -4313,16 +4313,15 @@
             return 'Role framing: Stay grounded in the fiction project and avoid business standup tropes.';
         };
 
-        const buildEvidenceRules = () => {
-            return [
-                'Evidence line requirement (mandatory): include exactly one line starting with "Evidence:".',
-                'Evidence must reference story content (outline/scenes/canon/compendium) or explicitly request access to those.',
-                'Tools are executable. If you need a tool, respond with ONLY a JSON tool call object (no Evidence line in that message).',
-                'Tool calls must include the nonce from TOOL_NONCE and must be the only content in the message (no code fences).',
-                'Valid formats:',
-                '✅ Evidence: I checked [file/memory tier] and found [specific thing].',
-                '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
-                '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
+	        const buildEvidenceRules = () => {
+	            return [
+	                'Evidence line requirement (mandatory): include exactly one line starting with "Evidence:".',
+	                'Evidence must reference story content (outline/scenes/canon/compendium) or explicitly request access to those.',
+	                'Conference phase 2 rule: you cannot call tools. If you need more evidence, use a single Evidence line with ACCESS_REQUEST describing what you need.',
+	                'Valid formats:',
+	                '✅ Evidence: I checked [file/memory tier] and found [specific thing].',
+	                '✅ Evidence: I checked [location] and found no issues with [specific aspect].',
+	                '✅ Evidence: I need to check [X] but don’t have access — requesting [Y].',
                 '✅ Evidence: ACCESS_REQUEST — need [X] from [Y].',
                 '✅ Evidence: Story/SCN-outline.md line 12: "..."',
                 'If you used a tool, the Evidence line MUST include receipt_id: rcpt_... (exact).',
@@ -4418,14 +4417,15 @@
             return `conf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         };
 
-        const detectToolSyntax = (content) => {
-            if (!content) return false;
-            const text = String(content);
-            const toolPattern = /\b(file_locator|file_reader|outline_analyzer|canon_checker|task_router|search_issues|prose_analyzer|consistency_checker|scene_draft_validator|issue_status_summarizer|stakes_mapper|line_editor|scene_impact_analyzer|reader_experience_simulator|timeline_validator|beat_architect)\s*\(/i;
-            if (toolPattern.test(text)) return true;
-            const trimmed = text.trim();
-            return trimmed.startsWith('{') && trimmed.includes('"tool"');
-        };
+	        const detectToolSyntax = (content) => {
+	            if (!content) return false;
+	            const text = String(content);
+	            const trimmed = text.trim();
+	            // Phase 2 cannot execute tools, but it MUST be allowed to *mention* tools in ACCESS_REQUEST.
+	            // Only reject responses that look like an actual JSON tool call payload.
+	            if (trimmed.startsWith('```')) return true;
+	            return trimmed.startsWith('{') && trimmed.includes('"tool"');
+	        };
 
         const detectCotLeak = (content) => {
             if (!content) return false;
@@ -4484,11 +4484,15 @@
             return bare ? bare[1] : null;
         };
 
-        const loadReceiptIds = async () => {
-            if (!window.auditApi || !conferenceContext.sessionId) return [];
-            try {
-                const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
-                return Array.isArray(res?.receipts) ? res.receipts : [];
+	        const loadReceiptIds = async () => {
+	            // Prefer per-round receipts so evidence can't cite stale receipts from earlier rounds.
+	            if (Array.isArray(roundBuffer.receiptIds) && roundBuffer.receiptIds.length > 0) {
+	                return roundBuffer.receiptIds.slice();
+	            }
+	            if (!window.auditApi || !conferenceContext.sessionId) return [];
+	            try {
+	                const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
+	                return Array.isArray(res?.receipts) ? res.receipts : [];
             } catch (_) {
                 return [];
             }
@@ -4768,21 +4772,23 @@
 
         // getActiveParticipants removed — two-phase model handles ordering directly in sendMessage.
 
-        const sendMessage = async () => {
-            const text = chatInput.value.trim();
-            if (!text) return;
-            chatInput.value = '';
-            chatInput.disabled = true;
-            chatSend.disabled = true;
-            chatLog.push({ author: 'You', role: 'user', content: text });
-            addChatMessage('You', 'user', text);
+	        const sendMessage = async () => {
+	            const text = chatInput.value.trim();
+	            if (!text) return;
+	            chatInput.value = '';
+	            chatInput.disabled = true;
+	            chatSend.disabled = true;
+	            // Store the message with its round so per-round transcript saves are possible.
+	            chatLog.push({ author: 'You', role: 'user', content: text, round: roundNumber + 1 });
+	            addChatMessage('You', 'user', text);
 
-            // Reset per-round state.
-            roundNumber++;
-            abstainedIds.clear();
-            roundBuffer.toolResults = [];
-            roundBuffer.receiptIds = [];
-            renderAttendees();
+	            // Reset per-round state.
+	            roundNumber++;
+	            abstainedIds.clear();
+	            roundBuffer.toolResults = [];
+	            roundBuffer.receiptIds = [];
+	            roundBuffer.phase1TurnId = null;
+	            renderAttendees();
 
             const chiefAgent = invited.find(a => isAssistantAgent(a));
             if (!chiefAgent) {
@@ -4794,9 +4800,10 @@
 
             // ========== PHASE 1: Chief Tool Execution ==========
             try {
-                const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
-                const phase1TurnId = createTurnId(chiefAgent.id);
-                const phase1Prompt = buildPhase1Prompt(text);
+	                const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
+	                const phase1TurnId = createTurnId(chiefAgent.id);
+	                roundBuffer.phase1TurnId = phase1TurnId;
+	                const phase1Prompt = buildPhase1Prompt(text);
 
                 const phase1Response = await withAgentTurn(chiefAgent.id, 'executing', () => api('/api/ai/chat', {
                     method: 'POST',
@@ -4813,52 +4820,83 @@
                 const phase1Parsed = extractStopHook ? extractStopHook(phase1Response.content) : { content: phase1Response.content, stopHook: null };
                 const phase1Content = (phase1Parsed.content || '').trim();
 
-                // Collect receipt IDs from this session to inject into phase 2.
-                if (window.auditApi && conferenceContext.sessionId) {
-                    try {
-                        const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
-                        const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
-                        roundBuffer.receiptIds = receipts;
-                    } catch (_) {
-                        // ignore
-                    }
-                }
+	                // Fetch receipts and inject ONLY receipts from this round's phase 1 turnId.
+	                if (window.auditApi && conferenceContext.sessionId) {
+	                    try {
+	                        const receiptsFile = await auditApi.getSessionReceiptsFile(conferenceContext.sessionId);
+	                        if (receiptsFile && typeof receiptsFile === 'string') {
+	                            const lines = receiptsFile.split('\n').filter(Boolean);
+	                            const phase1Receipts = [];
+	                            for (const line of lines) {
+	                                try {
+	                                    const receipt = JSON.parse(line);
+	                                    if (receipt && receipt.turn_id && receipt.turn_id === phase1TurnId) {
+	                                        phase1Receipts.push(receipt);
+	                                    }
+	                                } catch (_) {
+	                                    // skip malformed receipt lines
+	                                }
+	                            }
 
-                // Fetch full receipts file for tool result injection.
-                if (window.auditApi && conferenceContext.sessionId && roundBuffer.receiptIds.length > 0) {
-                    try {
-                        const receiptsFile = await auditApi.getSessionReceiptsFile(conferenceContext.sessionId);
-                        if (receiptsFile && typeof receiptsFile === 'string') {
-                            const lines = receiptsFile.split('\n').filter(Boolean);
-                            for (const line of lines) {
-                                try {
-                                    const receipt = JSON.parse(line);
-                                    roundBuffer.toolResults.push({
-                                        tool: receipt.tool_id || 'unknown',
-                                        receiptId: receipt.receipt_id || '',
-                                        output: receipt.outputs?.content || receipt.outputs?.truncated || JSON.stringify(receipt.outputs || {}).slice(0, 2000)
-                                    });
-                                } catch (_) {
-                                    // skip malformed receipt lines
-                                }
-                            }
-                        }
-                    } catch (_) {
-                        // ignore
-                    }
+		                            roundBuffer.receiptIds = phase1Receipts
+		                                .map(item => item && item.receipt_id ? String(item.receipt_id) : '')
+		                                .filter(Boolean);
+
+		                            const coerceReceiptText = (value) => {
+		                                if (typeof value !== 'string') return null;
+		                                const t = value.trim();
+		                                if (!t) return null;
+		                                // Some tools/providers wrap excerpts as a JSON-encoded string.
+		                                // If so, surface the excerpt/content field directly so agents can quote it.
+		                                if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+		                                    try {
+		                                        const parsed = JSON.parse(t);
+		                                        if (parsed && typeof parsed.excerpt === 'string' && parsed.excerpt.trim()) return parsed.excerpt;
+		                                        if (parsed && typeof parsed.content === 'string' && parsed.content.trim()) return parsed.content;
+		                                        if (parsed && typeof parsed.text === 'string' && parsed.text.trim()) return parsed.text;
+		                                    } catch (_) {
+		                                        // ignore parse failures; fall back to raw text
+		                                    }
+		                                }
+		                                return value;
+		                            };
+
+		                            phase1Receipts.forEach(receipt => {
+		                                const outputs = receipt && receipt.outputs ? receipt.outputs : null;
+		                                let outText = '(no output)';
+		                                if (outputs) {
+		                                    // Prefer textual fields; avoid treating boolean `truncated` as output.
+		                                    if (typeof outputs.content === 'string' && outputs.content.trim()) outText = outputs.content;
+		                                    else if (typeof outputs.text === 'string' && outputs.text.trim()) outText = outputs.text;
+		                                    else if (typeof outputs.excerpt === 'string' && outputs.excerpt.trim()) outText = outputs.excerpt;
+		                                    else if (typeof outputs.truncated === 'string' && outputs.truncated.trim()) outText = outputs.truncated;
+		                                    else outText = JSON.stringify(outputs).slice(0, 4000);
+		                                }
+		                                const coerced = coerceReceiptText(outText);
+		                                if (coerced) outText = coerced;
+		                                roundBuffer.toolResults.push({
+		                                    tool: receipt.tool_id || 'unknown',
+		                                    receiptId: receipt.receipt_id || '',
+		                                    output: outText
+		                                });
+		                            });
+	                        }
+	                    } catch (_) {
+	                        // ignore
+	                    }
                 }
 
                 // If Chief said NO_TOOLS_NEEDED or stop hook, proceed to phase 2 with empty buffer.
-                if (phase1Parsed.stopHook) {
-                    const detail = phase1Parsed.stopHookDetail || phase1Content;
-                    addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1] Stop hook: ${phase1Parsed.stopHook} — ${detail}`);
-                    chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 stop hook: ${phase1Parsed.stopHook}`, phase: 1 });
-                }
-            } catch (err) {
-                const errorMessage = err && err.message ? err.message : 'Chief phase 1 failed.';
-                addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1 Error] ${errorMessage}`);
-                chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 error: ${errorMessage}`, phase: 1 });
-            }
+	                if (phase1Parsed.stopHook) {
+	                    const detail = phase1Parsed.stopHookDetail || phase1Content;
+	                    addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1] Stop hook: ${phase1Parsed.stopHook} — ${detail}`);
+	                    chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 stop hook: ${phase1Parsed.stopHook}`, phase: 1, round: roundNumber });
+	                }
+	            } catch (err) {
+	                const errorMessage = err && err.message ? err.message : 'Chief phase 1 failed.';
+	                addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1 Error] ${errorMessage}`);
+	                chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 error: ${errorMessage}`, phase: 1, round: roundNumber });
+	            }
 
             // ========== PHASE 2: Agent Interpretation ==========
             // Chief gets a second pass first, then all other agents.
@@ -4887,23 +4925,23 @@
                     }), `Conference phase 2: ${agent.name || 'agent'}`);
                     let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
 
-                    if (parsed.stopHook) {
-                        const detail = parsed.stopHookDetail || parsed.content;
-                        const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
-                        addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, phase: 2 });
-                        continue;
-                    }
+	                    if (parsed.stopHook) {
+	                        const detail = parsed.stopHookDetail || parsed.content;
+	                        const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
+	                        addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
+	                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, phase: 2, round: roundNumber });
+	                        continue;
+	                    }
 
                     let reply = parsed.content || 'No response.';
 
                     // --- Abstain detection (runs before evidence validation) ---
-                    if (isAbstainResponse(reply)) {
-                        abstainedIds.add(agent.id);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2 });
-                        renderAttendees();
-                        continue;
-                    }
+	                    if (isAbstainResponse(reply)) {
+	                        abstainedIds.add(agent.id);
+	                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2, round: roundNumber });
+	                        renderAttendees();
+	                        continue;
+	                    }
 
                     // --- Evidence validation (phase 2 only) ---
                     let evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
@@ -4924,40 +4962,40 @@
                             })
                         }), `Conference phase 2 retry: ${agent.name || 'agent'}`);
                         parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
-                        if (parsed.stopHook) {
-                            const detail = parsed.stopHookDetail || parsed.content;
-                            addChatMessage(agent.name || 'Agent', 'assistant', `Stop hook: ${parsed.stopHook} — ${detail}`);
-                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Stop hook: ${parsed.stopHook}`, phase: 2 });
-                            continue;
-                        }
+	                        if (parsed.stopHook) {
+	                            const detail = parsed.stopHookDetail || parsed.content;
+	                            addChatMessage(agent.name || 'Agent', 'assistant', `Stop hook: ${parsed.stopHook} — ${detail}`);
+	                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Stop hook: ${parsed.stopHook}`, phase: 2, round: roundNumber });
+	                            continue;
+	                        }
                         reply = parsed.content || 'No response.';
 
-                        if (isAbstainResponse(reply)) {
-                            abstainedIds.add(agent.id);
-                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2 });
-                            renderAttendees();
-                            continue;
-                        }
+	                        if (isAbstainResponse(reply)) {
+	                            abstainedIds.add(agent.id);
+	                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2, round: roundNumber });
+	                            renderAttendees();
+	                            continue;
+	                        }
 
                         evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     }
 
-                    if (!evidenceCheck.ok) {
-                        const rejection = buildEvidenceRejectionMessage(evidenceCheck, reply);
-                        addChatMessage(agent.name || 'Agent', 'assistant', rejection);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required', phase: 2 });
-                        notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
-                        await recordConferenceTelemetry(evidenceCheck.reason, agent.id);
-                    } else {
-                        addChatMessage(agent.name || 'Agent', 'assistant', reply);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, phase: 2 });
-                    }
-                } catch (err) {
-                    const errorMessage = err && err.message ? err.message : 'Agent failed to respond.';
-                    addChatMessage(agent.name || 'Agent', 'assistant', `Error: ${errorMessage}`);
-                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Error: ${errorMessage}`, phase: 2 });
-                    notificationStore.warning(`Conference response failed for ${agent.name || 'agent'}.`, 'workbench');
-                }
+	                    if (!evidenceCheck.ok) {
+	                        const rejection = buildEvidenceRejectionMessage(evidenceCheck, reply);
+	                        addChatMessage(agent.name || 'Agent', 'assistant', rejection);
+	                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required', phase: 2, round: roundNumber });
+	                        notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
+	                        await recordConferenceTelemetry(evidenceCheck.reason, agent.id);
+	                    } else {
+	                        addChatMessage(agent.name || 'Agent', 'assistant', reply);
+	                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, phase: 2, round: roundNumber });
+	                    }
+	                } catch (err) {
+	                    const errorMessage = err && err.message ? err.message : 'Agent failed to respond.';
+	                    addChatMessage(agent.name || 'Agent', 'assistant', `Error: ${errorMessage}`);
+	                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Error: ${errorMessage}`, phase: 2, round: roundNumber });
+	                    notificationStore.warning(`Conference response failed for ${agent.name || 'agent'}.`, 'workbench');
+	                }
             }
 
             // ========== ROUND CLOSE ==========
@@ -5002,14 +5040,14 @@
             return rejection;
         };
 
-        const closeRound = async (userMessage) => {
-            // Auto-save transcript as issue ("Conference {sessionId} — Turn {roundNumber}").
-            if (window.issueApi && conferenceContext.sessionId) {
-                try {
-                    const roundEntries = chatLog.filter(e => e.phase === 1 || e.phase === 2 || e.role === 'user');
-                    const transcript = roundEntries.length > 0
-                        ? roundEntries.map(entry => `[${entry.role}] ${entry.author}: ${entry.content}`).join('\n')
-                        : 'No transcript for this round.';
+	        const closeRound = async (userMessage) => {
+	            // Auto-save transcript as issue ("Conference {sessionId} — Turn {roundNumber}").
+	            if (window.issueApi && conferenceContext.sessionId) {
+	                try {
+	                    const roundEntries = chatLog.filter(e => (e.phase === 1 || e.phase === 2 || e.role === 'user') && e.round === roundNumber);
+	                    const transcript = roundEntries.length > 0
+	                        ? roundEntries.map(entry => `[${entry.role}] ${entry.author}: ${entry.content}`).join('\n')
+	                        : 'No transcript for this round.';
                     const title = `Conference ${conferenceContext.sessionId} — Turn ${roundNumber}`;
                     const receiptLine = roundBuffer.receiptIds.length
                         ? `Session receipts: ${roundBuffer.receiptIds.join(', ')}`

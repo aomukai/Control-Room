@@ -52,9 +52,16 @@ public class ChatController implements Controller {
     private final AppLogger logger;
     private final ToolExecutionService toolExecutionService;
     private final ToolCallParser toolCallParser;
-    private static final int MAX_TOOL_STEPS = 3;
+    // Default cap for tool loop iterations per /api/ai/chat turn.
+    // Conference Phase 1 often needs 4+ calls (e.g., locator + multiple reads),
+    // so keep this high enough to avoid "last tool never runs" surprises.
+    private static final int MAX_TOOL_STEPS = 6;
     private static final int MAX_TOOL_BYTES_PER_TURN = 16000;
     private static final int MAX_TOOL_BYTES_PER_STEP = 8000;
+    // Conference Phase 1 often needs several tool reads; use a larger tool-output budget
+    // so we don't force a premature final response after 1-2 tools.
+    private static final int MAX_TOOL_BYTES_PER_TURN_CONFERENCE = 48000;
+    private static final int MAX_TOOL_BYTES_PER_STEP_CONFERENCE = 12000;
     private final ToolSchemaRegistry toolSchemaRegistry;
     private static final java.util.Map<String, String> TOOL_ALIASES = buildToolAliases();
 
@@ -294,8 +301,19 @@ public class ChatController implements Controller {
         boolean decisionMode = false;
         int tierMaxToolSteps = resolveTierMaxToolSteps(agentEndpoint, toolContext);
         int maxToolSteps = tierMaxToolSteps;
+        // Conferences are intentionally "tool-heavy" in Phase 1 (e.g., locator + multiple reads).
+        // Tier-1 caps often evaluate to 3 tool actions, which causes the last planned tool call
+        // to silently never execute. Give conferences a small floor while keeping a hard cap.
+        if (toolContext != null && toolContext.getSessionId() != null && !toolContext.getSessionId().isBlank()) {
+            maxToolSteps = Math.max(maxToolSteps, 6);
+        }
         java.util.Set<String> allowedTools = toolPolicy != null ? toolPolicy.getAllowedTools() : null;
         String currentPrompt = appendToolProtocol(prompt, nonce, requireToolCall, toolPolicy, maxToolSteps);
+        final boolean isConference = toolContext != null
+            && toolContext.getSessionId() != null
+            && !toolContext.getSessionId().isBlank();
+        final int maxToolBytesPerTurn = isConference ? MAX_TOOL_BYTES_PER_TURN_CONFERENCE : MAX_TOOL_BYTES_PER_TURN;
+        final int maxToolBytesPerStep = isConference ? MAX_TOOL_BYTES_PER_STEP_CONFERENCE : MAX_TOOL_BYTES_PER_STEP;
         String response = null;
         int injectedBytes = 0;
         int toolCalls = 0;
@@ -439,7 +457,7 @@ public class ChatController implements Controller {
                 }
                 ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
                 ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
-                    toolPolicy, maxToolSteps - toolCalls - 1);
+                    toolPolicy, maxToolSteps - toolCalls - 1, maxToolBytesPerTurn, maxToolBytesPerStep);
                 currentPrompt = append.prompt;
                 injectedBytes = append.injectedBytes;
                 if (append.exceededLimit) {
@@ -461,7 +479,7 @@ public class ChatController implements Controller {
                 }
                 ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
                 ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
-                    toolPolicy, maxToolSteps - toolCalls - 1);
+                    toolPolicy, maxToolSteps - toolCalls - 1, maxToolBytesPerTurn, maxToolBytesPerStep);
                 currentPrompt = append.prompt;
                 injectedBytes = append.injectedBytes;
                 requireToolCall = false;
@@ -489,7 +507,7 @@ public class ChatController implements Controller {
                         }
                         ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
                         ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
-                            toolPolicy, maxToolSteps - toolCalls - 1);
+                            toolPolicy, maxToolSteps - toolCalls - 1, maxToolBytesPerTurn, maxToolBytesPerStep);
                         currentPrompt = append.prompt;
                         injectedBytes = append.injectedBytes;
                         requireToolCall = false;
@@ -513,7 +531,7 @@ public class ChatController implements Controller {
                         }
                         ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
                         ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
-                            toolPolicy, maxToolSteps - toolCalls - 1);
+                            toolPolicy, maxToolSteps - toolCalls - 1, maxToolBytesPerTurn, maxToolBytesPerStep);
                         currentPrompt = append.prompt;
                         injectedBytes = append.injectedBytes;
                         requireToolCall = false;
@@ -544,7 +562,7 @@ public class ChatController implements Controller {
                     }
                     ToolExecutionResult result = toolExecutionService.execute(call, toolContext);
                     ToolAppendResult append = appendToolResult(currentPrompt, call, result, nonce, injectedBytes,
-                        toolPolicy, maxToolSteps - toolCalls - 1);
+                        toolPolicy, maxToolSteps - toolCalls - 1, maxToolBytesPerTurn, maxToolBytesPerStep);
                     currentPrompt = append.prompt;
                     injectedBytes = append.injectedBytes;
                     requireToolCall = false;
@@ -773,7 +791,7 @@ public class ChatController implements Controller {
 
     private ToolAppendResult appendToolResult(String prompt, ToolCall call, ToolExecutionResult result,
                                               String nonce, int injectedBytes, ToolPolicy toolPolicy,
-                                              int remainingSteps) {
+                                              int remainingSteps, int maxBytesPerTurn, int maxBytesPerStep) {
         StringBuilder builder = new StringBuilder();
         builder.append(prompt != null ? prompt : "");
         builder.append("\n\nTool call detected:\n");
@@ -784,7 +802,7 @@ public class ChatController implements Controller {
         if (output == null) {
             builder.append("Tool returned no output.");
         } else {
-            String truncated = truncateToolOutput(output);
+            String truncated = truncateToolOutput(output, maxBytesPerStep);
             builder.append(truncated);
             injectedThisStep = truncated.length();
         }
@@ -809,7 +827,7 @@ public class ChatController implements Controller {
             .append(nonce).append("\"}\n");
         builder.append("- Finish: {\"action\":\"final\",\"nonce\":\"").append(nonce).append("\"}");
         int total = injectedBytes + injectedThisStep;
-        boolean exceeded = total > MAX_TOOL_BYTES_PER_TURN;
+        boolean exceeded = total > Math.max(1, maxBytesPerTurn);
         return new ToolAppendResult(builder.toString(), total, exceeded);
     }
 
@@ -821,9 +839,9 @@ public class ChatController implements Controller {
         return builder.toString();
     }
 
-    private String truncateToolOutput(String output) {
+    private String truncateToolOutput(String output, int maxBytesPerStep) {
         if (output == null) return "";
-        int max = MAX_TOOL_BYTES_PER_STEP;
+        int max = Math.max(1, maxBytesPerStep);
         if (output.length() <= max) {
             return output;
         }
@@ -1624,8 +1642,30 @@ public class ChatController implements Controller {
         try {
             return AGENT_TURN_GATE.run(() -> providerChatService.chat(providerName, apiKey, agentEndpoint, prompt, responseFormat));
         } catch (Exception e) {
-            throw new RuntimeException("Agent chat failed", e);
+            // Preserve the top-level message for UI, but include the root-cause detail
+            // (e.g., provider HTTP 401/400 body) so failures are diagnosable.
+            String detail = rootCauseMessage(e);
+            if (detail == null || detail.isBlank()) {
+                detail = "unknown";
+            }
+            throw new RuntimeException("Agent chat failed: " + detail, e);
         }
+    }
+
+    private String rootCauseMessage(Throwable t) {
+        if (t == null) return null;
+        Throwable cur = t;
+        Throwable last = t;
+        int guard = 0;
+        while (cur != null && guard++ < 20) {
+            last = cur;
+            cur = cur.getCause();
+        }
+        String msg = last != null ? last.getMessage() : null;
+        if (msg == null || msg.isBlank()) {
+            msg = last != null ? last.getClass().getSimpleName() : null;
+        }
+        return msg;
     }
 
     private PromptValidationResult validateBySchema(String expectSchema, String response) {

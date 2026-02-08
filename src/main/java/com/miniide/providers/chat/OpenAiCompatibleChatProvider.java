@@ -79,7 +79,14 @@ public class OpenAiCompatibleChatProvider extends AbstractChatProvider {
             }
         }
 
-        JsonNode response = sendJsonPost(url, payload, apiKey == null ? null : "Bearer " + apiKey, null, endpoint.getTimeoutMs());
+        JsonNode response = sendJsonPostWithRetries(
+            url,
+            payload,
+            apiKey == null ? null : "Bearer " + apiKey,
+            null,
+            endpoint.getTimeoutMs(),
+            endpoint.getMaxRetries()
+        );
 
         JsonNode choices = response.path("choices");
         if (choices.isArray() && choices.size() > 0) {

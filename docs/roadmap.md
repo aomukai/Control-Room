@@ -267,7 +267,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 ### Next (Queued)
 
 - [x] **Conference chat wiring** - connect conference chat flow; validate agent turn queue indicator here.
-- [ ] **Conference two-phase redesign** - Chief-led tool orchestration + role-based interpretation. (refs: docs/statemachine.md, docs/reference/cr_agents.md)
+- [x] **Conference two-phase redesign** - Chief-led tool orchestration + role-based interpretation. (refs: docs/statemachine.md, docs/reference/cr_agents.md)
   - [x] User-only conference history in prompts (no agent cross-contamination).
   - [x] Role framing + evidence rules injected per agent.
   - [x] Quote verification against VFS file content.
@@ -275,14 +275,14 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
   - [x] Evidence parser accepts **Evidence:** (bold) format.
   - [x] Structural claims require line/section or outline entry reference.
   - [x] Block chain-of-thought leakage in conference replies.
-  - [x] Reject plain-text tool calls (tools are prompt-only).
-  - [ ] Chief of Staff auto-invite + non-removable enforcement (UI + backend).
-  - [ ] Chief tool phase (phase 1): lean prompt, tool execution, round buffer.
-  - [ ] Tool result injection into agent prompts (phase 2 framing).
-  - [ ] Abstain detection + agent card visual state (yellow "Abstained" subtitle).
-  - [ ] Round-close: transcript auto-saved as issue with receipt linking.
-  - [ ] History wipe between rounds (agents see no prior context).
-  - [ ] Conference UI: continuous chat view for user despite per-round isolation.
+  - [x] Reject plain-text tool calls (tool calls must be strict JSON-only with nonce).
+  - [x] Chief of Staff auto-invite + non-removable enforcement (UI + backend).
+  - [x] Chief tool phase (phase 1): lean prompt, tool execution, round buffer.
+  - [x] Tool result injection into agent prompts (phase 2 framing).
+  - [x] Abstain detection + agent card visual state (yellow "Abstained" subtitle).
+  - [x] Round-close: transcript auto-saved as issue with receipt linking.
+  - [x] History wipe between rounds (agents see no prior context).
+  - [x] Conference UI: continuous chat view for user despite per-round isolation.
 
 ### Medium Term
 
