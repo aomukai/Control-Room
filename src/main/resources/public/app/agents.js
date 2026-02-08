@@ -3886,11 +3886,12 @@
         agents.forEach(agent => {
             const row = document.createElement('div');
             row.className = 'conference-agent-row';
+            const isChief = isAssistantAgent(agent);
 
             const name = document.createElement('div');
             name.className = 'conference-agent-name';
-            name.textContent = agent.name || 'Unnamed Agent';
-            name.title = agent.name || 'Unnamed Agent';
+            name.textContent = (agent.name || 'Unnamed Agent') + (isChief ? ' ★' : '');
+            name.title = isChief ? 'Chief of Staff (auto-invited, cannot be removed)' : (agent.name || 'Unnamed Agent');
 
             const role = document.createElement('div');
             role.className = 'conference-agent-role';
@@ -3901,7 +3902,9 @@
             const invitedCheckbox = document.createElement('input');
             invitedCheckbox.type = 'checkbox';
             invitedCheckbox.className = 'conference-agent-checkbox';
-            invitedCheckbox.checked = Boolean(agent.id && agent.id === seedId);
+            // Chief is always invited and locked.
+            invitedCheckbox.checked = isChief || Boolean(agent.id && agent.id === seedId);
+            if (isChief) invitedCheckbox.disabled = true;
             invitedCell.appendChild(invitedCheckbox);
 
             const leadCell = document.createElement('label');
@@ -3909,9 +3912,16 @@
             const leadCheckbox = document.createElement('input');
             leadCheckbox.type = 'checkbox';
             leadCheckbox.className = 'conference-agent-checkbox';
+            // Chief is always moderator and locked.
+            if (isChief) {
+                leadCheckbox.checked = true;
+                leadCheckbox.disabled = true;
+            }
             leadCell.appendChild(leadCheckbox);
 
             invitedCheckbox.addEventListener('change', () => {
+                // Chief cannot be uninvited.
+                if (isChief) { invitedCheckbox.checked = true; return; }
                 // Moderator must be invited, so re-check if user tries to uninvite.
                 if (!invitedCheckbox.checked && leadCheckbox.checked) {
                     invitedCheckbox.checked = true;
@@ -3920,10 +3930,12 @@
             });
 
             leadCheckbox.addEventListener('change', () => {
+                // Chief's moderator status cannot be changed.
+                if (isChief) { leadCheckbox.checked = true; return; }
                 if (leadCheckbox.checked) {
-                    // Single moderator: uncheck all other lead boxes.
+                    // Single moderator: uncheck all other lead boxes (except Chief).
                     selections.forEach((item) => {
-                        if (item.agent.id !== agent.id) {
+                        if (item.agent.id !== agent.id && !isAssistantAgent(item.agent)) {
                             item.lead.checked = false;
                         }
                     });
@@ -3970,6 +3982,17 @@
                 if (item.lead.checked) leaders.push(item.agent);
             });
 
+            // Enforce: Chief of Staff must always be invited and a moderator.
+            const chiefAgent = agents.find(a => isAssistantAgent(a));
+            if (chiefAgent) {
+                if (!invited.some(a => a.id === chiefAgent.id)) {
+                    invited.unshift(chiefAgent);
+                }
+                if (!leaders.some(a => a.id === chiefAgent.id)) {
+                    leaders.unshift(chiefAgent);
+                }
+            }
+
             const agenda = agendaInput.value.trim();
             const invitedNames = invited.map(agent => agent.name).join(', ') || 'none';
             const leaderNames = leaders.map(agent => agent.name).join(', ') || 'none';
@@ -3993,7 +4016,10 @@
         const moderators = Array.isArray(config?.moderators) ? config.moderators.slice() : [];
         const agenda = config?.agenda || '';
         const mutedIds = new Set();
+        const abstainedIds = new Set();
         const chatLog = [];
+        const roundBuffer = { toolResults: [], receiptIds: [] };
+        let roundNumber = 0;
         const conferenceContext = {
             isLoading: false,
             text: '',
@@ -4073,7 +4099,7 @@
 
         const chatHint = document.createElement('div');
         chatHint.className = 'conference-chat-hint';
-        chatHint.textContent = 'Messages are routed to invited agents (muted agents are skipped).';
+        chatHint.textContent = 'Two-phase rounds: Chief gathers data (tools), then all agents interpret or abstain. Muted agents are skipped.';
 
         const policyWrap = document.createElement('div');
         policyWrap.className = 'modal-row';
@@ -4165,11 +4191,21 @@
                 meta.className = 'conference-attendee-meta';
                 const role = agent.role ? `Role: ${agent.role}` : 'Role: -';
                 const isLead = moderators.some(moderator => moderator.id === agent.id);
-                const leadTag = isLead ? 'Moderator' : 'Participant';
-                const mutedTag = mutedIds.has(agent.id) ? 'Muted' : '';
-                meta.textContent = [role, leadTag, mutedTag].filter(Boolean).join(' • ');
-                if (isLead) {
+                const isChiefAgent = isAssistantAgent(agent);
+                const isMuted = mutedIds.has(agent.id);
+                const isAbstained = abstainedIds.has(agent.id);
+                let statusTag = isChiefAgent ? 'Moderator' : 'Participant';
+                if (isMuted) statusTag = 'Muted';
+                else if (isAbstained) statusTag = 'Abstained';
+                meta.textContent = [role, statusTag].filter(Boolean).join(' • ');
+                if (isLead || isChiefAgent) {
                     row.classList.add('conference-attendee-moderator');
+                }
+                if (isMuted) {
+                    meta.style.color = 'var(--danger, #e74c3c)';
+                } else if (isAbstained) {
+                    meta.style.color = 'var(--warning, #f0ad4e)';
+                    meta.title = 'This agent had nothing to add from their role this round.';
                 }
                 info.appendChild(name);
                 info.appendChild(meta);
@@ -4251,57 +4287,8 @@
             }
         };
 
-        const formatConferenceRoster = () => {
-            const names = invited.map(agent => agent.name || 'Agent');
-            return names.length > 0 ? names.join(', ') : 'none';
-        };
-
-        const formatModerators = () => {
-            const names = moderators.map(agent => agent.name || 'Agent');
-            return names.length > 0 ? names.join(', ') : 'none';
-        };
-
-        const formatChatLogForPrompt = (limit = 12) => {
-            const userOnly = chatLog.filter(entry => entry && entry.role === 'user');
-            const slice = userOnly.slice(-limit);
-            if (slice.length === 0) return 'No prior messages.';
-            return slice.map(entry => `${entry.author}: ${entry.content}`).join('\n');
-        };
-
-        const buildConferencePrompt = (agent, message, { retry = false, rejectionReason = null, requireTool = false } = {}) => {
-            const agentName = agent?.name || 'Agent';
-            const agentRole = agent?.role || 'role';
-            const roleFrame = buildRoleFrame(agentRole);
-            // When requiring a tool on the first step, keep the prompt minimal to reduce token load and improve
-            // strict-JSON tool call compliance on smaller/local models. Evidence rules are enforced by the UI anyway
-            // and can be restated in the retry prompt if needed.
-            const includeFullRules = retry || !requireTool;
-            const evidenceRules = includeFullRules ? buildEvidenceRules() : null;
-            const contextPrelude = conferenceContext.text ? `Grounding prelude:\n${conferenceContext.text}` : 'Grounding prelude: (no context loaded)';
-            const rejectionLine = retry
-                ? `Rejection reason: ${rejectionReason || 'missing or invalid evidence'}.`
-                : null;
-            const lines = [
-                'You are in a creative project review for a fiction project (not a business standup).',
-                `Conference agenda: ${agenda || 'none'}`,
-                `Attendees: ${formatConferenceRoster()}`,
-                `Moderators: ${formatModerators()}`,
-                `You are ${agentName} (${agentRole}). Respond as this agent.`,
-                'Primary task: find ONE issue in your role domain using evidence from the VFS. Secondary observations are optional and must be clearly labeled as secondary.',
-                roleFrame,
-                evidenceRules,
-                includeFullRules ? contextPrelude : null,
-                includeFullRules ? 'Conversation so far:' : null,
-                includeFullRules ? formatChatLogForPrompt() : null,
-                'Latest message:',
-                message,
-                retry ? 'Your last response was rejected. Fix it now.' : 'Keep your reply concise and actionable.',
-                retry ? rejectionLine : null,
-                retry ? 'On retry: include EXACTLY ONE Evidence line. If a tool was used, include receipt_id: rcpt_... in that Evidence line.' : null
-            ];
-            const payload = lines.filter(Boolean).join('\n');
-            return buildChatPrompt ? buildChatPrompt(payload, agent) : payload;
-        };
+        // formatConferenceRoster, formatModerators, formatChatLogForPrompt removed —
+        // two-phase prompts don't include attendee lists or chat history (agents are isolated per round).
 
         const buildRoleFrame = (role) => {
             const normalized = (role || '').toLowerCase();
@@ -4343,6 +4330,85 @@
                 '❌ Missing evidence line or generic claims without checks will be rejected.',
                 'Note: Issue-tracker-only evidence is allowed for chief/assistant roles when it includes a valid receipt_id.'
             ].join('\n');
+        };
+
+        // --- Two-Phase Prompt Builders ---
+
+        const buildPhase1Prompt = (message) => {
+            // Lean prompt for Chief's tool phase — same weight as 1:1 chat.
+            // No evidence rules, no role framing for others, no grounding prelude.
+            const lines = [
+                'You are the Chief of Staff in a creative fiction project conference.',
+                `Conference agenda: ${agenda || 'none'}`,
+                'Your task: use the available tools to gather data relevant to the user\'s request.',
+                'Run all necessary tool calls (file_locator, consistency_checker, prose_analyzer, etc.).',
+                'Do NOT provide interpretation or commentary — just gather the data.',
+                'If no tools are needed, respond with: NO_TOOLS_NEEDED',
+                '',
+                'User request:',
+                message
+            ];
+            const payload = lines.join('\n');
+            // Use buildChatPrompt to get the stop-hook preamble, but pass a
+            // synthetic agent object so the tool catalog + nonce are appended.
+            const chiefAgent = invited.find(a => isAssistantAgent(a));
+            return buildChatPrompt ? buildChatPrompt(payload, chiefAgent) : payload;
+        };
+
+        const buildPhase2Prompt = (agent, message, injectedResults, { retry = false, rejectionReason = null } = {}) => {
+            const agentName = agent?.name || 'Agent';
+            const agentRole = agent?.role || 'role';
+            const roleFrame = buildRoleFrame(agentRole);
+            const evidenceRules = buildEvidenceRules();
+            const contextPrelude = conferenceContext.text ? `Grounding prelude:\n${conferenceContext.text}` : 'Grounding prelude: (no context loaded)';
+            const rejectionLine = retry
+                ? `Rejection reason: ${rejectionReason || 'missing or invalid evidence'}.`
+                : null;
+
+            // Format injected tool results
+            let injectionBlock = '';
+            if (injectedResults && injectedResults.length > 0) {
+                const resultLines = injectedResults.map((r, i) => {
+                    return `Tool: ${r.tool || 'unknown'} (receipt_id: ${r.receiptId || 'none'})\nResult:\n${r.output || '(no output)'}`;
+                });
+                injectionBlock = [
+                    '--- Tool Results (gathered by Chief of Staff) ---',
+                    ...resultLines,
+                    '--- End Tool Results ---'
+                ].join('\n\n');
+            } else {
+                injectionBlock = '--- No tool results were gathered for this round. ---';
+            }
+
+            const lines = [
+                'You are in a creative project review for a fiction project (not a business standup).',
+                `Conference agenda: ${agenda || 'none'}`,
+                `You are ${agentName} (${agentRole}). Respond as this agent.`,
+                '',
+                injectionBlock,
+                '',
+                'The above data was retrieved for this discussion.',
+                `You are ${agentName} (${agentRole}). If this data is relevant to your expertise, provide your perspective with a single Evidence line referencing the data above (include receipt_id if applicable).`,
+                'If this data is NOT relevant to your role, respond with ONLY the word: ABSTAIN',
+                '',
+                roleFrame,
+                evidenceRules,
+                contextPrelude,
+                '',
+                'User request:',
+                message,
+                retry ? 'Your last response was rejected. Fix it now.' : 'Keep your reply concise and actionable.',
+                retry ? rejectionLine : null,
+                retry ? 'On retry: include EXACTLY ONE Evidence line. If a tool was used, include receipt_id: rcpt_... in that Evidence line.' : null
+            ];
+            const payload = lines.filter(Boolean).join('\n');
+            return buildChatPrompt ? buildChatPrompt(payload, agent) : payload;
+        };
+
+        const isAbstainResponse = (content) => {
+            if (!content) return false;
+            const trimmed = String(content).trim().toUpperCase();
+            return trimmed === 'ABSTAIN';
         };
 
         const createConferenceSessionId = () => {
@@ -4700,22 +4766,7 @@
             return results;
         };
 
-        const getActiveParticipants = () => {
-            const invitedList = invited.filter(agent => agent && agent.id && !mutedIds.has(agent.id));
-            const moderatorIds = new Set(moderators.map(agent => agent.id));
-            const ordered = [];
-            invitedList.forEach(agent => {
-                if (moderatorIds.has(agent.id)) {
-                    ordered.push(agent);
-                }
-            });
-            invitedList.forEach(agent => {
-                if (!moderatorIds.has(agent.id)) {
-                    ordered.push(agent);
-                }
-            });
-            return ordered;
-        };
+        // getActiveParticipants removed — two-phase model handles ordering directly in sendMessage.
 
         const sendMessage = async () => {
             const text = chatInput.value.trim();
@@ -4726,20 +4777,103 @@
             chatLog.push({ author: 'You', role: 'user', content: text });
             addChatMessage('You', 'user', text);
 
-            const participants = getActiveParticipants();
-            if (participants.length === 0) {
-                notificationStore.warning('No invited agents available to respond.', 'workbench');
+            // Reset per-round state.
+            roundNumber++;
+            abstainedIds.clear();
+            roundBuffer.toolResults = [];
+            roundBuffer.receiptIds = [];
+            renderAttendees();
+
+            const chiefAgent = invited.find(a => isAssistantAgent(a));
+            if (!chiefAgent) {
+                notificationStore.warning('No Chief of Staff found. Cannot run conference round.', 'workbench');
                 chatInput.disabled = false;
                 chatSend.disabled = false;
                 return;
             }
 
-            for (const agent of participants) {
+            // ========== PHASE 1: Chief Tool Execution ==========
+            try {
+                const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
+                const phase1TurnId = createTurnId(chiefAgent.id);
+                const phase1Prompt = buildPhase1Prompt(text);
+
+                const phase1Response = await withAgentTurn(chiefAgent.id, 'executing', () => api('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: phase1Prompt,
+                        agentId: chiefAgent.id,
+                        conferenceId: conferenceContext.sessionId,
+                        turnId: phase1TurnId,
+                        toolPolicy: toolPolicy || { requireTool: false }
+                    })
+                }), `Conference phase 1 (Chief tools)`);
+
+                const phase1Parsed = extractStopHook ? extractStopHook(phase1Response.content) : { content: phase1Response.content, stopHook: null };
+                const phase1Content = (phase1Parsed.content || '').trim();
+
+                // Collect receipt IDs from this session to inject into phase 2.
+                if (window.auditApi && conferenceContext.sessionId) {
+                    try {
+                        const res = await auditApi.listSessionReceipts(conferenceContext.sessionId);
+                        const receipts = Array.isArray(res?.receipts) ? res.receipts : [];
+                        roundBuffer.receiptIds = receipts;
+                    } catch (_) {
+                        // ignore
+                    }
+                }
+
+                // Fetch full receipts file for tool result injection.
+                if (window.auditApi && conferenceContext.sessionId && roundBuffer.receiptIds.length > 0) {
+                    try {
+                        const receiptsFile = await auditApi.getSessionReceiptsFile(conferenceContext.sessionId);
+                        if (receiptsFile && typeof receiptsFile === 'string') {
+                            const lines = receiptsFile.split('\n').filter(Boolean);
+                            for (const line of lines) {
+                                try {
+                                    const receipt = JSON.parse(line);
+                                    roundBuffer.toolResults.push({
+                                        tool: receipt.tool_id || 'unknown',
+                                        receiptId: receipt.receipt_id || '',
+                                        output: receipt.outputs?.content || receipt.outputs?.truncated || JSON.stringify(receipt.outputs || {}).slice(0, 2000)
+                                    });
+                                } catch (_) {
+                                    // skip malformed receipt lines
+                                }
+                            }
+                        }
+                    } catch (_) {
+                        // ignore
+                    }
+                }
+
+                // If Chief said NO_TOOLS_NEEDED or stop hook, proceed to phase 2 with empty buffer.
+                if (phase1Parsed.stopHook) {
+                    const detail = phase1Parsed.stopHookDetail || phase1Content;
+                    addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1] Stop hook: ${phase1Parsed.stopHook} — ${detail}`);
+                    chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 stop hook: ${phase1Parsed.stopHook}`, phase: 1 });
+                }
+            } catch (err) {
+                const errorMessage = err && err.message ? err.message : 'Chief phase 1 failed.';
+                addChatMessage(chiefAgent.name || 'Chief', 'assistant', `[Phase 1 Error] ${errorMessage}`);
+                chatLog.push({ author: chiefAgent.name || 'Chief', role: 'system', content: `Phase 1 error: ${errorMessage}`, phase: 1 });
+            }
+
+            // ========== PHASE 2: Agent Interpretation ==========
+            // Chief gets a second pass first, then all other agents.
+            const phase2Agents = [chiefAgent];
+            invited.forEach(agent => {
+                if (agent.id !== chiefAgent.id && !mutedIds.has(agent.id)) {
+                    phase2Agents.push(agent);
+                }
+            });
+
+            for (const agent of phase2Agents) {
+                if (mutedIds.has(agent.id)) continue;
                 try {
                     const turnId = createTurnId(agent.id);
-                    const toolPolicy = buildToolPolicyPayload(policyAllowedInput, policyRequireCheckbox);
-                    const requireTool = Boolean(toolPolicy && toolPolicy.requireTool);
-                    const prompt = buildConferencePrompt(agent, text, { requireTool });
+                    const prompt = buildPhase2Prompt(agent, text, roundBuffer.toolResults);
                     const response = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -4748,29 +4882,35 @@
                             agentId: agent.id,
                             conferenceId: conferenceContext.sessionId,
                             turnId,
-                            toolPolicy,
-                            // When requiring a tool on the first step, keep server-side prompt additions minimal
-                            // to improve tool-call compliance and avoid local-model timeouts.
-                            skipToolCatalog: requireTool,
-                            skipGrounding: requireTool
+                            skipTools: true
                         })
-                    }), `Conference response from ${agent.name || 'agent'}`);
+                    }), `Conference phase 2: ${agent.name || 'agent'}`);
                     let parsed = extractStopHook ? extractStopHook(response.content) : { content: response.content, stopHook: null, stopHookDetail: '' };
+
                     if (parsed.stopHook) {
                         const detail = parsed.stopHookDetail || parsed.content;
                         const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
                         addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, stopHookDetail: parsed.stopHookDetail });
-                        notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, phase: 2 });
                         continue;
                     }
+
                     let reply = parsed.content || 'No response.';
+
+                    // --- Abstain detection (runs before evidence validation) ---
+                    if (isAbstainResponse(reply)) {
+                        abstainedIds.add(agent.id);
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2 });
+                        renderAttendees();
+                        continue;
+                    }
+
+                    // --- Evidence validation (phase 2 only) ---
                     let evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     if (!evidenceCheck.ok) {
-                        const retryPrompt = buildConferencePrompt(agent, text, {
+                        const retryPrompt = buildPhase2Prompt(agent, text, roundBuffer.toolResults, {
                             retry: true,
-                            rejectionReason: evidenceCheck.reason,
-                            requireTool: Boolean(toolPolicy && toolPolicy.requireTool)
+                            rejectionReason: evidenceCheck.reason
                         });
                         const retryResponse = await withAgentTurn(agent.id, 'processing', () => api('/api/ai/chat', {
                             method: 'POST',
@@ -4780,78 +4920,129 @@
                                 agentId: agent.id,
                                 conferenceId: conferenceContext.sessionId,
                                 turnId,
-                                toolPolicy,
-                                skipToolCatalog: requireTool,
-                                skipGrounding: requireTool
+                                skipTools: true
                             })
-                        }), `Conference retry for ${agent.name || 'agent'}`);
-                        parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null, stopHookDetail: '' };
+                        }), `Conference phase 2 retry: ${agent.name || 'agent'}`);
+                        parsed = extractStopHook ? extractStopHook(retryResponse.content) : { content: retryResponse.content, stopHook: null };
                         if (parsed.stopHook) {
                             const detail = parsed.stopHookDetail || parsed.content;
-                            const stopMessage = detail ? `Stop hook: ${parsed.stopHook} — ${detail}` : `Stop hook: ${parsed.stopHook}`;
-                            addChatMessage(agent.name || 'Agent', 'assistant', stopMessage);
-                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: stopMessage, stopHook: parsed.stopHook, stopHookDetail: parsed.stopHookDetail });
-                            notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
+                            addChatMessage(agent.name || 'Agent', 'assistant', `Stop hook: ${parsed.stopHook} — ${detail}`);
+                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Stop hook: ${parsed.stopHook}`, phase: 2 });
                             continue;
                         }
                         reply = parsed.content || 'No response.';
+
+                        if (isAbstainResponse(reply)) {
+                            abstainedIds.add(agent.id);
+                            chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: 'ABSTAIN', abstained: true, phase: 2 });
+                            renderAttendees();
+                            continue;
+                        }
+
                         evidenceCheck = await validateEvidenceLine(reply, agent?.role || '');
                     }
+
                     if (!evidenceCheck.ok) {
-                        let rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
-                        if (evidenceCheck.reason === 'issue-only') {
-                            rejection = 'Ungrounded response rejected. Issue-tracker evidence alone is not sufficient; cite story content or request access.';
-                        } else if (evidenceCheck.reason === 'missing-quote') {
-                            rejection = 'Ungrounded response rejected. Content claims require a direct quote from the cited file.';
-                        } else if (evidenceCheck.reason === 'missing-location') {
-                            rejection = 'Ungrounded response rejected. Structural claims must cite a line/section reference.';
-                        } else if (evidenceCheck.reason === 'missing-scope') {
-                            rejection = 'Ungrounded response rejected. Absence or access claims must specify scope (files/scenes scanned).';
-                        } else if (evidenceCheck.reason === 'wrong-source') {
-                            rejection = 'Ungrounded response rejected. Evidence source does not match role requirements.';
-                        } else if (evidenceCheck.reason === 'quote-not-found') {
-                            rejection = 'Ungrounded response rejected. Quoted text was not found in the cited file.';
-                        } else if (evidenceCheck.reason === 'missing-file' || evidenceCheck.reason === 'file-read-failed') {
-                            rejection = 'Ungrounded response rejected. Evidence file could not be verified.';
-                        } else if (evidenceCheck.reason === 'multiple') {
-                            rejection = 'Ungrounded response rejected. Include exactly one Evidence line.';
-                    } else if (evidenceCheck.reason === 'tool-syntax') {
-                        rejection = 'Ungrounded response rejected. Tool calls must be strict JSON-only with nonce; no plain-text tool syntax.';
-                    } else if (evidenceCheck.reason === 'cot-leak') {
-                        rejection = 'Ungrounded response rejected. Remove planning/chain-of-thought preface and respond directly in role.';
-                    } else if (evidenceCheck.reason === 'missing-receipt') {
-                            rejection = 'Ungrounded response rejected. access_claim_without_stamp: include a valid receipt_id in Evidence.';
-                        }
-                        // Dev/debug assist: show why it failed and a short excerpt of the rejected reply.
-                        // This makes it possible to diagnose model compliance vs validator bugs without provider logs.
-                        const rawReply = String(reply || '').replace(/\s+/g, ' ').trim();
-                        const excerpt = rawReply.length > 260 ? rawReply.slice(0, 260) + '...' : rawReply;
-                        const reason = evidenceCheck.reason || 'unknown';
-                        rejection += ` (reason=${reason})`;
-                        if (excerpt) {
-                            rejection += `\nDebug excerpt: ${excerpt}`;
-                        }
+                        const rejection = buildEvidenceRejectionMessage(evidenceCheck, reply);
                         addChatMessage(agent.name || 'Agent', 'assistant', rejection);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required' });
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: rejection, stopHook: 'grounding-required', phase: 2 });
                         notificationStore.warning(`Conference response rejected: grounding required for ${agent.name || 'agent'}.`, 'workbench');
                         await recordConferenceTelemetry(evidenceCheck.reason, agent.id);
                     } else {
                         addChatMessage(agent.name || 'Agent', 'assistant', reply);
-                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, stopHook: parsed.stopHook });
-                        if (parsed.stopHook) {
-                            notificationStore.warning(`Stop hook: ${parsed.stopHook}`, 'workbench');
-                        }
+                        chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: reply, phase: 2 });
                     }
                 } catch (err) {
                     const errorMessage = err && err.message ? err.message : 'Agent failed to respond.';
                     addChatMessage(agent.name || 'Agent', 'assistant', `Error: ${errorMessage}`);
-                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Error: ${errorMessage}` });
+                    chatLog.push({ author: agent.name || 'Agent', role: 'assistant', content: `Error: ${errorMessage}`, phase: 2 });
                     notificationStore.warning(`Conference response failed for ${agent.name || 'agent'}.`, 'workbench');
                 }
             }
 
+            // ========== ROUND CLOSE ==========
+            await closeRound(text);
+
             chatInput.disabled = false;
             chatSend.disabled = false;
+        };
+
+        const buildEvidenceRejectionMessage = (evidenceCheck, reply) => {
+            let rejection = 'Ungrounded response rejected. Evidence line missing or invalid.';
+            if (evidenceCheck.reason === 'issue-only') {
+                rejection = 'Ungrounded response rejected. Issue-tracker evidence alone is not sufficient; cite story content or request access.';
+            } else if (evidenceCheck.reason === 'missing-quote') {
+                rejection = 'Ungrounded response rejected. Content claims require a direct quote from the cited file.';
+            } else if (evidenceCheck.reason === 'missing-location') {
+                rejection = 'Ungrounded response rejected. Structural claims must cite a line/section reference.';
+            } else if (evidenceCheck.reason === 'missing-scope') {
+                rejection = 'Ungrounded response rejected. Absence or access claims must specify scope (files/scenes scanned).';
+            } else if (evidenceCheck.reason === 'wrong-source') {
+                rejection = 'Ungrounded response rejected. Evidence source does not match role requirements.';
+            } else if (evidenceCheck.reason === 'quote-not-found') {
+                rejection = 'Ungrounded response rejected. Quoted text was not found in the cited file.';
+            } else if (evidenceCheck.reason === 'missing-file' || evidenceCheck.reason === 'file-read-failed') {
+                rejection = 'Ungrounded response rejected. Evidence file could not be verified.';
+            } else if (evidenceCheck.reason === 'multiple') {
+                rejection = 'Ungrounded response rejected. Include exactly one Evidence line.';
+            } else if (evidenceCheck.reason === 'tool-syntax') {
+                rejection = 'Ungrounded response rejected. Tool calls must be strict JSON-only with nonce; no plain-text tool syntax.';
+            } else if (evidenceCheck.reason === 'cot-leak') {
+                rejection = 'Ungrounded response rejected. Remove planning/chain-of-thought preface and respond directly in role.';
+            } else if (evidenceCheck.reason === 'missing-receipt') {
+                rejection = 'Ungrounded response rejected. access_claim_without_stamp: include a valid receipt_id in Evidence.';
+            }
+            const rawReply = String(reply || '').replace(/\s+/g, ' ').trim();
+            const excerpt = rawReply.length > 260 ? rawReply.slice(0, 260) + '...' : rawReply;
+            const reason = evidenceCheck.reason || 'unknown';
+            rejection += ` (reason=${reason})`;
+            if (excerpt) {
+                rejection += `\nDebug excerpt: ${excerpt}`;
+            }
+            return rejection;
+        };
+
+        const closeRound = async (userMessage) => {
+            // Auto-save transcript as issue ("Conference {sessionId} — Turn {roundNumber}").
+            if (window.issueApi && conferenceContext.sessionId) {
+                try {
+                    const roundEntries = chatLog.filter(e => e.phase === 1 || e.phase === 2 || e.role === 'user');
+                    const transcript = roundEntries.length > 0
+                        ? roundEntries.map(entry => `[${entry.role}] ${entry.author}: ${entry.content}`).join('\n')
+                        : 'No transcript for this round.';
+                    const title = `Conference ${conferenceContext.sessionId} — Turn ${roundNumber}`;
+                    const receiptLine = roundBuffer.receiptIds.length
+                        ? `Session receipts: ${roundBuffer.receiptIds.join(', ')}`
+                        : 'Session receipts: none.';
+                    const issueBody = [
+                        `Conference session: ${conferenceContext.sessionId}`,
+                        `Round: ${roundNumber}`,
+                        receiptLine,
+                        `Abstained: ${abstainedIds.size > 0 ? Array.from(abstainedIds).join(', ') : 'none'}`,
+                        '',
+                        'Transcript:',
+                        transcript
+                    ].join('\n');
+
+                    const issue = await issueApi.create({
+                        title,
+                        body: issueBody,
+                        openedBy: 'conference',
+                        tags: ['conference-transcript', `round-${roundNumber}`]
+                    });
+                    if (issue?.id && window.auditApi && conferenceContext.sessionId) {
+                        await auditApi.linkSessionToIssue(conferenceContext.sessionId, issue.id);
+                    }
+                } catch (err) {
+                    log(`Failed to auto-save conference round: ${err.message}`, 'warn');
+                }
+            }
+
+            // Wipe round buffer (agents carry no context from prior rounds).
+            roundBuffer.toolResults = [];
+            roundBuffer.receiptIds = [];
+            // Note: chatLog is NOT wiped — it's the user's continuous view.
+            // But agents won't see it because phase 2 prompts don't include chat history.
         };
 
         const recordConferenceTelemetry = async (reason, agentId) => {
@@ -4917,8 +5108,22 @@
         const menu = document.createElement('div');
         menu.className = 'context-menu';
 
+        const isChief = isAssistantAgent(agent);
         const isMuted = mutedIds.has(agent.id);
         const isModerator = moderators.some(item => item.id === agent.id);
+
+        // Chief of Staff cannot be kicked, muted, or demoted.
+        if (isChief) {
+            const info = document.createElement('div');
+            info.className = 'context-menu-item context-menu-item-disabled';
+            info.textContent = 'Chief of Staff (locked)';
+            info.title = 'The Chief of Staff is auto-invited and cannot be removed or muted.';
+            menu.appendChild(info);
+            document.body.appendChild(menu);
+            positionContextMenu(menu, event.clientX, event.clientY);
+            contextMenu = menu;
+            return;
+        }
 
         const actions = [
             {
@@ -4996,11 +5201,13 @@
         agents.forEach(agent => {
             const row = document.createElement('label');
             row.className = 'conference-manage-row';
+            const isChief = isAssistantAgent(agent);
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.checked = invitedIds.has(agent.id);
+            checkbox.checked = isChief || invitedIds.has(agent.id);
+            if (isChief) checkbox.disabled = true;
             const name = document.createElement('span');
-            name.textContent = agent.name || 'Unnamed Agent';
+            name.textContent = (agent.name || 'Unnamed Agent') + (isChief ? ' ★' : '');
             const role = document.createElement('span');
             role.className = 'conference-manage-role';
             role.textContent = agent.role || 'role';

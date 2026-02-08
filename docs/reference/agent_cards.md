@@ -39,6 +39,7 @@ Enum:
 - `reading`
 - `processing`
 - `executing`
+- `conferenceAbstained` (conference only; agent chose not to contribute this round)
 
 ### 3) Supervision / Escalation (persistent ladder)
 Supervision answers: "Is this agent being monitored or receiving help?"
@@ -86,6 +87,7 @@ Icons are small and quiet.
 - All micro-icons default to neutral (`--fg-muted`).
 - Do not color watched/assisted.
 - Only color micro-icons if explicitly required for accessibility (prefer not).
+- **Conference exception**: the agent card subtitle text uses color to indicate conference state — yellow/amber for "Abstained", red for "Muted". This is subtitle text, not a micro-icon.
 
 ### D) Animation rules
 - Only the `processing` icon may animate (gentle rotation).
@@ -100,6 +102,7 @@ Tooltips are the only text explanation.
 - One sentence, human language, not system jargon.
 - Appear quickly (0-150ms delay).
 - Must work on mouse hover (desktop). Optional long-press on touch later.
+- Conference abstain tooltip: "This agent had nothing to add from their role this round."
 
 ---
 
@@ -225,6 +228,26 @@ Tooltips must:
 6) Readiness light remains visually primary and unchanged.
 7) Icons are subtle, monochrome, and consistent with existing UI style.
 8) No layout jank: card height/spacing remains stable across state changes.
+
+---
+
+## Conference Card States
+
+During a conference round, agent cards in the attendee list reflect each agent's conference status via the subtitle text (below the agent name, where "Participant" normally appears).
+
+| State | Subtitle Text | Color | When |
+|-------|--------------|-------|------|
+| Moderator | "Moderator" | Green | Chief of Staff (persistent, existing) |
+| Participant | "Participant" | Default | Normal attendee, has not yet responded this round |
+| Responded | "Participant" | Default | Agent contributed a response (visible in chat) |
+| Abstained | "Abstained" | Yellow/Amber | Agent responded with ABSTAIN keyword; no chat message |
+| Muted | "Muted" | Red | Agent was muted by the user (skipped entirely, existing) |
+
+Notes:
+- The "Abstained" state resets at the start of each new round (all agents return to "Participant").
+- During an agent's active turn, the processing activity icon animates as usual.
+- The Moderator label is persistent and does not change during rounds (Chief always shows "Moderator").
+- See `docs/statemachine.md` (Conference Round Lifecycle) for full protocol details.
 
 ---
 

@@ -11,6 +11,7 @@ To reduce system bureaucracy by merging the **Assistant** (coordination) and **T
 - **Bureaucracy & Safety**: Enforces safety budgets, monitors circuit breakers, and maintains the "Today View."
 - **Active Pacing**: Monitors the "watchlist" and triggers **Assisted Mode** (pacing) to prevent agent hysteria.
 - **Decomposition**: Slices the Planner's creative roadmap into executable microtasks based on the Writer's **Capability Profile**.
+- **Conference Orchestration**: In conference mode, the Chief of Staff executes all tool calls on behalf of the team (phase 1) and provides coordination-level interpretation (phase 2). Other agents receive tool results as injected context. The Chief is auto-invited to every conference and cannot be removed. See `docs/statemachine.md` (Conference Round Lifecycle) for full protocol.
 
 <a id="assistant-blocking-check"></a>
 ## Blocking Check (Mechanical)

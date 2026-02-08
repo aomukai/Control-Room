@@ -1,7 +1,7 @@
-# Grounding + Tooling State Machine (v0.4)
+# Grounding + Tooling State Machine (v0.5)
 
 Purpose: Track requirements, sequencing, and status for grounding + tool execution across the platform.
-Conference chat is the current playground, but all rules apply system-wide (conference + tasks + any agent loop).
+All tool-call and evidence contracts apply system-wide (conference + 1:1 chat + tasks + any agent loop).
 Source of truth for sequencing remains docs/roadmap.md.
 
 ## Scope Overview
@@ -9,15 +9,17 @@ We are hardening agent responses so agents:
 - Ground claims in actual VFS content.
 - Use role-specific evidence formats.
 - Avoid chain-of-thought leakage and fake tool usage.
-- Do not contaminate each other’s responses during the same conference turn.
+- Do not contaminate each other's responses during the same conference turn.
 - Use real tool execution with receipts when they claim tool use.
+
+Conference chat uses a **two-phase round model**: the Chief of Staff executes all tool calls (phase 1), then every agent — including the Chief — interprets the results from their role's perspective or abstains (phase 2). Agents never emit tool calls in conference. See "Conference Round Lifecycle" below.
 
 ## Non-Negotiable Rules
 - Evidence must be explicit: exactly one Evidence line per reply.
 - Evidence must reference real VFS sources or request access to them.
 - Evidence type must match claim type (content/structural/absence).
 - Quotes must be verified against file content before acceptance.
-- Conference responses only see user messages + grounding prelude (still true for the playground).
+- Conference agents see user messages + injected tool results from Chief's phase 1 (never other agents' replies or raw tool catalogs).
 
 ## Evidence Types
 1) Content claims: must include a direct quote from a cited file.
@@ -57,108 +59,106 @@ We are hardening agent responses so agents:
 - [x] Canon index endpoints: `GET /api/canon/index/status`, `POST /api/canon/index`.
 
 ## Current Gaps
-- LM Studio model still emits chain-of-thought unless JSON schema is applied; confirm schema enforcement works end-to-end.
 - Evidence line can be fabricated without tool-backed excerpts (needs stronger file-read tooling later).
-- Tool call required detection is heuristic; may need explicit contract flag instead of string matching.
+- Tool call required detection in 1:1 chat is heuristic; may need explicit contract flag instead of string matching.
+- Conference tool-call compliance is resolved architecturally: agents no longer emit tool calls in conference (Chief handles all tools in phase 1).
 
-## What’s Happening In Practice (Tool-Call Compliance)
-We are now past "are the tools implemented" and into "can real models drive the tool protocol reliably".
+## What's Happening In Practice (Tool-Call Compliance)
 
-Observed failure modes (conference + 1:1):
-- Models ignore "JSON-only tool call" instructions and answer in prose.
-- Models emit tool-ish JSON but choose the wrong tool id (e.g. `file_viewer`, `file_reader`) instead of the registered tool id (`file_locator`).
-- Models choose the right tool but use the wrong arg keys (e.g. `root`, `path`, `searchCriteria`) and fail schema validation.
-- Models mix protocols (tool-call envelope vs decision envelope) or emit STOP_HOOK text as normal prose.
-- Some models hallucinate `receipt_id: rcpt_...` without actually running tools.
+### Conference (Resolved)
+The original problem: most models struggled with conference tool-call prompts because conference stacks role framing, evidence rules, grounding prelude, full tool catalog, and tool protocol into one prompt, then asks the model to emit strict JSON. Even models that handle the tool loop fine in 1:1 (where the prompt is leaner) choked under this prompt load.
 
-Hardening already in place:
+**Architectural fix**: Conference now uses a two-phase round model. The Chief of Staff handles all tool calls in phase 1 (identical prompt weight to 1:1 chat, where tools work reliably). All other agents — including the Chief on a second pass — only interpret the pre-fetched results from their role perspective. Agents never see the tool catalog or tool protocol in conference. See "Conference Round Lifecycle" below.
+
+### 1:1 Chat (Ongoing)
+Tool-call compliance in 1:1 chat remains an ongoing concern for small/local models. Hardening in place:
 - Backend tool protocol loop with strict JSON + nonce + schema checks (ChatController).
-- Stop hook parsing in UI now recognizes `STOP_HOOK: tool_call_rejected` (underscore type).
+- Stop hook parsing in UI recognizes `STOP_HOOK: tool_call_rejected` (underscore type).
 - Tool id aliasing in backend parser to map common hallucinations to real tools (small, curated map).
 - Arg aliasing and arg-key normalization (trim/lower/separator normalization) to tolerate common key drift.
-- Added `file_reader` as a real tool so models that naturally call "read a file excerpt" don’t get mis-aliased into `file_locator`.
-- When "Require tool on first step" is enabled in conference, we reduce prompt bloat (skip tool catalog + skip early grounding header) to improve local-model compliance and avoid timeouts.
+- Added `file_reader` as a real tool so models that naturally call "read a file excerpt" don't get mis-aliased into `file_locator`.
+- JSON schema enforcement via `response_format` for LM Studio models.
 
-What is still failing / confusing right now:
-- Conference UI can still surface a failure as an "Ungrounded response" when the real issue is "tool call required but model refused/ignored it".
-  - This happens when the model replies in prose (no STOP_HOOK, no JSON tool call) and the UI immediately runs the Evidence validator.
-  - Result: misleading rejections like quote-not-found/missing evidence instead of a clean tool_call_required failure.
+Remaining 1:1 friction:
+- Receipt reality checks: when a reply claims tool use, verify the receipt exists before accepting the Evidence line.
+- Expand aliasing cautiously as new model drift patterns are observed.
 
-Next changes to make this "waterproof":
-1) Conference UI gating when requireTool is enabled:
-   - If `toolPolicy.requireTool` is true and the agent reply is not strict JSON and not a STOP_HOOK, reject with a tool-call specific message and skip Evidence validation.
-2) Receipt reality checks:
-   - When a reply claims tool use (mentions tools / includes `receipt_id`), verify the receipt exists for the current session before accepting the Evidence line.
-3) Expand aliasing cautiously:
-   - Keep the alias map small and high-confidence, but add obvious variants as we encounter them (e.g. `file_viewer` -> `file_locator`, `read_file` -> `file_reader`).
+## Acceptance Tests (conference — two-phase model)
+1) Chief phase 1: tool call JSON accepted, receipt minted, results buffered.
+2) Chief phase 1: wrong nonce → rejected, no tool executes.
+3) Chief phase 1: invalid args → rejected, no tool executes.
+4) Phase 2 agent cites a quote that is not in file → rejected.
+5) Phase 2 agent uses **Evidence:** referencing Chief's receipt_id → accepted.
+6) Phase 2 agent makes structural claim without line/section → rejected.
+7) Phase 2 agent responds with ABSTAIN keyword → detected, card shows yellow "Abstained", no chat message emitted.
+8) Agents do not see other agents' replies during the same round (phase 2 isolation preserved).
+9) Round close: full transcript saved as issue with linked receipts.
+10) Next round: agent history wiped, injection cleared, user sees continuous chat.
 
-## Acceptance Tests (conference)
+## Acceptance Tests (1:1 chat — unchanged)
 1) Agent cites a quote that is not in file → rejected.
 2) Agent uses **Evidence:** → accepted.
 3) Agent makes structural claim without line/section → rejected.
 4) Agent attempts tool call in plain text → rejected.
 5) Tool call JSON with extra text → rejected.
 6) Tool call JSON with wrong nonce → rejected.
-7) Agents do not see other agents’ replies during the same round.
 
-## Decisions (v0.3)
-- Conference prompts include only user history, never agent replies.
-- Evidence must be exactly one line per agent response.
-- Tool calls are strict JSON-only with server nonce; no lenient parsing.
-- Conference is a playground only; all contracts apply platform-wide.
+## Decisions (v0.4)
+- Conference uses a two-phase round model: Chief tool phase → agent interpretation phase.
+- Chief of Staff is auto-invited to every conference and cannot be removed.
+- Only the Chief's phase 1 prompt includes the tool catalog and tool protocol. All other prompts (including Chief's phase 2) receive injected tool results instead.
+- Agents can abstain by responding with a single keyword (ABSTAIN). The system intercepts this and shows a visual indicator on the agent card (yellow "Abstained" subtitle) instead of posting to the chat.
+- Each conference round is archived as an issue ("Conference {sessionId} — Turn {n}") with linked receipts.
+- Agent history is wiped between rounds. No agent carries context from prior rounds. The user sees a continuous chat in the UI.
+- Evidence must be exactly one line per agent response (phase 2 only; Chief phase 1 is tool-only).
+- Tool calls remain strict JSON-only with server nonce (applies to Chief phase 1 and 1:1 chat).
+- All tool/evidence contracts apply platform-wide (conference + 1:1 + tasks).
 
 ## Now: Task Checklist
-### Quick Smoke Tests
-- Run a single-agent conference: JSON-only tool call → receipt minted → Evidence references receipt_id.
-- Run a tool call with wrong nonce → rejected with tool_call_nonce_invalid.
-- Run a tool call with extra text → rejected with tool_call_invalid_format.
-- Run a normal response with tool syntax `file_locator(...)` → rejected.
 
-### Core Fixes in Place
-- Strict JSON tool-call envelope + nonce validation + schema validation.
-- Signed receipts and audit log for tool runs.
-- Telemetry buckets for tool-call failures.
+### Conference Two-Phase Implementation
+- [ ] Chief of Staff auto-invite enforcement (UI + backend).
+- [ ] Chief phase 1: lean tool-call prompt (same weight as 1:1), tool execution, results into round buffer.
+- [ ] Tool result injection framing for phase 2 agents.
+- [ ] Abstain detection (keyword match on trimmed response) + agent card visual state (yellow "Abstained" subtitle).
+- [ ] Round-close: save transcript as issue ("Conference {sessionId} — Turn {n}") with receipt linking.
+- [ ] History wipe between rounds (agents see no prior context; UI maintains continuous view).
+- [ ] Chief phase 2: second pass as normal attendee with injection.
 
-### VFS + Outline Verification
-- Confirm `Story/SCN-outline.md` content matches outline API output.
-- Confirm VFS tree exposes outline only once (no duplicate UI entry).
+### Smoke Tests (Conference)
+- Chief phase 1: tool call succeeds, receipt minted, results buffered.
+- Chief phase 1: wrong nonce → rejected.
+- Phase 2 agent: receives injection, responds with role interpretation + evidence.
+- Phase 2 agent: responds with ABSTAIN → detected, card goes yellow, no chat message.
+- Round close: issue created with full transcript + receipts.
+- Next round: buffer wiped, agents have no memory of prior rounds.
 
-### Repro Prompts (copy/paste)
-1) JSON tool-call baseline:
-   "Return ONLY the JSON tool call object. No other text. Use the nonce exactly as given. Task: locate the outline file."
-2) Tool-call trap:
-   "Use file_locator to find scenes, then report one issue."
-
-### Expected Outcomes
-- JSON baseline: pure JSON tool call, no extra text.
-- Tool-call trap: rejection if tool call appears in plain text or JSON is malformed.
+### Smoke Tests (1:1 — unchanged)
+- JSON-only tool call → receipt minted → Evidence references receipt_id.
+- Wrong nonce → rejected with tool_call_nonce_invalid.
+- Tool call with extra text → rejected with tool_call_invalid_format.
+- Tool syntax in plain text → rejected.
 
 ### Files to Read First
-- `src/main/resources/public/app/agents.js` (conference prompt + evidence validator + quote check)
-- `src/main/resources/public/app/editor.js` (outline VFS tree injection behavior)
-- `src/main/java/com/miniide/workspace/PreparedWorkspaceService.java` (VFS tree + outline file mapping)
-- `src/main/resources/public/app/util.js` (stripThinkingTags + orphan closing tag handling)
+- `src/main/resources/public/app/agents.js` (conference prompt + evidence validator + round lifecycle)
 - `src/main/java/com/miniide/controllers/ChatController.java` (backend tool-call protocol + JSON schema enforcement)
-- `src/main/java/com/miniide/IssueCompressionService.java` (thought tag stripping during compression)
+- `src/main/java/com/miniide/tools/ToolExecutionService.java` (tool execution backends)
+- `src/main/java/com/miniide/AuditStore.java` (receipt storage + issue linking)
+- `src/main/resources/public/app/util.js` (stripThinkingTags + orphan closing tag handling)
 - `src/main/java/com/miniide/providers/chat/OpenAiCompatibleChatProvider.java` (LM Studio response_format)
-
-### Log Capture Notes
-- Save LMStudio logs to `private/conference_log.md` for each test run.
-- Paste the in-app conference transcript below the LMStudio log for matching.
-- Conference log path: `private/conference_log.md`
 
 ---
 
 # System Map (Comprehensive, No Dummies)
 
-This section is the full source of truth for how grounding + tools + receipts work end-to-end. It is intentionally exhaustive and should be updated whenever a moving part changes. Conference chat is the playground; all rules are platform-wide.
+This section is the full source of truth for how grounding + tools + receipts work end-to-end. It is intentionally exhaustive and should be updated whenever a moving part changes. All rules are platform-wide (conference + 1:1 + tasks).
 
 ## Core Principles (Non-Negotiable)
 - No prompt-only fake tools. All tools must execute for real and emit signed receipts.
 - Evidence must be verifiable and tied to receipts when tools are used.
 - Tool calls must be strict JSON with a server nonce. No lenient parsing. No function-like syntax.
 - If a tool call is malformed, no tool executes and the turn is rejected with a canonical reason.
-- Conference is not a special case. Same contracts apply to conference + tasks + any agent loop.
+- Same contracts apply to conference + 1:1 + tasks + any agent loop. Conference has additional structure (two-phase rounds) but does not relax any core rule.
 
 ## Strict Tool Call Protocol (Text-Only Envelope)
 - Envelope: single JSON object and nothing else.
@@ -280,12 +280,67 @@ We support a curated alias map in the backend parser:
 - Tool-call failures mapped into tool_syntax or format_error.
 - Telemetry API: `src/main/java/com/miniide/controllers/TelemetryController.java`
 
-## Conference UI (Playground Only)
+## Conference Round Lifecycle (Two-Phase Model)
+
+Conference chat is a series of independent rounds. Each round is self-contained: agents carry no context from prior rounds. The user sees a continuous chat in the UI.
+
+### Phase 1: Chief Tool Execution
+1. User sends a prompt to the conference.
+2. The Chief of Staff is always first in the round (auto-invited, cannot be removed from conference).
+3. Chief receives a **lean tool-call prompt** — same weight as a 1:1 chat prompt. No evidence rules, no role framing for other agents, no grounding prelude. Just the user's prompt + tool catalog + tool protocol + nonce.
+4. Chief runs all necessary tool calls (e.g. `file_locator` → `consistency_checker` → `prose_analyzer`). The existing tool execution loop handles this identically to 1:1 chat.
+5. Tool results and receipt IDs are stored in a **round buffer** (in-memory on the conference session object). No disk I/O needed — the buffer only survives one round.
+
+### Phase 2: Agent Interpretation
+6. Chief gets a **second pass** as a normal attendee. The prompt now includes:
+   - Role framing (Chief of Staff perspective)
+   - Injected tool results from phase 1 (not the tool catalog — the actual data)
+   - Injection framing: "The following data was retrieved for this discussion. You are [Role]. If this is relevant to your expertise, provide your perspective. If not, respond with only: ABSTAIN"
+   - Evidence rules (single Evidence line, quote verification, etc.)
+   - User's original prompt
+7. All other agents take their turn in roster order with the same injection + their own role framing.
+8. Each agent either:
+   - **Responds** with a role-specific interpretation + Evidence line, OR
+   - **Abstains** by responding with the ABSTAIN keyword. The system intercepts this: no chat message is posted, and the agent's card shows a yellow "Abstained" subtitle.
+9. Agents do NOT see other agents' replies during the same round (phase 2 isolation preserved).
+
+### Round Close
+10. After all agents have responded or abstained, the round concludes.
+11. The full transcript (user prompt + all agent responses) is saved as an issue: "Conference {sessionId} — Turn {roundNumber}". Receipts from Chief's phase 1 are linked into the issue audit.
+12. Round buffer is wiped. Agent history is wiped. No agent will see anything from this round in future rounds.
+13. The user sees the full transcript in the UI as a continuous chat. Only the backend forgets.
+
+### Properties
+- **Tools run once per round** — not N times for N agents. A 6-agent conference with 3 tool calls = 3 tool calls total, not 18.
+- **No JSON gymnastics for agents** — only Chief phase 1 emits tool-call JSON (same as 1:1, where it works). All other prompts are natural language.
+- **No exploding context** — each round is a clean slate. Context never grows across rounds.
+- **Automatic audit trail** — every round becomes a searchable issue with receipts.
+- **Forward-compatible** — when a model can handle the full thing natively, the constraints can be relaxed without changing the architecture.
+
+## Abstain Protocol
+
+Abstain is a first-class conference action. An agent abstains when the tool results and user prompt are not relevant to their role.
+
+- **Detection**: The system checks if the agent's trimmed response equals the ABSTAIN keyword (case-insensitive). A response like "I would not abstain" does NOT trigger it — only a response that IS the keyword.
+- **Visual feedback**: The agent's card in the conference attendee list shows a yellow subtitle "Abstained" instead of "Participant". Tooltip: "This agent had nothing to add from their role this round."
+- **No chat message**: An abstaining agent produces no visible chat message. The user sees who abstained by glancing at the agent cards.
+- **Evidence skip**: Abstaining agents are not subject to evidence validation (there is no response to validate).
+- **Credits**: Abstaining does not affect credits positively or negatively. It is a neutral action.
+
+### Agent Card States (Conference)
+- **Green subtitle "Moderator"**: Chief of Staff (existing).
+- **Default subtitle "Participant"**: Normal attendee, has not yet responded this round.
+- **Yellow subtitle "Abstained"**: Agent chose not to contribute this round.
+- **Red subtitle "Muted"**: Agent was muted by the user (skipped entirely, existing behavior).
+
+## Conference UI
 - Conference panel: `src/main/resources/public/app/agents.js`
-- Prompts include role framing + evidence rules + tool protocol.
-- Uses conferenceId session and per-turn turnId.
-- Agents are run serially, evidence validated on client, rejections surfaced.
-- Evidence validator checks receipt IDs by calling audit API.
+- Phase 1 prompt: tool catalog + tool protocol + nonce (lean, no evidence/grounding).
+- Phase 2 prompts: role framing + injected tool results + evidence rules (no tool catalog).
+- Uses conferenceId session, per-round roundId, and per-turn turnId.
+- Agents are run serially within each phase; evidence validated on client for phase 2 responses.
+- Evidence validator checks receipt IDs from Chief's phase 1 by calling audit API.
+- Abstain detection runs before evidence validation.
 
 ## Storage Paths (Critical)
 - Conference log: `private/conference_log.md`
@@ -301,24 +356,38 @@ We support a curated alias map in the backend parser:
 - Prompt registry (project): `workspace/<project>/.control-room/prompts/prompts.json`
 
 ## End-to-End Acceptance Criteria (No Shortcuts)
+
+### Conference (two-phase)
+- Chief phase 1: JSON-only tool call accepted, receipt minted, results buffered.
+- Chief phase 1: wrong nonce / invalid args → rejected, no tool executes.
+- Phase 2: agents receive injection, respond with role interpretation + Evidence referencing Chief's receipt_ids.
+- Phase 2: agent responds ABSTAIN → detected, card yellow, no chat message, evidence skip.
+- Round close: transcript saved as issue with linked receipts.
+- Next round: buffer + history wiped; user sees continuous chat.
+
+### 1:1 Chat / Tasks
 - JSON-only tool call accepted on first try (no extra text).
 - Wrong nonce is rejected and no tool executes.
 - Invalid args rejected and no tool executes.
 - Valid tool call executes, creates signed receipt, and receipt_id resolves in Evidence.
 - Evidence line is rejected if quote not found or receipt_id missing/invalid.
-- Conference save links receipts into issue audit.
 
 ## Known Friction Points
-- Small models still emit chain-of-thought unless JSON schema is enforced.
+- Small models still emit chain-of-thought unless JSON schema is enforced (affects Chief phase 1 and 1:1 chat).
 - File-level evidence still depends on MVP tool outputs; deeper file content tools will be needed.
-- Tool call required detection is heuristic (string matching in prompt); consider explicit flag later.
+- Tool call required detection in 1:1 chat is heuristic (string matching in prompt); consider explicit flag later.
+- Conference tool-call compliance is resolved architecturally (agents no longer emit tool calls).
 
 ## What Must Be Implemented/Extended Next (No Dummies)
+- Conference two-phase round model (Chief tool phase → agent interpretation phase → abstain → round close → issue archival → history wipe).
+- Chief auto-invite enforcement (UI: non-removable from attendee list; backend: reject conference start without Chief).
+- Round buffer for tool results (in-memory on conference session object).
+- Tool result injection framing for phase 2 prompts.
+- Abstain detection + agent card visual state (yellow "Abstained" subtitle).
+- Round-close issue creation with receipt linking.
+- History wipe between rounds (backend forgets; UI maintains continuous view).
+- Validator cross-check hook: if model claims tool use in 1:1 chat, receipt_id must exist.
 - Real file content read tooling for scenes/compendium (grounded quotes).
-- Stronger schema enforcement and error surfacing for tool calls.
-- Validator cross-check hook: if model claims tool use, receipt_id must exist.
-- Fully automated receipts view in dev tools for session debugging.
-- Hard-block chain-of-thought leakage server-side if needed (beyond tag stripping).
 
 ## Primary Files to Inspect on Each Session
 - `docs/roadmap.md` (global status)
@@ -453,29 +522,33 @@ This is the full map of everything connected to grounding + tool execution. If i
 
 ## Evidence Validation Rules (Conference UI)
 - Enforced client-side in `src/main/resources/public/app/agents.js`.
+- **Abstain check runs first**: if trimmed response equals ABSTAIN keyword, skip all evidence validation.
 - Single Evidence line enforced with regex that accepts `**Evidence:**` or `__Evidence:__`.
 - Role-specific source requirements.
 - Quote verification against file content for content claims.
 - Structural claims require line/section or outline entry.
-- Tool claim requires receipt_id that exists in session receipts.
+- Tool claim requires receipt_id that exists in session receipts (receipt IDs come from Chief's phase 1).
 - Chain-of-thought preface rejected.
 - Plain-text tool syntax rejected.
 - Receipt IDs are validated by fetching session receipt list from audit API.
+- Note: Evidence validation applies only to phase 2 responses. Chief phase 1 is tool-call-only (no Evidence line expected).
 
 ## Evidence Source Types
 - Content claim: quote required.
 - Structural claim: line/section reference required.
 - Absence claim: explicit scope required.
 
-## Conference UI Flow
+## Conference UI Flow (Two-Phase)
 - Conference panel in `src/main/resources/public/app/agents.js`.
-- Prompt builder injects role framing + evidence rules + tool protocol.
-- Conference uses `conferenceId` and per-turn `turnId`.
-- Agents are invoked serially.
-- Evidence validated client-side; rejections logged to telemetry.
+- Phase 1: Chief's prompt includes tool catalog + tool protocol + nonce. Chief runs tool calls; results buffered.
+- Phase 2: All agents (including Chief on second pass) receive injected tool results + role framing + evidence rules. No tool catalog.
+- Conference uses `conferenceId`, per-round `roundId`, and per-turn `turnId`.
+- Agents are invoked serially within each phase. Phase 2 agents do not see each other's replies.
+- Abstain detection: if trimmed response equals ABSTAIN keyword, intercept → update agent card to yellow "Abstained" → skip evidence validation → no chat message.
+- Evidence validated client-side for non-abstaining phase 2 responses; rejections logged to telemetry.
+- Round close: full transcript auto-saved as issue ("Conference {sessionId} — Turn {roundNumber}"). Receipts linked via `auditApi.linkSessionToIssue`.
+- Round buffer and agent history wiped after close. User UI maintains continuous chat view.
 - Dev Tools has a Tool Receipts panel for listing/fetching session receipts: `src/main/resources/public/app.js`.
-- “Create Issue from Chat” links session receipts into issue audit via audit API.
- - Conference issue creation uses `auditApi.listSessionReceipts` before saving and `auditApi.linkSessionToIssue` after save (see `src/main/resources/public/app/agents.js`).
 
 ## Task Execution Flow (Non-Conference)
 - Task packets/receipts validated via `PromptJsonValidator`.

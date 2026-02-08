@@ -154,6 +154,32 @@ This helps catch cross-domain issues but may increase token usage. Mitigations:
 | Agent @mention | Another agent explicitly prompts this agent |
 | Auto-action fires | Configured trigger (on-save, on-export) activates agent |
 | Issue assigned | Agent receives assignment via issue `assignee` field |
+| Conference round | Agent receives tool result injection and responds from role perspective (or abstains) |
+
+<a id="agent-conference-round-protocol"></a>
+### 3.6 Conference Round Protocol
+
+Conference chat uses a **two-phase round model** to avoid overloading agent prompts with tool-call instructions. The Chief of Staff orchestrates all tool execution; other agents only interpret results.
+
+**Phase 1 — Chief Tool Execution:**
+- The Chief of Staff is auto-invited to every conference and cannot be removed.
+- Chief always goes first. Their prompt is lean: user's message + tool catalog + tool protocol + nonce (same weight as a 1:1 chat prompt).
+- Chief runs all necessary tool calls. Results and receipt IDs are stored in a round buffer.
+
+**Phase 2 — Agent Interpretation:**
+- Chief gets a second pass as a normal attendee (role framing + injected tool results + evidence rules).
+- All other agents follow in roster order with the same injection and their own role framing.
+- Each agent responds with a role-specific interpretation, or **abstains** if the topic is outside their expertise.
+- Agents do NOT see other agents' replies during the same round.
+
+**Round Close:**
+- Full transcript saved as an issue ("Conference {sessionId} — Turn {roundNumber}") with linked receipts.
+- Round buffer and agent history wiped. No agent carries context from prior rounds.
+- The user sees a continuous chat in the UI.
+
+**Abstain:** An agent can respond with the ABSTAIN keyword to signal that the topic is not relevant to their role. The system intercepts this — no chat message is posted, and the agent's card shows a yellow "Abstained" subtitle. See `docs/statemachine.md` for full abstain protocol.
+
+The single-active turn constraint (Section 3.2) still holds within conference rounds — agents are serialized, never parallel.
 
 ---
 

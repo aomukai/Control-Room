@@ -214,8 +214,10 @@ This section outlines intended scope boundaries, without implying current implem
 - **Issue Creation UI** - Create issues from Workbench
 - **Quick Actions** - Close/reopen issues from board without opening modal
 
+### Near-Term Scope
+- **Conference Two-Phase Model** - Chief-led tool orchestration (phase 1) + role-based interpretation with abstain (phase 2). Per-round issue archival, history wipe between rounds, continuous UI for the user. Chief auto-invited and non-removable. Agent cards show conference state: yellow "Abstained", red "Muted". See `docs/statemachine.md` (Conference Round Lifecycle) for full protocol.
+
 ### Future Scope
-- **Conference Mode** - Multi-agent discussion with cinema-view layout
 - **Agent Status** - Online/thinking/idle indicators (beyond availability lamp)
 - **Patch Review** - View and approve agent patches
 

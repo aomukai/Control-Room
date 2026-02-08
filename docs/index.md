@@ -108,6 +108,16 @@ It summarizes key concepts and links into stable anchors in the source docs.
 - Primary refs: [Roles/skills/tiers addendum](cr_exocortex_roles_skills_tiers.md), [Prompt tools registry](cr_exocortex_roles_skills_tiers.md#exocortex-prompt-tools)
 - Related refs: [Agent interface](cr_agents.md#agent-interface), [Assistant concept](cr_assistant_assisted_mode.md)
 
+### Agent role contracts (archetype responsibilities & abstain boundaries)
+- Doc type: Reference
+- Purpose: Define behavioral contracts for each archetype (Chief, Planner, Writer, Editor, Critic, Continuity, etc.), including responsibilities, scope limits, and when to abstain in conference.
+- Triggers/Interfaces: Conference interpretation phase, role prompts, agent configuration, hiring/specialization.
+- Implementation prerequisites:
+- prereq: Role registry
+- prereq: Conference two-phase lifecycle
+- Primary refs: [Agent role contracts](reference/agent_roles.md)
+- Related refs: [Role archetypes, skills, and tiers](cr_exocortex_roles_skills_tiers.md), [Agent workflow](cr_agents.md#agent-workflow), [Conference round lifecycle](statemachine.md#conference-round-lifecycle-two-phase-model)
+
 ### Tiering system (cap-based progression)
 - Doc type: Spec
 - Purpose: Define unbounded tiers, caps, promotion/demotion, and safety valves.
