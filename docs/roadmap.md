@@ -8,6 +8,10 @@
 
 Note: some features shipped out of order in the last two days; the lists below reflect what is implemented now, regardless of original sequencing.
 
+Status key (audit-aligned):
+- `[x]` Implemented: code exists and is plausibly wired (CODE-MATCH); may still hide edge cases or runtime gaps.
+- `[X]` Complete: runtime-verified by user for the primary path (and persistence/reload if relevant); safe to treat as "done".
+
 ### Completed Features
 
 #### Core Editor & Project Space
