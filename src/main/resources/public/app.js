@@ -2114,7 +2114,7 @@
                         Worldbuilding matters for your AI agents
                     </div>
                     <p class="prep-guidance-note">
-                        Your agents read this structure to understand your story's world. They also write audit trailsâ€”notes explaining their decisionsâ€”so other agents can follow along.
+                        Your agents read this structure to understand your story's world. They also write audit trails -- notes explaining their decisions -- so other agents can follow along.
                         <strong>Once you add agents, any structural changes become "retcons"</strong> that can cause continuity issues. Take a moment now to get things in order.
                     </p>
                 `;
@@ -3557,9 +3557,9 @@ async function showWorkspaceSwitcher() {
                         const projectName = payload.projectName || state.workspace.displayName || state.workspace.name || 'your project';
                         const issueTitle = `Welcome to ${projectName}!`;
                         const issueBody = [
-                            `Welcome to ${projectName}! You finished the preparation phase â€” wonderful.`,
+                            `Welcome to ${projectName}! You finished the preparation phase -- wonderful.`,
                             '',
-                            'That was step 1. Now letâ€™s add your first agent, the Chief of Staff.',
+                            'That was step 1. Now let\'s add your first agent, the Chief of Staff.',
                             'This agent is needed for various tasks. They keep your entire team running.',
                             'You can find the agents list on the left side of the Workbench.',
                         ].join('\n');
@@ -5378,7 +5378,7 @@ async function showWorkspaceSwitcher() {
             `;
 
             if (recentResolved.length === 0) {
-                digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Letâ€™s get a win on the board.</div>';
+                digestContainer.innerHTML = '<div class="workbench-placeholder">No issues resolved yet. Let\'s get a win on the board.</div>';
                 return;
             }
 
@@ -5389,7 +5389,7 @@ async function showWorkspaceSwitcher() {
 
             digestContainer.innerHTML = `
                 <div class="workbench-briefing-text">
-                    Hello, hereâ€™s the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
+                    Hello, here's the current state of the project: we finished ${resolvedCount} issue${resolvedCount !== 1 ? 's' : ''} recently, and our agents earned ${creditsEarned} credits.
                     ${highlightAgent ? `${escapeHtml(highlightAgent)} was exceptionally successful.` : ''}
                     Check the issues board for the newest items, or start a conference to regroup.
                 </div>
@@ -7109,7 +7109,7 @@ async function showWorkspaceSwitcher() {
                         'info',
                         'workbench',
                         `Welcome to ${projectName}!`,
-                        'Prep complete â€” click to open your onboarding issue.',
+                        'Prep complete - click to open your onboarding issue.',
                         'attention',
                         false,
                         'Open Issue Board',
