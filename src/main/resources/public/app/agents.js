@@ -3462,10 +3462,14 @@
         const { overlay, modal, body, confirmBtn, cancelBtn, close } = createModalShell(
             'Canon Index',
             'Begin',
-            null,
-            { closeOnCancel: false, closeOnConfirm: false }
+            'Close',
+            {
+                closeOnCancel: false,
+                closeOnConfirm: false,
+                closeOnOverlay: false,
+                closeOnEscape: false
+            }
         );
-        if (cancelBtn) cancelBtn.remove();
 
         modal.classList.add('canon-indexing-modal');
 
@@ -3493,14 +3497,81 @@
         messageArea.appendChild(text);
         body.appendChild(messageArea);
 
+        const statusPanel = document.createElement('div');
+        statusPanel.className = 'canon-indexing-status';
+        statusPanel.innerHTML = [
+            '<div class="canon-indexing-status-title"><strong>Status</strong></div>',
+            '<div class="canon-indexing-status-body">Loading...</div>'
+        ].join('');
+        body.appendChild(statusPanel);
+
+        const actionRow = document.createElement('div');
+        actionRow.className = 'canon-indexing-actions';
+        body.appendChild(actionRow);
+
+        const lastIssueId = (() => {
+            try {
+                return Number(localStorage.getItem('control-room:canon-index:lastIssueId')) || null;
+            } catch {
+                return null;
+            }
+        })();
+
+        const openLastReportBtn = document.createElement('button');
+        openLastReportBtn.type = 'button';
+        openLastReportBtn.className = 'canon-indexing-action-btn';
+        openLastReportBtn.textContent = 'Open last run report';
+        openLastReportBtn.style.display = lastIssueId ? 'inline-flex' : 'none';
+        openLastReportBtn.addEventListener('click', async () => {
+            try {
+                if (typeof window.openIssueModal === 'function') {
+                    await window.openIssueModal(lastIssueId);
+                }
+            } catch (err) {
+                log(`Failed to open last canon report issue: ${err.message}`, 'warning');
+            }
+        });
+        actionRow.appendChild(openLastReportBtn);
+
+        cancelBtn.disabled = true;
+        cancelBtn.title = 'Available after indexing completes.';
+        cancelBtn.addEventListener('click', () => close());
+
+        const statusBody = statusPanel.querySelector('.canon-indexing-status-body');
+        (async () => {
+            try {
+                const status = await api('/api/canon/index/status');
+                const statusLabel = status && status.status ? status.status : (status && status.indexed ? 'indexed' : 'unknown');
+                const count = typeof status?.cardCount === 'number' ? status.cardCount : (typeof status?.fileCount === 'number' ? status.fileCount : 0);
+                const indexedAt = status && status.indexedAt ? status.indexedAt : null;
+                const reviewedAt = status && status.reviewedAt ? status.reviewedAt : null;
+                const preparedAt = status && status.preparedAt ? status.preparedAt : null;
+                const details = [
+                    `State: ${statusLabel}`,
+                    `Files: ${count}`,
+                    preparedAt ? `Prepared: ${preparedAt}` : null,
+                    reviewedAt ? `Reviewed: ${reviewedAt}` : null,
+                    indexedAt ? `Indexed: ${indexedAt}` : null
+                ].filter(Boolean).join('<br>');
+                statusBody.innerHTML = details;
+            } catch (err) {
+                statusBody.textContent = `Status unavailable: ${err.message}`;
+            }
+        })();
+
         confirmBtn.addEventListener('click', async () => {
             confirmBtn.disabled = true;
             confirmBtn.textContent = 'Indexing...';
-            await runCanonIndexing(agent, body, close);
+            cancelBtn.disabled = true;
+            await runCanonIndexing(agent, body, { confirmBtn, cancelBtn, closeModal: close });
         });
     }
 
-    async function runCanonIndexing(agent, modalBody, closeModal) {
+    async function runCanonIndexing(agent, modalBody, controls) {
+        // NOTE: do not hold a long-lived reference to confirmBtn; we may replace the button to reset handlers.
+        const cancelBtn = controls && controls.cancelBtn ? controls.cancelBtn : null;
+        const closeModal = controls && controls.closeModal ? controls.closeModal : null;
+
         // Replace modal body with progress log
         const logContainer = document.createElement('div');
         logContainer.className = 'canon-indexing-log';
@@ -3515,7 +3586,61 @@
             logContainer.scrollTop = logContainer.scrollHeight;
         };
 
+        const setPrimaryAction = (label, handler, disabled = false) => {
+            const btn = controls && controls.confirmBtn ? controls.confirmBtn : null;
+            if (!btn || !btn.parentNode) return;
+            const clone = btn.cloneNode(true);
+            clone.textContent = label;
+            clone.disabled = Boolean(disabled);
+            btn.parentNode.replaceChild(clone, btn);
+            controls.confirmBtn = clone;
+            clone.addEventListener('click', handler);
+        };
+
+        const enableClose = () => {
+            if (cancelBtn) {
+                cancelBtn.disabled = false;
+                cancelBtn.title = '';
+            }
+        };
+
+        const formatMs = (ms) => {
+            const s = Math.max(0, Math.round(ms / 1000));
+            if (s < 60) return `${s}s`;
+            const m = Math.floor(s / 60);
+            const r = s % 60;
+            return `${m}m ${r}s`;
+        };
+
+        const createCanonIndexIssue = async (title, bodyText, openedBy) => {
+            if (!issueApi || typeof issueApi.create !== 'function') return null;
+            const issue = await issueApi.create({
+                title,
+                body: bodyText,
+                openedBy: openedBy || 'system',
+                tags: ['canon-index']
+            });
+            if (issue && issue.id) {
+                try {
+                    localStorage.setItem('control-room:canon-index:lastIssueId', String(issue.id));
+                } catch {
+                    // ignore
+                }
+                if (window.notificationStore && typeof window.notificationStore.issueCreated === 'function') {
+                    window.notificationStore.issueCreated(issue.id, issue.title, issue.openedBy, issue.assignedTo);
+                }
+            }
+            return issue;
+        };
+
         try {
+            const startedAt = Date.now();
+            const endpoint = agent && agent.id && agentEndpointsApi && typeof agentEndpointsApi.get === 'function'
+                ? await agentEndpointsApi.get(agent.id).catch(() => null)
+                : null;
+            const provider = endpoint?.provider || 'unknown';
+            const model = endpoint?.model || 'unknown';
+
             // Step 1: Get canon file list
             appendLog('Loading canon file list...');
             const review = await api('/api/preparation/canon-review');
@@ -3531,8 +3656,10 @@
                 appendLog('Done. Canon index created (empty).');
                 state.workspace.canonStatus = 'indexed';
                 updateAgentLockState();
+                enableClose();
+                setPrimaryAction('Close', () => closeModal && closeModal(), false);
                 setTimeout(() => {
-                    closeModal();
+                    if (closeModal) closeModal();
                     renderAgentSidebar();
                     createAgentIntroIssue(agent, null, 'initial wiring')
                         .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
@@ -3543,43 +3670,53 @@
             appendLog(`Found ${cards.length} canon files.`);
 
             // Step 2: For each card, send to LLM for metadata extraction
-            const entries = [];
-            for (let i = 0; i < cards.length; i++) {
-                const card = cards[i];
-                const cardPath = card.path || card.displayId || `Card ${i + 1}`;
-                appendLog(`Reading ${cardPath}...`);
+            const entriesByPath = new Map();
+            const failuresByPath = new Map();
+            let fallbackCount = 0;
 
-                const extractionPrompt = buildCanonExtractionPrompt(card);
-                try {
-                    const reply = await api('/api/ai/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: extractionPrompt,
-                            agentId: agent.id,
-                            skipTools: true
-                        })
-                    });
-
-                    const metadata = parseCanonMetadata(reply, card);
-                    entries.push(metadata);
-                    const topicCount = metadata.topics ? metadata.topics.length : 0;
-                    appendLog(`Extracted ${topicCount} topics from ${card.title || cardPath}.`);
-                } catch (err) {
-                    appendLog(`Warning: Failed to extract from ${cardPath}: ${err.message}`);
-                    // Add a minimal entry so the file is still catalogued
-                    entries.push({
-                        path: cardPath,
-                        type: card.type || 'misc',
-                        scope: ['unknown'],
-                        hardness: 'soft',
-                        topics: [],
-                        defines: [],
-                        constraints: [],
-                        summary: card.title || ''
-                    });
+            const extractForCards = async (cardSubset) => {
+                for (let i = 0; i < cardSubset.length; i++) {
+                    const card = cardSubset[i];
+                    const cardPath = card.path || card.displayId || card.title || `Card ${i + 1}`;
+                    appendLog(`Reading ${cardPath}...`);
+                    const extractionPrompt = buildCanonExtractionPrompt(card);
+                    try {
+                        const reply = await api('/api/ai/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: extractionPrompt,
+                                agentId: agent.id,
+                                skipTools: true
+                            })
+                        });
+                        const metadata = parseCanonMetadata(reply, card);
+                        entriesByPath.set(cardPath, metadata);
+                        failuresByPath.delete(cardPath);
+                        const topicCount = metadata.topics ? metadata.topics.length : 0;
+                        appendLog(`Extracted ${topicCount} topics from ${card.title || cardPath}.`);
+                    } catch (err) {
+                        failuresByPath.set(cardPath, String(err && err.message ? err.message : err));
+                        appendLog(`Warning: Failed to extract from ${cardPath}: ${err.message}`);
+                        // Add a minimal entry so the file is still catalogued
+                        entriesByPath.set(cardPath, {
+                            path: cardPath,
+                            type: card.type || 'misc',
+                            scope: ['unknown'],
+                            hardness: 'soft',
+                            topics: [],
+                            defines: [],
+                            constraints: [],
+                            summary: card.title || ''
+                        });
+                        fallbackCount += 1;
+                    }
                 }
-            }
+            };
+
+            await extractForCards(cards);
+
+            const entries = Array.from(entriesByPath.values());
 
             // Step 3: Compile Canon.md
             appendLog('Writing Canon.md...');
@@ -3594,19 +3731,118 @@
             state.workspace.canonStatus = 'indexed';
             updateAgentLockState();
 
-            // Step 4: Trigger CoS first real message after short delay
-            setTimeout(() => {
-                closeModal();
-                renderAgentSidebar();
-                if (window.loadAgentStatuses) window.loadAgentStatuses();
-                createAgentIntroIssue(agent, null, 'initial wiring')
-                    .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
-            }, 2000);
+            let postIndexTriggered = false;
+            const triggerPostIndexActions = (autoClose) => {
+                if (postIndexTriggered) return;
+                postIndexTriggered = true;
+                setTimeout(() => {
+                    if (autoClose && closeModal) closeModal();
+                    renderAgentSidebar();
+                    if (window.loadAgentStatuses) window.loadAgentStatuses();
+                    createAgentIntroIssue(agent, null, 'initial wiring')
+                        .catch(err => log(`Failed to create intro issue: ${err.message}`, 'warning'));
+                }, 2000);
+            };
+
+            const durationMs = Date.now() - startedAt;
+            const failureCount = failuresByPath.size;
+            const runSummaryLines = [
+                `Agent: ${agent?.name || 'Chief of Staff'} (${agent?.id || 'unknown'})`,
+                `Endpoint: ${provider} / ${model}`,
+                `Duration: ${formatMs(durationMs)}`,
+                `Files: ${cards.length}`,
+                `Fallback entries used: ${fallbackCount}`,
+                `Extraction failures: ${failureCount}`
+            ];
+            const failureLines = failureCount
+                ? ['', 'Failures:', ...Array.from(failuresByPath.entries()).map(([path, msg]) => `- ${path}: ${msg}`)]
+                : [];
+            const issueBody = ['Canon index run completed.', '', ...runSummaryLines, ...failureLines].join('\n');
+            let reportIssue = null;
+            try {
+                reportIssue = await createCanonIndexIssue(
+                    `Canon index run (${cards.length} files)`,
+                    issueBody,
+                    agent?.name || 'system'
+                );
+                if (reportIssue && reportIssue.id) {
+                    appendLog(`Run report saved as Issue #${reportIssue.id}.`);
+                }
+            } catch (err) {
+                appendLog(`Warning: failed to save run report issue: ${err.message}`);
+            }
+
+            enableClose();
+            if (controls && controls.confirmBtn) {
+                if (failuresByPath.size > 0) {
+                    const retryFailed = async () => {
+                        // Re-run extraction for failed cards, then re-compile.
+                        controls.confirmBtn.disabled = true;
+                        controls.confirmBtn.textContent = 'Retrying...';
+                        appendLog('Retrying failed extractions...');
+                        const retryCards = cards.filter(c => {
+                            const p = c.path || c.displayId || c.title || '';
+                            return failuresByPath.has(p);
+                        });
+                        if (retryCards.length === 0) {
+                            appendLog('No failed cards to retry.');
+                        } else {
+                            await extractForCards(retryCards);
+                            appendLog('Re-compiling Canon.md...');
+                            const retryEntries = Array.from(entriesByPath.values());
+                            await api('/api/canon/index', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ agentId: agent.id, entries: retryEntries })
+                            });
+                            appendLog(`Retry complete. Remaining failures: ${failuresByPath.size}.`);
+                        }
+                        enableClose();
+                        if (failuresByPath.size === 0) {
+                            setPrimaryAction('Close', () => closeModal && closeModal(), false);
+                        } else {
+                            setPrimaryAction(`Retry failed only (${failuresByPath.size})`, retryFailed, false);
+                        }
+                    };
+                    setPrimaryAction(`Retry failed only (${failuresByPath.size})`, retryFailed, false);
+                } else {
+                    setPrimaryAction('Close', () => closeModal && closeModal(), false);
+                }
+            }
+            // Trigger post-index actions; only auto-close if there were no extraction failures.
+            triggerPostIndexActions(failuresByPath.size === 0);
 
         } catch (err) {
             appendLog(`Error: ${err.message}`);
             appendLog('Canon indexing failed. Please try again by clicking the Chief of Staff card.');
             log(`Canon indexing failed: ${err.message}`, 'error');
+            enableClose();
+            try {
+                const issueBody = [
+                    'Canon index run failed.',
+                    '',
+                    `Agent: ${agent?.name || 'Chief of Staff'} (${agent?.id || 'unknown'})`,
+                    `Error: ${err && err.message ? err.message : String(err)}`
+                ].join('\n');
+                const issue = await createCanonIndexIssue(
+                    'Canon index run failed',
+                    issueBody,
+                    agent?.name || 'system'
+                );
+                if (issue && issue.id) {
+                    appendLog(`Failure report saved as Issue #${issue.id}.`);
+                    if (typeof window.openIssueModal === 'function') {
+                        setPrimaryAction(`Open Issue #${issue.id}`, () => window.openIssueModal(issue.id), false);
+                    }
+                } else if (closeModal) {
+                    setPrimaryAction('Close', () => closeModal && closeModal(), false);
+                }
+            } catch (issueErr) {
+                appendLog(`Warning: failed to save failure report issue: ${issueErr.message}`);
+                if (closeModal) {
+                    setPrimaryAction('Close', () => closeModal && closeModal(), false);
+                }
+            }
         }
     }
 

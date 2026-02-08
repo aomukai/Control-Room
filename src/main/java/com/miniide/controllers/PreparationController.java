@@ -221,8 +221,16 @@ public class PreparationController implements Controller {
             boolean indexed = canon != null && "indexed".equals(canon.getStatus());
             Map<String, Object> response = new java.util.LinkedHashMap<>();
             response.put("indexed", indexed);
+            // Backward-compatible fields (older UI expects these keys).
             response.put("fileCount", canon != null ? canon.getCardCount() : 0);
             response.put("indexedAt", canon != null ? canon.getIndexedAt() : null);
+
+            // Richer status fields for UX (optional; may be null).
+            response.put("schemaVersion", canon != null ? canon.getSchemaVersion() : null);
+            response.put("status", canon != null ? canon.getStatus() : null);
+            response.put("preparedAt", canon != null ? canon.getPreparedAt() : null);
+            response.put("reviewedAt", canon != null ? canon.getReviewedAt() : null);
+            response.put("cardCount", canon != null ? canon.getCardCount() : 0);
             ctx.json(response);
         } catch (Exception e) {
             ctx.status(500).json(Controller.errorBody(e));

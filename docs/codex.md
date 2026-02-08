@@ -22,7 +22,7 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 - Tool suite: `consistency_checker` — multi-file cross-referencing (entity extraction, shared terms, event markers) for contradiction detection.
 - Tool suite: `scene_draft_validator` — auto-matches scene to outline beat + loads POV canon card in one call.
 - Tool suite: `prose_analyzer` — quantitative prose metrics (sentence stats, dialogue ratio, repeated words, POV signals).
-- Canon Index boot sequence: mandatory LLM-driven indexing of all canon files when CoS is first wired. Frontend-driven loop with progress log. Canon.md served via VFS.
+- Canon Index boot sequence: mandatory LLM-driven indexing of all canon files when CoS is first wired. Frontend-driven loop with progress log, status panel, run report issue, and "retry failed only" support. Canon.md served via VFS.
 - `skipTools` flag on `/api/ai/chat`: bypasses tool catalog, grounding header, and tool loop for raw LLM calls (used by canon indexing).
 - Highlander rule: only one Chief of Staff allowed; template hidden from creation wizard when one exists.
 - "Assistant" → "Chief of Staff" rename across all user-facing UI (agent cards, wizards, tooltips, archetype dropdown).

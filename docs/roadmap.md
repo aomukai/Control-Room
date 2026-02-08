@@ -355,7 +355,7 @@ notificationStore.issueCommentAdded(id, author)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/preparation/reindex/scene` | Reindex scene hooks into derived metadata |
-| GET | `/api/canon/index/status` | Get canon index status (indexed, fileCount, indexedAt) |
+| GET | `/api/canon/index/status` | Get canon index status (indexed + manifest metadata: status, fileCount/cardCount, preparedAt, reviewedAt, indexedAt) |
 | POST | `/api/canon/index` | Compile canon index from LLM-extracted entries |
 
 ### Issues
