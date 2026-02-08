@@ -312,7 +312,7 @@ It summarizes key concepts and links into stable anchors in the source docs.
 - prereq: Editor view mode
 - prereq: File tree + persistence
 - Primary refs: [Editor UX](cr_editor.md)
-- Related refs: [Agent tools](cr_agents.md#agent-capabilities), [Workbench UI](cr_workbench.md)
+- Related refs: [Agent tools](reference/agent_tools.md), [Agent capabilities](cr_agents.md#agent-capabilities), [Workbench UI](cr_workbench.md)
 
 ### Outline editor (Story root)
 - Doc type: Spec
@@ -360,6 +360,16 @@ It summarizes key concepts and links into stable anchors in the source docs.
 - prereq: Model switch handling
 - Primary refs: [Per-model records](cr_prefrontal_exocortex.md#exocortex-per-model-records), [Model switch behavior](cr_prefrontal_exocortex.md#exocortex-model-switch)
 - Related refs: [Credit system](cr_prefrontal_exocortex.md#exocortex-credits), [Endpoint configuration](cr_agents.md#agent-endpoints)
+
+### Prompt tools (agent tools)
+- Doc type: Architecture
+- Purpose: Define the prompt tool catalog, locked core tool suite, and the review-gated workflow for new tools and edits.
+- Triggers/Interfaces: Settings → Prompt Tools, tool catalog injection into agent calls.
+- Implementation prerequisites:
+- prereq: Issue system (review surface)
+- prereq: Prompt registry storage + merge rules
+- Primary refs: [Agent tools](reference/agent_tools.md)
+- Related refs: [Agent capabilities](cr_agents.md#agent-capabilities)
 
 ## Glossary
 - R5/R3/R1: Memory representation levels from raw log to structured summary to semantic trace.

@@ -271,7 +271,7 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 
 - [ ] **Export Stage** - PDF/EPUB/DOCX manuscript export (refs: docs/reference/cr_editor.md)
 - [ ] Custom widgets (needs design): widget sandbox/permissions + per-project storage + import/export of widget bundles (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
-- [ ] Agent-generated tools v2 (needs design): tool proposal workflow, review via Issues, tool versioning/diffing, ratings/favorites (refs: docs/ideas/agent_tools_v2.md)
+- [ ] Agent tools governance (needs design): review-gated tool proposals (agent + user), locked core tool suite, plus harness + tool versioning approach (refs: docs/reference/agent_tools.md)
 - [ ] Cross-role autonomy + speculative execution (post-Pipeline): allow single-agent chains with explicit attempted roles and deterministic fallback (refs: docs/ideas/scene_pipeline_cross_role_autonomy.md)
 - [ ] Theme builder / custom themes (big): theme import/export + visual theme editor (refs: docs/claude/SYSTEMS_THEMES.md)
 
