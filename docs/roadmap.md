@@ -241,6 +241,17 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 - **Medium Term**: Meaningful but not imminent; depends on prior groundwork.
 - **Future**: Long-range ideas; likely to be re-scoped later.
 
+### Needs Design (Gate)
+Items listed here should not be treated as "ready to implement" until a short design pass lands (a reference doc update or a new spec).
+- Pipeline/Execution Modes: run log format + persistence layout + minimal REST contract. (refs: docs/reference/execution_modes.md)
+- Pipeline UX: Session Plan UI behaviors and how it maps to StepRunner runs. (refs: docs/reference/execution_modes.md)
+- Recipe registry + deterministic task routing: schema + routing rules + DoD evaluation. (refs: docs/reference/execution_modes.md)
+- Agent tools governance: harness + tool versioning/diffing approach (core tools remain locked). (refs: docs/reference/agent_tools.md)
+- Custom widgets: sandbox/permissions model + bundle format + storage rules. (refs: docs/claude/SYSTEMS_WIDGETS.md)
+- Settings "Soon" features: scope/MVP decisions (cloud backup, editor settings, shortcut editing). (refs: Settings UI)
+- Theme builder/custom themes: scope down to an MVP (import/export only vs visual editor). (refs: docs/claude/SYSTEMS_THEMES.md)
+- Cross-role autonomy/speculative execution: explicit success criteria + fallback + verification gates. (refs: docs/ideas/scene_pipeline_cross_role_autonomy.md)
+
 ### Now (Active)
 
 - [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. (refs: docs/reference/execution_modes.md)

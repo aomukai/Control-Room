@@ -48,6 +48,35 @@ Output should list each target with:
 - what domain boundaries to extract
 - what risks exist (shared state, implicit ordering, global window exports)
 
+### Baseline inventory (snapshot)
+This is a "first-pass" scan intended to flag obvious hotspots. It is not a refactor commitment list.
+
+Largest files (LoC; rough top signals):
+- `src/main/resources/public/app/agents.js` (~6.3k): roster + modals + canon index + conference + lots of UI glue.
+- `src/main/resources/public/app/widgets.js` (~3.3k): widget registry + implementations + dashboard wiring.
+- `src/main/java/com/miniide/controllers/ChatController.java` (~2.9k): chat orchestration + tool protocol + provider glue + many special cases.
+- `src/main/java/com/miniide/tools/ToolExecutionService.java` (~2.8k): tool execution loop + receipts + tool routing + protocol enforcement.
+- `src/main/resources/public/app/editor.js` (~2.5k): editor mode wiring + actions + UI state.
+- `src/main/resources/public/app/workbench.js` (~1.8k): workbench mode wiring.
+- `src/main/java/com/miniide/ProjectPreparationService.java` (~1.4k): prep ingest + manifests + derived indices.
+
+Highest churn (last ~80 commits; add+del total, approximate):
+- `src/main/java/com/miniide/controllers/ChatController.java`: highest churn hotspot.
+- `src/main/java/com/miniide/tools/ToolExecutionService.java`: high churn hotspot.
+- `src/main/resources/public/app/agents.js`: high churn hotspot.
+- `src/main/resources/public/app.js`: moderate/high churn (global UI glue).
+- `src/main/java/com/miniide/PromptRegistry.java`: moderate churn (tool catalog + prompt merging).
+- `src/main/java/com/miniide/IssueInterestService.java`, `src/main/java/com/miniide/TelemetryStore.java`: moderate churn.
+
+Overlap (largest + highest churn) = the safest refactor targets to plan around:
+- `src/main/resources/public/app/agents.js`
+- `src/main/java/com/miniide/controllers/ChatController.java`
+- `src/main/java/com/miniide/tools/ToolExecutionService.java`
+
+Immediate caution rule (to reduce future refactor cost):
+- Avoid adding new major subsystems to `src/main/resources/public/app/agents.js` or `src/main/java/com/miniide/controllers/ChatController.java`.
+- For Pipeline work, create new modules/packages first (see Step 2) and integrate via narrow call surfaces.
+
 ## Step 1: Stabilize a Module Boundary Contract
 Before extracting anything, define conventions:
 - Backend:
@@ -106,4 +135,3 @@ After each refactor, update docs only when:
 - Execution Modes / Pipeline code lives in dedicated backend + frontend modules.
 - `agents.js` no longer contains unrelated large subsystems (canon indexing + conference moved out).
 - Audit ledger can link most claims to stable code anchors without spelunking one huge file.
-
