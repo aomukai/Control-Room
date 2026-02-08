@@ -148,11 +148,14 @@ Note: some features shipped out of order in the last two days; the lists below r
 #### Safety & Governance
 - [x] Stop hooks enforced in main chat + workbench chat (badges + reroll gating)
 - [x] Assistant canon constraint injected into chat prompt (approval-required stop hook)
+- [x] Circuit Breakers + Model-Locked Eval - runtime safety gates for small/local models
 - [x] Tiering System backend (caps, promotion/demotion, clamps, policy + events, API) (refs: docs/reference/tiers.md)
+- [x] Prompt hardening + receipts (PH-0..PH-5) - task packet/receipt schemas + validators, disk-backed receipt storage, Chief router, agent execution guardrails, UI attached report viewer, and "Write Scene from Outline" playbook state machine
 
 #### AI Foundation (Read-Only)
 - [x] Summarize/Explain/Suggest tools wired in Editor chat (read-only output modal)
 - [x] Revisit Explain/Suggest prompts for JSON stability (Summarize is stable)
+- [x] Tool suite expansion - additional prompt tools (e.g. `prose_analyzer`, `consistency_checker`, `scene_draft_validator`, `issue_status_summarizer`, `stakes_mapper`, `timeline_validator`)
 
 #### Settings UI
 - [x] **Modern Sidebar Layout** - Two-panel design with category navigation + content area (refs: docs/reference/cr_workbench.md)
@@ -193,6 +196,7 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **Scene Editor Widget** - Quick scene access from dashboard with focus editing modal; displays scene list from story folder, click-to-edit with distraction-free modal overlay (refs: docs/reference/cr_workbench.md)
 - [x] **Issue Board Panel** - Slide-in board with cinema overlay (refs: docs/reference/cr_workbench.md#workbench-issue-board)
 - [x] **Conference Panel** - Slide-in conference modal with attendees + roster controls (refs: docs/reference/cr_workbench.md)
+- [x] **Conference Chat + Two-Phase Model** - Chief-led Phase 1 tool gathering + Phase 2 grounded role responses with abstain; round transcript auto-saved as an Issue with linked receipts (refs: docs/statemachine.md)
 - [x] **Team Lead Marker** - Highlight top agent in roster (refs: docs/reference/cr_agents.md#agent-team-leader, docs/reference/cr_workbench.md)
 - [x] **Workbench Newsfeed** - Filtered notification stream with issue actions (refs: docs/reference/cr_workbench.md)
 - [x] **Issue Board MVP** - Card-based issue list with filters, click modal (refs: docs/reference/cr_workbench.md#workbench-issue-board, docs/reference/cr_memory.md#memory-issue-board-panel)
@@ -235,76 +239,25 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 
 ### Now (Active)
 
-- [x] **Memory Decay Lifecycle** - Active/archived/expired states with retention rules (no pruning) and compression hammer loop (refs: docs/reference/cr_librarian_extension.md, docs/reference/cr_memory.md)
-- [x] **Circuit Breakers + Model-Locked Eval** - runtime safety gates
-- [x] **Single-Active Agent Turns** - enforce serialized agent turns (one active agent at a time) for local LLM viability (refs: docs/reference/cr_agents.md#agent-workflow)
-- [x] **Verify agent turn queue indicator** - test alongside conference chat wiring (currently 1:1 chat only).
-- [x] **Versioning UX polish** - align Manual Save & History flow with docs/reference/versioning.md.
-- [x] **Tool Suite Expansion** - implement analysis/validation tools from basic_tool_suite.md.
-  - [x] `prose_analyzer` — quantitative prose metrics (sentence stats, dialogue ratio, rhythm, POV signals).
-  - [x] `consistency_checker` — multi-file cross-referencing (entity extraction, shared terms, event markers) for contradiction detection.
-  - [x] `scene_draft_validator` — auto-matches scene to outline beat + loads POV canon card in one call.
-  - [x] `issue_status_summarizer` — open issues + recent receipts snapshot for the current session.
-  - [x] `stakes_mapper` — outline/scene stake candidate extraction for escalation analysis.
-  - [x] `line_editor` — deterministic line-level findings for a passage or file excerpt.
-  - [x] `scene_impact_analyzer` — opening/ending excerpts + impact signals + outline beat match (best-effort).
-  - [x] `reader_experience_simulator` — multi-scene openings/endings + transition pairs.
-  - [x] `timeline_validator` — extract time markers with line numbers + flattened timeline skeleton.
-  - [x] `beat_architect` — brief comprehension scoring + clarification questions + beat-cluster scaffold.
-- [ ] **Prompt hardening + receipts** - enforce task packet + receipt contracts, validators, retries (design for small local models first).
-  - [x] **PH-0 Task packet + receipt schemas** - add minimal v0.1 schemas + validators; JSON-only enforcement + 2x retry + STOP_HOOK on failure.
-    - [x] Acceptance: validator accepts valid packet/receipt; rejects missing required field, invalid intent enum, bad output_contract.
-  - [x] **PH-1 Receipt storage + audit trail** - persist packets + receipts under `.control-room/audit/issues/<issue_id>/` with timestamped naming; add backend loader by issue_id.
-    - [x] Acceptance: receipt written to disk; loader lists receipts for issue in timestamp order.
-  - [x] **PH-2 Chief router (v0.1)** - user prompt -> task packet or clarification questionnaire; packets include target resolution + output contract.
-    - [x] Note: if clarification exceeds 3 items or scope conflict detected, Chief switches to guided 1:1 (transcript saved as issue input).
-    - [x] Acceptance: “let’s do scene 3” -> clarify packet; user choice -> task packet for next agent.
-  - [x] **PH-3 Agent execution guardrails** - reject invalid packets/receipts; enforce no-hallucinated-paths; require expected_artifacts or STOP_HOOK.
-    - [x] Acceptance: invalid JSON -> 2x retry -> STOP_HOOK; bad path -> STOP_HOOK with audit trail.
-  - [x] **PH-4 UI: Attached report** - issue modal shows “Open attached report” for receipts; loads from storage on demand; report_excerpt always shown inline.
-    - [x] Acceptance: issue modal renders report_excerpt; attached report loads in read-only modal.
-  - [x] **PH-5 Playbook: Write Scene from Outline** - deterministic state machine + routing policy + stop/clarify rules; runs Planner -> Continuity -> Writer -> Critic -> Editor -> Continuity -> Chief.
-    - [x] Acceptance: end-to-end “scene 3” run produces ordered packet/receipt audit trail with artifacts.
+- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. (refs: docs/reference/execution_modes.md)
+  - [ ] StepRunner core (server-side): execute a recipe mechanically (no reasoning), halt on stop hook, persist audit trail.
+  - [ ] Run persistence: disk-backed run logs + step outputs (stable IDs, timestamps).
+  - [ ] REST API: start run + poll status + fetch run artifacts.
+  - [ ] One end-to-end dry-run recipe: deterministic, no model calls required.
+  - [ ] Acceptance: happy path + step failure path + restart path (reload and re-open run status).
+- [ ] 1:1 chat tool-call reliability: continue hardening strict JSON tool calls and stop hook surfaces for small/local models.
+- [ ] Provider resiliency: retries/backoff/timeouts + more actionable UI errors for transient provider/network failures.
 
 ### Next (Queued)
 
-- [x] **Conference chat wiring** - connect conference chat flow; validate agent turn queue indicator here.
-- [x] **Conference two-phase redesign** - Chief-led tool orchestration + role-based interpretation. (refs: docs/statemachine.md, docs/reference/cr_agents.md)
-  - [x] User-only conference history in prompts (no agent cross-contamination).
-  - [x] Role framing + evidence rules injected per agent.
-  - [x] Quote verification against VFS file content.
-  - [x] VFS outline path exposed + outline content mapped to API output.
-  - [x] Evidence parser accepts **Evidence:** (bold) format.
-  - [x] Structural claims require line/section or outline entry reference.
-  - [x] Block chain-of-thought leakage in conference replies.
-  - [x] Reject plain-text tool calls (tool calls must be strict JSON-only with nonce).
-  - [x] Chief of Staff auto-invite + non-removable enforcement (UI + backend).
-  - [x] Chief tool phase (phase 1): lean prompt, tool execution, round buffer.
-  - [x] Tool result injection into agent prompts (phase 2 framing).
-  - [x] Abstain detection + agent card visual state (yellow "Abstained" subtitle).
-  - [x] Round-close: transcript auto-saved as issue with receipt linking.
-  - [x] History wipe between rounds (agents see no prior context).
-  - [x] Conference UI: continuous chat view for user despite per-round isolation.
-
-- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. (refs: docs/reference/execution_modes.md)
-  - [ ] StepRunner core (server-side): execute a recipe mechanically (no reasoning), halt on stop hook, persist audit trail.
-  - [ ] Recipe storage format (data, not code): static declarative recipes with Phase A (tools) + Phase B (agents) + DoD.
-  - [ ] Deterministic task_router service (system-level): request -> recipe_id + initial_args, routable=true/false.
-  - [ ] Session Plan UI: user-visible ordered task checklist (edit/reorder/pause/resume) with status and dependency blocking.
-  - [ ] Per-task cache slots: tool/agent outputs stored with receipt_id + summary injection, discarded after completion.
-  - [ ] DoD evaluation + issue creation on failure (machine-checkable where possible).
-  - [ ] Migration: replace the hardcoded "Write Scene from Outline" playbook with an equivalent recipe executed by StepRunner.
+- [ ] Pipeline UX: Session Plan UI (ordered checklist with status, pause/resume, dependency blocking).
+- [ ] Recipe registry (data, not code): declarative recipes with tools/agents phases and machine-checkable DoD where possible.
+- [ ] Deterministic `task_router`: request -> recipe_id + initial args, routable=true/false.
+- [ ] Replace the hardcoded "Write Scene from Outline" playbook with an equivalent StepRunner recipe.
 
 ### Medium Term
 
-- [x] **Agentic Editing** - AI-proposed patches with approval workflow (refs: docs/reference/cr_editor.md, docs/reference/cr_agents.md)
-- [x] **Outline Editor (Story Root)** - modal editor with scene cards, summaries, and ordered moves (refs: docs/reference/outline_editor.md)
-- [x] **Tiering System** - Unbounded capability tiers with caps, promotion/demotion, and safety valves (refs: docs/reference/tiers.md)
-- [x] **Memory Degradation (Phase 1)** - 5-level interest gradient for issue memory: issue-level fields, decay/compression routines, search filters, revive flow, and UI views. (refs: docs/reference/cr_memory.md#memory-interest-levels)
-- [x] **Memory Degradation (Phase 2)** - implement access demotion model (activations, floors, epoch one-time bumps) and conservative leech/Wiedervorlage MVP; improve compression quality and prompt-backed summaries. (refs: docs/reference/memory_part2.md, docs/reference/memory_part2_1.md, docs/reference/cr_memory.md)
-  - Note: revisit memory compression prompts (reduce L2/L3 rephrase overlap, enforce entity carryover).
-- [x] **Personal Tagging** - Agent-specific issue filtering (refs: docs/reference/cr_memory.md#memory-personal-tagging)
-- [x] **Search Issues Prompt Tool** - Seeded prompt tool for issue search with personal tags + agent filter.
+- (All previous Medium Term items are complete; see Completed Features above.)
 
 ### Future
 
