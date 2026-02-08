@@ -15,7 +15,7 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
 - 1:1 chat tool-call reliability: continue hardening for small/local models (aliasing, schema enforcement).
-- Canon index UX: polish indexing flow, handle edge cases (model failure mid-index, re-index trigger).
+- Execution Modes: implement Pipeline (StepRunner/Recipes) to support deterministic multi-step runs (dry-run + receipts).
 
 ### Recently Completed
 - Conference two-phase redesign: Chief-led tool orchestration (phase 1) + role-based interpretation with abstain (phase 2). Tested end-to-end via conference auto-saved issue receipts (Phase 1 receipts + Phase 2 grounded responses; per-role evidence constraints enforced).
@@ -37,7 +37,7 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 ## Next Session Plan
 1) 1:1 chat tool-call reliability: continue hardening strict JSON emission and schema enforcement for small/local models.
 2) Provider resiliency: reduce response bloat and add retries for transient network/provider failures.
-3) Canon index UX polish.
+3) Execution Modes: Pipeline (StepRunner/Recipes) backend skeleton + one end-to-end dry-run recipe.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

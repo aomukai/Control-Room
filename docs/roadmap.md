@@ -205,8 +205,10 @@ Note: some features shipped out of order in the last two days; the lists below r
 - [x] **NO_PROJECT state** - Clean startup without a project; disk-backed registries dormant until marker exists
 - [x] **Prep Explorer Improvements** - Multi-select file move during draft prep; rename modal uses filename-only with invisible canon prefixes
 - [x] **Prep Completion Onboarding** - Workbench newsfeed notification opens a welcome issue when clicked
+- [x] **Onboarding Copy Fix** - Removed mojibake characters from Welcome/onboarding copy (ASCII punctuation)
 - [x] **Supplemental Prep Import** - Add “forgot files?” flow for manuscript/outline/background during draft prep
 - [x] **Outline ingest merge** - Merge outline uploads into a single outline and persist `outline.json` during prep
+- [x] **Canon Index UX Polish** - Status panel in modal, run report issue on success/failure, retry failed-only action
 - [x] **Strip reasoning tags** - Remove <think>/<thinking> and [think]/[thinking] blocks from AI outputs (UI + backend, including orphan closing tags)
 - [x] **Chat timeout extended** - Default chat request timeout raised to 300s for slow local models
 - [x] **Circuit breaker tuning** - Escalation keyword list trimmed and threshold raised; user-facing/narrative roles bypass gates
