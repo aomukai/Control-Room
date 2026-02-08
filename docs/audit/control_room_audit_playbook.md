@@ -6,8 +6,9 @@ Run an adversarial, evidence-driven audit of the repository to find doc/roadmap 
 Core premise:
 > **The roadmap is a lie.** Assume everything is implemented lazily or incomplete. Assume the implementing model tried to reward hack.
 
-Deliverable:
-- A repo file named **`checklist.md`** containing a prioritized, testable audit checklist with **receipts**.
+Deliverables:
+- **`docs/audit/audit_ledger.md`**: the living audit ledger (PASS/FAIL/UNKNOWN) that records where each claim lives in docs and code/runtime.
+- Optional: **`docs/audit/checklist.md`**: a prioritized fix list derived from the ledger's FAIL/UNKNOWN items (P0/P1/P2).
 
 This playbook is designed to be repeatable (multiple passes), like editing a book.
 
@@ -27,36 +28,67 @@ Use these tiers per claim/feature:
 - **P1:** partially implemented, missing persistence/validation/error handling, sloppy shortcuts.
 - **P2:** polish, UX roughness, non-blocking improvements.
 
+### Verification types
+Each audited claim gets exactly one verification type:
+- **CODE-MATCH:** doc claim is satisfied by code wiring you can point to (file + symbol/function + grepable anchors).
+- **RUNTIME-VERIFIED:** can't be proven by code inspection alone; requires testing in the app.
+- **UNKNOWN:** can't find the code and can't confidently verify in runtime yet (treat as P0 until proven otherwise).
+
+### Receipts (evidence)
+"Receipt" is contextual and must be concrete:
+- **Code receipt:** doc anchor + code anchor (file + symbol/function) + a grepable string/identifier.
+- **Runtime receipt:** "tested by user" + date + minimal repro steps + observed result (screenshots optional).
+
+### Status markers (for ledger/checklist)
+- `[ ]` open
+- `[~]` partial (I1 / incomplete)
+- `[x]` verified once (first pass)
+- `[X]` confirmed (verified in 2+ separate passes, or verified once plus a second independent check such as restart/persistence)
+
 ---
 
-## Checklist file format
-All findings go into **`checklist.md`**.
+## Audit ledger format
+All audit results go into **`docs/audit/audit_ledger.md`**.
 
-**Rule:** No item without **Evidence** + **Acceptance test**.
+**Rule:** No item without:
+- Doc anchor (what claim you audited)
+- Verification type (CODE-MATCH / RUNTIME-VERIFIED / UNKNOWN)
+- Evidence/receipt (code or runtime)
+- If FAIL/UNKNOWN: an acceptance test
 
 Template:
 ```md
-# Audit Checklist
+# Audit Ledger
 
 Legend:
-- Status: [ ] open | [~] partial | [x] fixed
+- Status: [ ] open | [~] partial | [x] verified once | [X] confirmed
 - Severity: P0 (must fix) / P1 (should fix) / P2 (nice)
 - Implementation: I0/I1/I2/I3
+- Verification: CODE-MATCH / RUNTIME-VERIFIED / UNKNOWN
 
 ---
 
-## P0 — Breaks promised behavior / correctness / security
+## Core Flows (parent-first)
+Audit parent systems first, then children:
+- Prep -> Canon -> Agents -> Chat -> Conference -> Issues -> Persistence/Reload
+
+## Design Docs (doc-by-doc)
+One section per file in `docs/reference/`.
+
+---
+
+## P0 — Breaks promised behavior / correctness / security (derived checklist)
 
 ### [ ] A-001 — <short title>
 **Claim (docs/UX/roadmap):** <what is promised>
 **Implementation tier:** I0/I1/I2/I3
+**Verification:** CODE-MATCH / RUNTIME-VERIFIED / UNKNOWN
 **Reality:** <what actually happens>
 **Why it matters:** <user-visible impact / data loss / correctness>
 **Evidence:**
-- File: `path/to/file` (lines X–Y)
-- Function: `fnName()`
-- Commands: `rg "..."` / `git grep ...` (include output snippet if helpful)
-- Repro steps: <minimal, deterministic steps>
+- Doc anchor: `docs/reference/foo.md#anchor` (or heading)
+- Code anchor: `path/to/file` + `fnName()` + grepable string(s)
+- Or runtime receipt: tested by user (YYYY-MM-DD) + steps + observed result
 **Fix suggestion:** <smallest fix that makes the claim true>
 **Acceptance test:** <how to prove it’s fixed>
 
@@ -84,7 +116,7 @@ Extract claims from:
 - UI labels/tooltips/settings descriptions
 - README/promised workflows
 
-Turn each into a checklist candidate and trace to code.
+Turn each into a ledger entry and trace to code/runtime.
 
 ### 2) Trace end-to-end wiring
 For each claim, verify the pipeline:
@@ -113,6 +145,14 @@ Use mechanical proof:
 - Fix P0 first.
 - Don’t let P2 polish derail P0/P1.
 
+### 6) Re-check policy (avoid retesting forever)
+- Default: aim for **2 checks** per PASS claim before marking `[X]`.
+- For anything involving persistence/reload/concurrency: aim for **3 checks**:
+  1) happy path
+  2) restart/refresh path
+  3) one negative/edge case
+- Don't keep re-testing beyond `[X]` unless the relevant code moved or the claim changed.
+
 ---
 
 ## Codex prompt: Adversarial Auditor (copy/paste)
@@ -123,7 +163,7 @@ You are the project auditor.
 
 Premise: the roadmap is a lie. Assume features are implemented lazily, incompletely, or via reward hacking (UI stubs, hardcoded shortcuts, silent failures, missing persistence, missing edge cases). Your job is to find and call out all the bullshit with receipts.
 
-Deliverable: write / update a repo file named checklist.md with a prioritized audit checklist.
+Deliverable: write / update `docs/audit/audit_ledger.md` (and optionally `docs/audit/checklist.md`).
 
 Rules:
 1) Every checklist item MUST include:
@@ -151,7 +191,7 @@ Rules:
 ## Second pass: Fix-and-Prove workflow
 After fixes land, run a verifier pass:
 
-1) Take each item in `checklist.md`.
+1) Take each FAIL/UNKNOWN item in `docs/audit/checklist.md` (or derive from `docs/audit/audit_ledger.md`).
 2) Implement the **acceptance test**:
    - unit/integration tests, OR
    - scripted CLI run, OR
@@ -169,4 +209,3 @@ A short file that defines:
 - what counts as MVP vs stub
 
 This prevents arguments about standards during repeated audit passes.
-
