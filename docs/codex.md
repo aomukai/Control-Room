@@ -14,8 +14,8 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
+- Execution Modes: Pipeline design specs complete (docs/reference/execution_modes.md appendices A-G). Now implementing: recipe registry, task_router promotion, StepRunner core, run persistence, REST API, prompt template registry, one dry-run recipe.
 - 1:1 chat tool-call reliability: continue hardening for small/local models (aliasing, schema enforcement).
-- Execution Modes: implement Pipeline (StepRunner/Recipes) to support deterministic multi-step runs (dry-run + receipts).
 
 ### Recently Completed
 - Conference two-phase redesign: Chief-led tool orchestration (phase 1) + role-based interpretation with abstain (phase 2). Tested end-to-end via conference auto-saved issue receipts (Phase 1 receipts + Phase 2 grounded responses; per-role evidence constraints enforced).
@@ -31,13 +31,14 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ## Working Notes
 - Grounding/tooling state machine + current status tracked in docs/statemachine.md.
+- Pipeline design specs (run log, recipes, REST, cache, routing, prompts): docs/reference/execution_modes.md appendices A-G.
 - Canon index design tracked in memory/canon-index-design.md.
 - Tool implementation progress tracked in memory/tool-implementation.md.
 
 ## Next Session Plan
-1) 1:1 chat tool-call reliability: continue hardening strict JSON emission and schema enforcement for small/local models.
-2) Provider resiliency: reduce response bloat and add retries for transient network/provider failures.
-3) Execution Modes: Pipeline (StepRunner/Recipes) backend skeleton + one end-to-end dry-run recipe.
+1) Execution Modes: Pipeline implementation (design pass complete). Start with recipe registry + task_router promotion + StepRunner Phase A skeleton. Target: one dry-run recipe executing Phase A tools end-to-end with run persistence and REST API.
+2) 1:1 chat tool-call reliability: continue hardening strict JSON emission and schema enforcement for small/local models.
+3) Provider resiliency: reduce response bloat and add retries for transient network/provider failures.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

@@ -369,3 +369,669 @@ The StepRunner follows instructions. The Chief writes the work order.
 The user approves the plan.
 
 The system handles machinery. Agents handle thinking.
+
+
+---
+---
+
+# Appendix: Concrete Specs (Implementation-Ready)
+
+The sections above define the architecture. The appendices below define the
+exact shapes, file layouts, and contracts needed to implement it.
+
+
+---
+
+# A. Run Persistence Layout
+
+A "run" is a single execution of a recipe. All run artifacts live under:
+
+```
+.control-room/runs/{runId}/
+├── run.json          manifest (metadata, status, timing, progress)
+├── steps.jsonl       append-only log (one line per completed step)
+└── cache.json        slot store (written incrementally after each step)
+```
+
+Tool receipts are NOT duplicated here. They stay in the existing audit path:
+`audit/sessions/{sessionId}/tool_receipts.jsonl`
+
+The run's steps.jsonl references receipt_ids as pointers.
+
+
+## run.json
+
+```json
+{
+  "run_id": "run_abc123",
+  "recipe_id": "creative_draft_scene",
+  "session_id": "sess_xyz",
+  "status": "running",
+  "created_at": "2026-02-10T14:30:00Z",
+  "updated_at": "2026-02-10T14:31:22Z",
+  "completed_at": null,
+  "task": {
+    "description": "Draft scene 21",
+    "session_plan_task_id": 1,
+    "initial_args": {
+      "scene_path": "Story/Scenes/SCN-the-arrival.md",
+      "canon_paths": ["Compendium/Characters/CHAR-kael.md"]
+    }
+  },
+  "current_step_index": 2,
+  "total_steps": 8,
+  "phase": "a",
+  "error": null
+}
+```
+
+Run states: `pending → running → done | failed | cancelled`
+
+Phase field: `"a"` during tool steps, `"b"` during agent steps, `"dod"` during
+DoD evaluation, `null` when not running.
+
+
+## steps.jsonl (one line per completed step)
+
+```json
+{
+  "step_index": 0,
+  "step_id": "discover",
+  "phase": "a",
+  "tool": "file_locator",
+  "agent_archetype": null,
+  "agent_id": null,
+  "status": "done",
+  "output_slot": "discovery",
+  "receipt_id": "rcpt_a1b2c3",
+  "input_slot_refs": ["task.args"],
+  "output_hash": "sha256:deadbeef...",
+  "output_preview": "12 files found matching query",
+  "started_at": "2026-02-10T14:30:01Z",
+  "completed_at": "2026-02-10T14:30:02Z",
+  "error": null
+}
+```
+
+Phase B steps use `agent_archetype` + `agent_id` instead of `tool`, and
+`receipt_id` is null (agents don't produce tool receipts).
+
+Fields:
+- `input_slot_refs`: which cache slots were read to build this step's input.
+  Enables auditing exactly what the agent/tool saw.
+- `output_hash`: sha256 of the full output. Detects partial writes.
+- `output_preview`: truncated first ~200 chars for quick debugging.
+
+
+## cache.json (dual-mode slot store)
+
+Written as a full snapshot after each step completes (atomic write-to-temp-
+then-rename for crash safety). On restart, StepRunner reads run.json for
+current_step_index and cache.json for all completed slots.
+
+Phase A slots store **pointers** (tool payloads live in receipts):
+
+```json
+{
+  "discovery": {
+    "type": "pointer",
+    "receipt_id": "rcpt_a1b2c3",
+    "sha256": "deadbeef...",
+    "summary": "12 files found: 4 scenes, 1 outline, 3 canon cards, 4 other"
+  }
+}
+```
+
+Phase B slots store **artifacts** (no receipt backing exists):
+
+```json
+{
+  "scene_brief": {
+    "type": "artifact",
+    "agent_id": "planner-001",
+    "text": "Scene 21 opens with Kael arriving at the...",
+    "sha256": "cafebabe...",
+    "summary": "Scene brief: Kael's arrival, 3 beats, POV Kael"
+  }
+}
+```
+
+This avoids duplicating tool payloads while ensuring Phase B artifacts survive
+for restart and inspection.
+
+
+---
+
+# B. Recipe JSON Schema
+
+Recipes are declarative execution plans. Stored as individual JSON files.
+
+Storage:
+- Bundled defaults: `src/main/resources/recipes/*.json`
+- Project overrides: `.control-room/recipes/*.json`
+- Merge: project recipes shadow bundled recipes by `recipe_id`
+  (same pattern as prompts.json layering)
+
+
+## Full Recipe Example
+
+```json
+{
+  "recipe_id": "creative_draft_scene",
+  "label": "Draft a scene from outline",
+  "task_patterns": ["draft scene", "write scene", "scene from outline"],
+
+  "phase_a": [
+    {
+      "step_id": "discover",
+      "tool": "file_locator",
+      "args": {
+        "search_criteria": { "$ref": "task.description" },
+        "scan_mode": "FAST_SCAN",
+        "max_results": 12
+      },
+      "output_slot": "discovery"
+    },
+    {
+      "step_id": "analyze_outline",
+      "tool": "outline_analyzer",
+      "args": {
+        "outline_path": "Story/SCN-outline.md",
+        "mode": "structure"
+      },
+      "output_slot": "outline_beat"
+    },
+    {
+      "step_id": "check_canon",
+      "tool": "canon_checker",
+      "args": {
+        "scene_path": { "$ref": "task.args.scene_path" },
+        "canon_paths": { "$ref": "task.args.canon_paths" }
+      },
+      "output_slot": "canon_context"
+    }
+  ],
+
+  "phase_b": [
+    {
+      "step_id": "brief",
+      "agent_archetype": "planner",
+      "input_slots": ["outline_beat", "canon_context"],
+      "output_slot": "scene_brief",
+      "prompt_type": "refine_brief"
+    },
+    {
+      "step_id": "draft",
+      "agent_archetype": "writer",
+      "input_slots": ["scene_brief", "canon_context"],
+      "output_slot": "draft",
+      "prompt_type": "draft_scene"
+    },
+    {
+      "step_id": "polish",
+      "agent_archetype": "editor",
+      "input_slots": ["draft"],
+      "output_slot": "edited_draft",
+      "prompt_type": "polish_draft"
+    },
+    {
+      "step_id": "continuity",
+      "agent_archetype": "continuity",
+      "input_slots": ["edited_draft", "canon_context"],
+      "output_slot": "continuity_report",
+      "prompt_type": "check_continuity"
+    },
+    {
+      "step_id": "critique",
+      "agent_archetype": "critic",
+      "input_slots": ["edited_draft"],
+      "output_slot": "critique",
+      "prompt_type": "evaluate_reader_experience"
+    }
+  ],
+
+  "dod": [
+    { "check": "slot_not_null", "slot": "draft" },
+    { "check": "slot_not_null", "slot": "continuity_report" },
+    { "check": "slot_not_null", "slot": "critique" }
+  ]
+}
+```
+
+
+## Recipe Field Reference
+
+### Top-level
+
+| Field | Type | Description |
+|---|---|---|
+| recipe_id | string | Unique identifier. Recipes shadow by this key. |
+| label | string | Human-readable name. |
+| task_patterns | string[] | Keywords/phrases for task_router matching. |
+| phase_a | step[] | Tool steps (system executes, no model). |
+| phase_b | step[] | Agent steps (sequential, each feeds the next). |
+| dod | check[] | Definition of Done conditions. |
+
+### Phase A Step
+
+| Field | Type | Description |
+|---|---|---|
+| step_id | string | Unique within recipe. Used in logs and $ref paths. |
+| tool | string | Tool ID (must be registered in ToolExecutionService). |
+| args | object | Tool arguments. Values may be literals or `$ref` objects. |
+| output_slot | string | Cache slot name where the tool output is stored. |
+
+### Phase B Step
+
+| Field | Type | Description |
+|---|---|---|
+| step_id | string | Unique within recipe. |
+| agent_archetype | string | Role archetype (planner, writer, editor, etc.). |
+| input_slots | string[] | Cache slots injected into the agent's prompt. |
+| output_slot | string | Cache slot for the agent's response. |
+| prompt_type | string | Registry key for the prompt template. |
+
+### DoD Check
+
+| Field | Type | Description |
+|---|---|---|
+| check | string | Check type: `slot_not_null`, `slot_field_equals`, `file_exists`. |
+| slot | string | Cache slot to inspect. |
+| field | string | (slot_field_equals only) Dot-path into the slot value. |
+| expected | any | (slot_field_equals only) Expected value. |
+| path | string | (file_exists only) VFS path, may use $ref. |
+
+
+---
+
+# C. Arg Templating ($ref Resolution)
+
+Recipe args use `$ref` objects to reference values from the cache or task
+metadata at runtime.
+
+## Syntax
+
+Literal values pass through unchanged:
+```json
+{ "scan_mode": "FAST_SCAN" }
+```
+
+References are resolved by the StepRunner:
+```json
+{ "scene_path": { "$ref": "task.args.scene_path" } }
+{ "outline_path": { "$ref": "discovery.matches[0].path" } }
+```
+
+## Resolution Rules
+
+1. Dot traversal: `a.b.c` navigates nested objects.
+2. Array indexing: `[N]` accesses element at literal integer index.
+3. Root namespaces:
+   - `task.*` — task metadata (description, initial_args, session_plan_task_id)
+   - Any other root — cache slot name (e.g., `discovery.*`)
+4. If resolution produces `null` at any step, the step fails with a clear
+   error identifying the broken ref path.
+5. No JSONPath. No filters. No wildcards. No expressions.
+
+## Examples
+
+| $ref | Resolves to |
+|---|---|
+| `task.description` | The task's description string |
+| `task.args.scene_path` | An initial arg passed at run start |
+| `discovery.matches[0].path` | First match path from file_locator output |
+| `outline_beat.scenes[2].title` | Third scene title from outline analysis |
+| `canon_context.conflicts` | Conflict list from canon checker |
+
+## Java Implementation
+
+The resolver is ~30 lines: split path on `.`, check each segment for trailing
+`[N]` regex, navigate via Jackson JsonNode. Returns JsonNode or throws
+RefResolutionException with the full path and failure point.
+
+
+---
+
+# D. REST Contract (Pipeline Runs)
+
+All endpoints are under `/api/runs`. Follows existing Javalin controller
+pattern (Controller interface, errorBody helper, path params, JSON responses).
+
+## Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/runs` | Start a new run |
+| GET | `/api/runs` | List runs |
+| GET | `/api/runs/{id}` | Run detail (consolidated for polling) |
+| GET | `/api/runs/{id}/steps` | Full step log |
+| GET | `/api/runs/{id}/cache/{slot}` | Read a cache slot value |
+| POST | `/api/runs/{id}/cancel` | Cancel a running run |
+
+## POST /api/runs
+
+Start a new recipe execution.
+
+Request:
+```json
+{
+  "recipe_id": "creative_draft_scene",
+  "args": {
+    "scene_path": "Story/Scenes/SCN-the-arrival.md",
+    "canon_paths": ["Compendium/Characters/CHAR-kael.md"]
+  }
+}
+```
+
+Response (201):
+```json
+{
+  "run_id": "run_abc123",
+  "status": "running"
+}
+```
+
+Errors:
+- 400: unknown recipe_id, missing required args
+- 409: recipe already running (optional guard for v1)
+
+## GET /api/runs
+
+List runs with optional filters.
+
+Query params: `status` (pending|running|done|failed|cancelled), `recipe_id`.
+
+Response (200): array of run summaries (run_id, recipe_id, status, created_at).
+
+## GET /api/runs/{id} (consolidated polling endpoint)
+
+Returns everything the UI needs in one call.
+
+Response (200):
+```json
+{
+  "run_id": "run_abc123",
+  "recipe_id": "creative_draft_scene",
+  "status": "running",
+  "phase": "b",
+  "current_step_index": 5,
+  "total_steps": 8,
+  "created_at": "2026-02-10T14:30:00Z",
+  "updated_at": "2026-02-10T14:31:22Z",
+  "completed_at": null,
+  "task": {
+    "description": "Draft scene 21"
+  },
+  "steps": [
+    {
+      "step_id": "discover",
+      "phase": "a",
+      "status": "done",
+      "tool": "file_locator",
+      "output_slot": "discovery",
+      "output_preview": "12 files found"
+    },
+    {
+      "step_id": "brief",
+      "phase": "b",
+      "status": "done",
+      "agent_archetype": "planner",
+      "output_slot": "scene_brief",
+      "output_preview": "Scene 21 opens with Kael..."
+    },
+    {
+      "step_id": "draft",
+      "phase": "b",
+      "status": "running",
+      "agent_archetype": "writer",
+      "output_slot": "draft"
+    }
+  ],
+  "cache_summary": {
+    "discovery": { "type": "pointer", "preview": "12 files found" },
+    "outline_beat": { "type": "pointer", "preview": "8 scenes, beat 5 matched" },
+    "scene_brief": { "type": "artifact", "preview": "Scene 21 opens with Kael..." }
+  },
+  "error": null
+}
+```
+
+## GET /api/runs/{id}/steps
+
+Full step log (parsed steps.jsonl). Response (200): array of full step objects
+including all observability fields (input_slot_refs, output_hash, timing).
+
+## GET /api/runs/{id}/cache/{slot}
+
+Drill-down into a specific cache slot.
+
+For pointer slots: returns the pointer metadata (receipt_id, sha256, summary).
+The client can fetch the full tool output via the existing audit receipt API.
+
+For artifact slots: returns the full text content.
+
+Response (200):
+```json
+{
+  "slot": "scene_brief",
+  "type": "artifact",
+  "agent_id": "planner-001",
+  "text": "Scene 21 opens with Kael arriving at the fortress...",
+  "sha256": "cafebabe...",
+  "summary": "Scene brief: Kael's arrival, 3 beats, POV Kael"
+}
+```
+
+## POST /api/runs/{id}/cancel
+
+Cancel a running run. Sets status to `cancelled`, records current step.
+
+Response (200): `{ "run_id": "...", "status": "cancelled" }`
+
+Errors:
+- 404: run not found
+- 409: run is not in `running` state
+
+
+---
+
+# E. task_router as System Service
+
+task_router is promoted from a tool to a system-level Java service.
+
+## Interface
+
+```
+TaskRoutingResult route(String taskDescription)
+
+TaskRoutingResult:
+  recipeId:    String   (null if not routable)
+  initialArgs: Map      (seed values extracted from description)
+  routable:    boolean
+  reason:      String   (why this recipe, or why not routable)
+```
+
+## Routing Logic
+
+Deterministic keyword + pattern matching against `task_patterns` in the recipe
+registry. No model is involved in recipe selection.
+
+1. Load all recipes from the registry (bundled + project overrides).
+2. For each recipe, check if any `task_patterns` entry matches the description
+   (case-insensitive substring or simple regex).
+3. If exactly one recipe matches: return it with routable=true.
+4. If multiple match: return the best match (longest pattern) with routable=true.
+5. If none match: return routable=false. Chief handles scoping.
+
+## Backward Compatibility
+
+The existing `task_router` tool becomes a thin wrapper:
+
+```
+execute("task_router", { user_request }) →
+  calls route(user_request) →
+  formats TaskRoutingResult as tool output text
+```
+
+This means 1:1 chat tool calls still work identically.
+
+## Callers
+
+| Caller | Purpose |
+|---|---|
+| StepRunner | Select recipe for a Session Plan task |
+| Chief decomposition | Validate that each task is routable |
+| Tool execution (existing) | 1:1 chat backward compat |
+
+
+---
+
+# F. Prompt Templates (Registry-Backed, File-Based)
+
+Phase B prompt templates are managed through the existing prompt registry,
+not as a parallel system alongside recipes.
+
+## Registry Entry (in prompts.json)
+
+```json
+{
+  "pipeline_templates": {
+    "refine_brief": {
+      "label": "Refine scene brief from outline + canon",
+      "variants": {
+        "t1": "templates/refine_brief.t1.md",
+        "t3": "templates/refine_brief.t3.md",
+        "t5": "templates/refine_brief.t5.md"
+      }
+    },
+    "draft_scene": {
+      "label": "Draft scene prose",
+      "variants": {
+        "t3": "templates/draft_scene.t3.md"
+      }
+    }
+  }
+}
+```
+
+## File Storage
+
+- Bundled: `src/main/resources/prompts/templates/*.md`
+- Project overrides: `.control-room/prompts/templates/*.md`
+
+Paths in the registry are relative to the prompts directory.
+The existing 3-layer merge (bundled → user-home → project) applies.
+
+## Template Syntax
+
+Templates use `{{slot_name}}` for cache slot injection:
+
+```markdown
+You are a Planner. Your job is to refine a scene brief.
+
+## Outline Beat
+{{outline_beat}}
+
+## Canon Context
+{{canon_context}}
+
+## Task
+Write a concise scene brief covering: ...
+```
+
+## Resolution Flow
+
+1. Recipe step has `prompt_type: "refine_brief"`.
+2. StepRunner looks up `pipeline_templates.refine_brief` in the registry.
+3. Agent's tier determines which variant to load (t1, t3, or t5).
+   Falls back to closest available (t3 if t5 missing, t1 if t3 missing).
+4. Template file is loaded and `{{slot_name}}` placeholders are replaced
+   with cache slot summaries (for pointers) or full text (for artifacts).
+5. Assembled prompt is sent to the agent via `/api/ai/chat` with
+   `skipTools: true`.
+
+## Tier Variant Guidelines
+
+| Tier | Prompt Style | Typical Length |
+|---|---|---|
+| T1 | Micro-step: one narrow question, constrained output | ~200 words |
+| T3 | Standard: full context, single interpretation/output | ~500 words |
+| T5 | Rich: extra context, optional insight, synthesis | ~800 words |
+
+
+---
+
+# G. Session Plan Data Model (Deferred, Compatibility Reference)
+
+Session Plan implementation is deferred to the Next milestone. This section
+documents the data model to ensure the run layer stays compatible.
+
+## Storage
+
+`.control-room/sessions/{sessionId}/plan.json`
+
+A plan can spawn many runs. Plans and runs are separate concerns.
+
+## Shape
+
+```json
+{
+  "session_id": "sp_uuid",
+  "created_by": "chief",
+  "status": "running",
+  "created_at": "2026-02-10T14:00:00Z",
+  "tasks": [
+    {
+      "id": 1,
+      "description": "Write Scene 21",
+      "recipe_id": "creative_draft_scene",
+      "deps": [],
+      "dod": "Scene file exists, continuity pass",
+      "status": "done",
+      "run_id": "run_abc"
+    },
+    {
+      "id": 2,
+      "description": "Write Scene 22",
+      "recipe_id": "creative_draft_scene",
+      "deps": [1],
+      "dod": "Scene file exists, continuity pass",
+      "status": "blocked",
+      "run_id": null
+    },
+    {
+      "id": 3,
+      "description": "Consistency check (scenes 21-22 vs canon)",
+      "recipe_id": "analytical_consistency",
+      "deps": [1, 2],
+      "status": "blocked",
+      "run_id": null
+    },
+    {
+      "id": 4,
+      "description": "Foreshadowing audit",
+      "recipe_id": null,
+      "deps": [],
+      "scoping_question": "Which themes need foreshadowing? Which scenes?",
+      "status": "needs_scoping",
+      "run_id": null
+    }
+  ]
+}
+```
+
+## Task States
+
+- pending: ready to run (all deps satisfied)
+- blocked: waiting on dependency tasks
+- needs_scoping: requires user input before routing
+- running: StepRunner is executing the recipe (run_id populated)
+- done: DoD satisfied
+- failed: DoD not satisfied, issues created
+
+## Connection to Runs
+
+Each task maps 1:1 to a run. When a task becomes `pending`, the system calls
+`POST /api/runs` with the task's recipe_id and args. The `run_id` field links
+the plan task to its execution. The plan is the coordination layer; runs are
+the execution layer.

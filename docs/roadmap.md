@@ -243,9 +243,9 @@ Versioning UX polish and Project Preparation Wizard are complete, so canonical d
 
 ### Needs Design (Gate)
 Items listed here should not be treated as "ready to implement" until a short design pass lands (a reference doc update or a new spec).
-- Pipeline/Execution Modes: run log format + persistence layout + minimal REST contract. (refs: docs/reference/execution_modes.md)
-- Pipeline UX: Session Plan UI behaviors and how it maps to StepRunner runs. (refs: docs/reference/execution_modes.md)
-- Recipe registry + deterministic task routing: schema + routing rules + DoD evaluation. (refs: docs/reference/execution_modes.md)
+- ~~Pipeline/Execution Modes: run log format + persistence layout + minimal REST contract.~~ **Design complete** (refs: docs/reference/execution_modes.md appendices A, D)
+- ~~Pipeline UX: Session Plan UI behaviors and how it maps to StepRunner runs.~~ **Design complete** (refs: docs/reference/execution_modes.md appendix G)
+- ~~Recipe registry + deterministic task routing: schema + routing rules + DoD evaluation.~~ **Design complete** (refs: docs/reference/execution_modes.md appendices B, C, E)
 - Agent tools governance: harness + tool versioning/diffing approach (core tools remain locked). (refs: docs/reference/agent_tools.md)
 - Custom widgets: sandbox/permissions model + bundle format + storage rules. (refs: docs/claude/SYSTEMS_WIDGETS.md)
 - Settings "Soon" features: scope/MVP decisions (cloud backup, editor settings, shortcut editing). (refs: Settings UI)
@@ -254,20 +254,21 @@ Items listed here should not be treated as "ready to implement" until a short de
 
 ### Now (Active)
 
-- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. (refs: docs/reference/execution_modes.md)
-  - [ ] StepRunner core (server-side): execute a recipe mechanically (no reasoning), halt on stop hook, persist audit trail.
-  - [ ] Run persistence: disk-backed run logs + step outputs (stable IDs, timestamps).
-  - [ ] REST API: start run + poll status + fetch run artifacts.
-  - [ ] One end-to-end dry-run recipe: deterministic, no model calls required.
+- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. Design specs complete (refs: docs/reference/execution_modes.md appendices A-G).
+  - [ ] Recipe registry: load bundled + project recipes, shadow by recipe_id. (design: appendix B)
+  - [ ] task_router promotion: deterministic Java service callable from StepRunner + Chief + existing tool loop. (design: appendix E)
+  - [ ] StepRunner core (server-side): execute Phase A mechanically, $ref resolution, cache dual-mode (pointer/artifact), halt on failure, persist audit trail. (design: appendices A, C)
+  - [ ] Run persistence: run.json + steps.jsonl + cache.json under `.control-room/runs/`, incremental atomic writes. (design: appendix A)
+  - [ ] REST API (RunController): start/poll/steps/cache/cancel. Consolidated polling endpoint. (design: appendix D)
+  - [ ] Prompt template registry: pipeline_templates section in prompts.json, file-based .md templates with {{slot}} injection. (design: appendix F)
+  - [ ] One end-to-end dry-run recipe: Phase A only, deterministic, no model calls required.
   - [ ] Acceptance: happy path + step failure path + restart path (reload and re-open run status).
 - [ ] 1:1 chat tool-call reliability: continue hardening strict JSON tool calls and stop hook surfaces for small/local models.
 - [ ] Provider resiliency: retries/backoff/timeouts + more actionable UI errors for transient provider/network failures.
 
 ### Next (Queued)
 
-- [ ] Pipeline UX: Session Plan UI (ordered checklist with status, pause/resume, dependency blocking).
-- [ ] Recipe registry (data, not code): declarative recipes with tools/agents phases and machine-checkable DoD where possible.
-- [ ] Deterministic `task_router`: request -> recipe_id + initial args, routable=true/false.
+- [ ] Pipeline UX: Session Plan UI (ordered checklist with status, pause/resume, dependency blocking). (design: docs/reference/execution_modes.md appendix G)
 - [ ] Replace the hardcoded "Write Scene from Outline" playbook with an equivalent StepRunner recipe.
 - [ ] Dashboard layout backend persistence: migrate widget layout from localStorage to per-project `.control-room/` file (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
 - [ ] Widget import/export (MVP): export a widget layout + import on another project/machine (refs: docs/claude/BOOT.md, docs/claude/SYSTEMS_WIDGETS.md)
