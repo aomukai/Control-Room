@@ -1,0 +1,80 @@
+{
+  "recipe_id": "creative_draft_scene",
+  "label": "Draft a scene from outline",
+  "task_patterns": ["draft scene", "write scene", "scene from outline"],
+
+  "phase_a": [
+    {
+      "step_id": "discover",
+      "tool": "file_locator",
+      "args": {
+        "search_criteria": { "$ref": "task.description" },
+        "scan_mode": "FAST_SCAN",
+        "max_results": 12
+      },
+      "output_slot": "discovery"
+    },
+    {
+      "step_id": "analyze_outline",
+      "tool": "outline_analyzer",
+      "args": {
+        "outline_path": "Story/SCN-outline.md",
+        "mode": "structure"
+      },
+      "output_slot": "outline_beat"
+    },
+    {
+      "step_id": "check_canon",
+      "tool": "canon_checker",
+      "args": {
+        "scene_path": { "$ref": "task.args.scene_path" },
+        "canon_paths": { "$ref": "task.args.canon_paths" }
+      },
+      "output_slot": "canon_context"
+    }
+  ],
+
+  "phase_b": [
+    {
+      "step_id": "brief",
+      "agent_archetype": "planner",
+      "input_slots": ["outline_beat", "canon_context"],
+      "output_slot": "scene_brief",
+      "prompt_type": "refine_brief"
+    },
+    {
+      "step_id": "draft",
+      "agent_archetype": "writer",
+      "input_slots": ["scene_brief", "canon_context"],
+      "output_slot": "draft",
+      "prompt_type": "draft_scene"
+    },
+    {
+      "step_id": "polish",
+      "agent_archetype": "editor",
+      "input_slots": ["draft"],
+      "output_slot": "edited_draft",
+      "prompt_type": "polish_draft"
+    },
+    {
+      "step_id": "continuity",
+      "agent_archetype": "continuity",
+      "input_slots": ["edited_draft", "canon_context"],
+      "output_slot": "continuity_report",
+      "prompt_type": "check_continuity"
+    },
+    {
+      "step_id": "critique",
+      "agent_archetype": "critic",
+      "input_slots": ["edited_draft"],
+      "output_slot": "critique",
+      "prompt_type": "evaluate_reader_experience"
+    }
+  ],
+
+  "dod": [
+    { "check": "slot_not_null", "slot": "draft" },
+    { "check": "slot_not_null", "slot": "continuity_report" },
+    { "check": "slot_not_null", "slot": "critique" }
+  ]
+}

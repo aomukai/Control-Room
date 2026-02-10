@@ -70,7 +70,7 @@ Rejected replies are not treated as "tool failures"; they are evidence/grounding
 
 # Mode B: Pipeline (Sequential Production)
 
-Not yet implemented. This section is the design spec.
+Not yet fully implemented. This section is the design spec.
 
 ## Lifecycle
 

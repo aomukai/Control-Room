@@ -586,6 +586,11 @@ This is the full map of everything connected to grounding + tool execution. If i
 - Prompt registry (project): `workspace/<project>/.control-room/prompts/prompts.json`
 - Canon index: `workspace/<project>/.control-room/canon/canon-index.md`
 - Canon metadata: `workspace/<project>/.control-room/canon/canon-meta.json`
+- Pipeline runs: `workspace/<project>/.control-room/runs/<runId>/run.json`
+- Pipeline steps: `workspace/<project>/.control-room/runs/<runId>/steps.jsonl`
+- Pipeline cache: `workspace/<project>/.control-room/runs/<runId>/cache.json`
+- Bundled recipes: `src/main/resources/recipes/*.json`
+- Project recipes: `workspace/<project>/.control-room/recipes/*.json`
 
 ## REST Endpoints (Relevant to Grounding + Tools)
 - `POST /api/ai/chat` (conference + normal chat)
@@ -597,6 +602,12 @@ This is the full map of everything connected to grounding + tool execution. If i
 - `POST /api/telemetry/conference`
 - `GET /api/canon/index/status`
 - `POST /api/canon/index`
+- `POST /api/runs` (start pipeline run)
+- `GET /api/runs` (list pipeline runs)
+- `GET /api/runs/{id}` (consolidated polling)
+- `GET /api/runs/{id}/steps` (full step log)
+- `GET /api/runs/{id}/cache/{slot}` (cache slot drill-down)
+- `POST /api/runs/{id}/cancel` (cancel running run)
 
 ## Prompt Tools (JSON-Only Example Formats)
 - `file_locator` example:

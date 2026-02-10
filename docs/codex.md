@@ -14,10 +14,11 @@ roadmap.md is the sole source of truth for implementation status and sequencing.
 Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ### Near-Term Focus
-- Execution Modes: Pipeline design specs complete (docs/reference/execution_modes.md appendices A-G). Now implementing: recipe registry, task_router promotion, StepRunner core, run persistence, REST API, prompt template registry, one dry-run recipe.
+- Execution Modes: Pipeline Phase B (agent calls), task_router promotion to standalone Java service, prompt template registry, Session Plan UI.
 - 1:1 chat tool-call reliability: continue hardening for small/local models (aliasing, schema enforcement).
 
 ### Recently Completed
+- Pipeline Phase A: RecipeRegistry + RefResolver + RunStore + StepRunner + RunController + bundled recipe. POST /api/runs executes file_locator → outline_analyzer → canon_checker end-to-end with run persistence, dual-mode cache, and consolidated polling.
 - Conference two-phase redesign: Chief-led tool orchestration (phase 1) + role-based interpretation with abstain (phase 2). Tested end-to-end via conference auto-saved issue receipts (Phase 1 receipts + Phase 2 grounded responses; per-role evidence constraints enforced).
 - Tool suite: `consistency_checker` — multi-file cross-referencing (entity extraction, shared terms, event markers) for contradiction detection.
 - Tool suite: `scene_draft_validator` — auto-matches scene to outline beat + loads POV canon card in one call.
@@ -31,14 +32,17 @@ Focus only on what's still pending (see roadmap.md for authoritative status).
 
 ## Working Notes
 - Grounding/tooling state machine + current status tracked in docs/statemachine.md.
-- Pipeline design specs (run log, recipes, REST, cache, routing, prompts): docs/reference/execution_modes.md appendices A-G.
+- Pipeline design specs: docs/reference/execution_modes.md appendices A-G. Phase A implemented, Phase B pending.
+- Pipeline implementation: `src/main/java/com/miniide/pipeline/` (RecipeRegistry, RefResolver, RunStore, StepRunner) + `controllers/RunController.java`.
 - Canon index design tracked in memory/canon-index-design.md.
 - Tool implementation progress tracked in memory/tool-implementation.md.
 
 ## Next Session Plan
-1) Execution Modes: Pipeline implementation (design pass complete). Start with recipe registry + task_router promotion + StepRunner Phase A skeleton. Target: one dry-run recipe executing Phase A tools end-to-end with run persistence and REST API.
-2) 1:1 chat tool-call reliability: continue hardening strict JSON emission and schema enforcement for small/local models.
-3) Provider resiliency: reduce response bloat and add retries for transient network/provider failures.
+1) Execution Modes: Pipeline Phase B — agent calls via /api/ai/chat with skipTools, prompt template registry, tier-based step sizing. Target: full creative_draft_scene recipe executing Phase A + Phase B end-to-end.
+2) task_router promotion: standalone Java service callable from StepRunner + Chief + existing tool loop.
+3) Session Plan UI: ordered checklist with status, pause/resume, dependency blocking.
+4) 1:1 chat tool-call reliability: continue hardening strict JSON emission and schema enforcement for small/local models.
+5) Provider resiliency: reduce response bloat and add retries for transient network/provider failures.
 
 ## Ops Note
 - Use host CLI (Codex CLI) for git push; VS Code Flatpak sandbox can’t access host keyring/gh auth.

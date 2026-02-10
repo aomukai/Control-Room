@@ -254,14 +254,14 @@ Items listed here should not be treated as "ready to implement" until a short de
 
 ### Now (Active)
 
-- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. Design specs complete (refs: docs/reference/execution_modes.md appendices A-G).
-  - [ ] Recipe registry: load bundled + project recipes, shadow by recipe_id. (design: appendix B)
+- [ ] **Execution Modes: Pipeline (StepRunner + Recipes)** - Sequential production mode where each agent's output feeds the next. Design specs complete (refs: docs/reference/execution_modes.md appendices A-G). Phase A implemented.
+  - [x] Recipe registry: load bundled + project recipes, shadow by recipe_id. (design: appendix B) (refs: pipeline/RecipeRegistry.java)
   - [ ] task_router promotion: deterministic Java service callable from StepRunner + Chief + existing tool loop. (design: appendix E)
-  - [ ] StepRunner core (server-side): execute Phase A mechanically, $ref resolution, cache dual-mode (pointer/artifact), halt on failure, persist audit trail. (design: appendices A, C)
-  - [ ] Run persistence: run.json + steps.jsonl + cache.json under `.control-room/runs/`, incremental atomic writes. (design: appendix A)
-  - [ ] REST API (RunController): start/poll/steps/cache/cancel. Consolidated polling endpoint. (design: appendix D)
+  - [x] StepRunner core (server-side): execute Phase A mechanically, $ref resolution, cache dual-mode (pointer/artifact), halt on failure, persist audit trail. (design: appendices A, C) (refs: pipeline/StepRunner.java, pipeline/RefResolver.java)
+  - [x] Run persistence: run.json + steps.jsonl + cache.json under `.control-room/runs/`, incremental atomic writes. (design: appendix A) (refs: pipeline/RunStore.java)
+  - [x] REST API (RunController): start/poll/steps/cache/cancel. Consolidated polling endpoint. (design: appendix D) (refs: controllers/RunController.java)
   - [ ] Prompt template registry: pipeline_templates section in prompts.json, file-based .md templates with {{slot}} injection. (design: appendix F)
-  - [ ] One end-to-end dry-run recipe: Phase A only, deterministic, no model calls required.
+  - [x] One end-to-end dry-run recipe: Phase A only, deterministic, no model calls required. (refs: resources/recipes/creative_draft_scene.json)
   - [ ] Acceptance: happy path + step failure path + restart path (reload and re-open run status).
 - [ ] 1:1 chat tool-call reliability: continue hardening strict JSON tool calls and stop hook surfaces for small/local models.
 - [ ] Provider resiliency: retries/backoff/timeouts + more actionable UI errors for transient provider/network failures.
@@ -461,6 +461,16 @@ notificationStore.issueCommentAdded(id, author)
 |--------|----------|-------------|
 | GET | `/api/outline` | Get outline + scene list |
 | PUT | `/api/outline` | Save outline document |
+
+### Pipeline Runs
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/runs` | Start a new recipe run (recipe_id + args) |
+| GET | `/api/runs` | List runs (filters: status, recipe_id) |
+| GET | `/api/runs/{id}` | Consolidated polling (manifest + steps + cache summary) |
+| GET | `/api/runs/{id}/steps` | Full step log (parsed steps.jsonl) |
+| GET | `/api/runs/{id}/cache/{slot}` | Drill-down into a specific cache slot |
+| POST | `/api/runs/{id}/cancel` | Cancel a running run |
 
 ### Patch Cleanup Scheduler (env)
 | Key | Description |

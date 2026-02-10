@@ -4,9 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.miniide.controllers.*;
+import com.miniide.pipeline.RecipeRegistry;
+import com.miniide.pipeline.RefResolver;
+import com.miniide.pipeline.RunStore;
+import com.miniide.pipeline.StepRunner;
 import com.miniide.providers.ProviderChatService;
 import com.miniide.providers.ProviderModelsService;
 import com.miniide.settings.SettingsService;
+import com.miniide.tools.ToolExecutionService;
 import io.javalin.Javalin;
 import io.javalin.json.JavalinJackson;
 import io.javalin.http.staticfiles.Location;
@@ -109,6 +114,13 @@ public class Main {
             // Initialize dashboard layout store
             DashboardLayoutStore dashboardLayoutStore = new DashboardLayoutStore(config.getWorkspacePath(), objectMapper);
 
+            // Initialize pipeline services
+            ToolExecutionService toolExecutionService = new ToolExecutionService(projectContext, issueService, objectMapper);
+            RecipeRegistry recipeRegistry = new RecipeRegistry(config.getWorkspacePath(), objectMapper);
+            RunStore runStore = new RunStore(config.getWorkspacePath(), objectMapper);
+            RefResolver refResolver = new RefResolver(objectMapper);
+            StepRunner stepRunner = new StepRunner(toolExecutionService, runStore, refResolver, recipeRegistry, objectMapper);
+
             // Create and register controllers
             MemoryController memoryController = new MemoryController(memoryService, projectContext, decayScheduler, decayConfigStore, objectMapper);
             IssueCompressionService issueCompressionService = new IssueCompressionService(projectContext, settingsService, providerChatService, objectMapper);
@@ -133,7 +145,8 @@ public class Main {
                 new AuditController(projectContext),
                 new TtsController(objectMapper),
                 new VersioningController(objectMapper, config.getWorkspacePath(), issueService, projectContext),
-                new AudioController()
+                new AudioController(),
+                new RunController(stepRunner, runStore, objectMapper)
             );
 
             controllers.forEach(c -> c.registerRoutes(app));
